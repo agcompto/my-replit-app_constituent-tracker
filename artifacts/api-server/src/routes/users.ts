@@ -85,6 +85,13 @@ router.patch("/users/:id", requireRole("admin", "super_admin"), async (req, res)
     res.status(403).json({ error: "Only super admins can grant super_admin" });
     return;
   }
+  if (req.currentUser!.role !== "super_admin") {
+    const [target] = await db.select({ role: usersTable.role }).from(usersTable).where(eq(usersTable.id, params.data.id));
+    if (target?.role === "super_admin") {
+      res.status(403).json({ error: "Admins cannot modify super_admin accounts" });
+      return;
+    }
+  }
   const [u] = await db
     .update(usersTable)
     .set(body.data)
@@ -124,6 +131,13 @@ router.post(
     if (!body.success) {
       res.status(400).json({ error: body.error.message });
       return;
+    }
+    if (req.currentUser!.role !== "super_admin") {
+      const [target] = await db.select({ role: usersTable.role }).from(usersTable).where(eq(usersTable.id, params.data.id));
+      if (target?.role === "super_admin") {
+        res.status(403).json({ error: "Admins cannot reset passwords for super_admin accounts" });
+        return;
+      }
     }
     const passwordHash = await bcrypt.hash(body.data.password, 10);
     const [u] = await db

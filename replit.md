@@ -11,9 +11,9 @@ Internal NC State University Advancement tool for planning donor communication t
 - `pnpm --filter @workspace/db run push` — push DB schema changes
 - Required env: `DATABASE_URL`, `SESSION_SECRET`
 
-## Default credentials (dev)
+## Bootstrap super-admin (dev / fresh DB)
 
-- `admin@example.com` / `changeme123` (super_admin) — change after first login.
+On first startup against an empty database, a `super_admin` account is created at `admin@example.com` with a **randomly generated** temporary password printed once to the server log (level `warn`). Log in with that password and change it immediately; `mustChangePassword` is set so the UI will prompt you.
 
 ## Stack
 

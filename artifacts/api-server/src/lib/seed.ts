@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import { randomBytes } from "crypto";
 import { db, usersTable, campaignTypesTable, channelsTable, appSettingsTable } from "@workspace/db";
 import { logger } from "./logger";
 
@@ -24,15 +25,30 @@ export async function seedDefaults(): Promise<void> {
   // Default super admin
   const existingUsers = await db.select({ id: usersTable.id }).from(usersTable).limit(1);
   if (existingUsers.length === 0) {
-    const passwordHash = await bcrypt.hash("changeme123", 10);
+    const bootstrapPassword = randomBytes(16).toString("hex");
+    const passwordHash = await bcrypt.hash(bootstrapPassword, 10);
     await db.insert(usersTable).values({
       email: "admin@example.com",
       name: "Default Super Admin",
       passwordHash,
       role: "super_admin",
       active: true,
+      mustChangePassword: true,
     });
-    logger.info("Seeded default super_admin (admin@example.com / changeme123)");
+    logger.warn("BOOTSTRAP: Seeded initial super_admin account — retrieve temporary password from stderr.");
+    process.stderr.write(
+      [
+        "",
+        "========================================================",
+        " BOOTSTRAP: Initial super_admin account created",
+        `   Email:    admin@example.com`,
+        `   Password: ${bootstrapPassword}`,
+        " Log in immediately and change this password.",
+        " This message will not appear again.",
+        "========================================================",
+        "",
+      ].join("\n"),
+    );
   }
 
   const existingChannels = await db.select({ id: channelsTable.id }).from(channelsTable).limit(1);
