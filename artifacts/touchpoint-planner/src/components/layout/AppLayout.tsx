@@ -1,5 +1,6 @@
 import { useGetMe, useAcknowledgePii, useLogout } from "@workspace/api-client-react";
 import { Link, useLocation } from "wouter";
+import { KeyRound } from "lucide-react";
 import { useState, useEffect } from "react";
 import { 
   LayoutDashboard, 
@@ -100,6 +101,15 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <div className="text-sm font-medium">{user?.name}</div>
               <div className="text-xs text-muted-foreground capitalize">{user?.role.replace('_', ' ')}</div>
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setLocation("/change-password")}
+              data-testid="button-change-password"
+            >
+              <KeyRound className="h-4 w-4 mr-2" />
+              Change Password
+            </Button>
             <Button variant="outline" size="sm" onClick={handleLogout}>
               <LogOut className="h-4 w-4 mr-2" />
               Logout

@@ -48,12 +48,21 @@ export default function Login() {
           </p>
         </div>
 
-        {loginMutation.error && (
-          <div className="bg-destructive/10 text-destructive p-3 rounded-md text-sm flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 shrink-0" />
-            <span>{(loginMutation.error as any)?.data?.error || "Failed to log in. Please check your credentials."}</span>
-          </div>
-        )}
+        {loginMutation.error && (() => {
+          const err = loginMutation.error as any;
+          const status = err?.status ?? err?.response?.status;
+          const serverMsg = err?.data?.error ?? err?.response?.data?.error;
+          const message =
+            status === 429
+              ? serverMsg ?? "Too many failed login attempts. Please try again later."
+              : serverMsg ?? "Failed to log in. Please check your credentials.";
+          return (
+            <div className="bg-destructive/10 text-destructive p-3 rounded-md text-sm flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>{message}</span>
+            </div>
+          );
+        })()}
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">

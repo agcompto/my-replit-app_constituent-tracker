@@ -17,6 +17,17 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     }
   }, [isLoading, error, location, setLocation]);
 
+  useEffect(() => {
+    if (
+      !isLoading &&
+      user &&
+      user.mustChangePassword &&
+      location !== "/change-password"
+    ) {
+      setLocation("/change-password");
+    }
+  }, [isLoading, user, location, setLocation]);
+
   if (isLoading) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-background">

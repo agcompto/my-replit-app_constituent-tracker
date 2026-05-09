@@ -18,6 +18,7 @@ export * from "./campaignType";
 export * from "./campaignTypeInput";
 export * from "./campaignTypeUpdate";
 export * from "./campaignUpdate";
+export * from "./changePasswordInput";
 export * from "./channel";
 export * from "./channelInput";
 export * from "./channelUpdate";

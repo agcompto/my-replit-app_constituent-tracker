@@ -11,6 +11,7 @@ export interface SessionUser {
   role: Role;
   active: boolean;
   piiAcknowledged: boolean;
+  mustChangePassword: boolean;
 }
 
 declare global {
@@ -32,6 +33,7 @@ export async function loadUser(userId: number): Promise<SessionUser | null> {
     role: u.role as Role,
     active: u.active,
     piiAcknowledged: u.piiAcknowledgedAt != null,
+    mustChangePassword: u.mustChangePassword,
   };
 }
 

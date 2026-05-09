@@ -30,6 +30,13 @@ export interface SessionUser {
   role: SessionUserRole;
   active: boolean;
   piiAcknowledged: boolean;
+  mustChangePassword: boolean;
+}
+
+export interface ChangePasswordInput {
+  currentPassword: string;
+  /** @minLength 8 */
+  newPassword: string;
 }
 
 export type UserRole = (typeof UserRole)[keyof typeof UserRole];

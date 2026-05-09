@@ -14,4 +14,5 @@ export interface SessionUser {
   role: SessionUserRole;
   active: boolean;
   piiAcknowledged: boolean;
+  mustChangePassword: boolean;
 }

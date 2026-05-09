@@ -6,6 +6,7 @@ import NotFound from "@/pages/not-found";
 import { AuthGuard } from "@/components/layout/AuthGuard";
 import { AppLayout } from "@/components/layout/AppLayout";
 import Login from "@/pages/login";
+import ChangePassword from "@/pages/change-password";
 import Dashboard from "@/pages/dashboard";
 import Campaigns from "@/pages/campaigns";
 import CampaignDetail from "@/pages/campaigns/detail";
@@ -53,6 +54,11 @@ function Router() {
   return (
     <Switch>
       <Route path="/login" component={Login} />
+      <Route path="/change-password">
+        <AuthGuard>
+          <ChangePassword />
+        </AuthGuard>
+      </Route>
       <Route path="*">
         <AuthenticatedRoutes />
       </Route>

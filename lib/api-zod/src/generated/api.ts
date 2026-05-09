@@ -26,6 +26,7 @@ export const LoginResponse = zod.object({
   role: zod.enum(["standard", "admin", "super_admin"]),
   active: zod.boolean(),
   piiAcknowledged: zod.boolean(),
+  mustChangePassword: zod.boolean(),
 });
 
 export const GetMeResponse = zod.object({
@@ -35,6 +36,7 @@ export const GetMeResponse = zod.object({
   role: zod.enum(["standard", "admin", "super_admin"]),
   active: zod.boolean(),
   piiAcknowledged: zod.boolean(),
+  mustChangePassword: zod.boolean(),
 });
 
 export const AcknowledgePiiResponse = zod.object({
@@ -44,6 +46,24 @@ export const AcknowledgePiiResponse = zod.object({
   role: zod.enum(["standard", "admin", "super_admin"]),
   active: zod.boolean(),
   piiAcknowledged: zod.boolean(),
+  mustChangePassword: zod.boolean(),
+});
+
+export const changeOwnPasswordBodyNewPasswordMin = 8;
+
+export const ChangeOwnPasswordBody = zod.object({
+  currentPassword: zod.string(),
+  newPassword: zod.string().min(changeOwnPasswordBodyNewPasswordMin),
+});
+
+export const ChangeOwnPasswordResponse = zod.object({
+  id: zod.number(),
+  email: zod.string(),
+  name: zod.string(),
+  role: zod.enum(["standard", "admin", "super_admin"]),
+  active: zod.boolean(),
+  piiAcknowledged: zod.boolean(),
+  mustChangePassword: zod.boolean(),
 });
 
 export const ListUsersResponseItem = zod.object({

@@ -29,6 +29,7 @@ import type {
   CampaignTypeInput,
   CampaignTypeUpdate,
   CampaignUpdate,
+  ChangePasswordInput,
   Channel,
   ChannelInput,
   ChannelUpdate,
@@ -431,6 +432,86 @@ export const useAcknowledgePii = <
   TContext
 > => {
   return useMutation(getAcknowledgePiiMutationOptions(options));
+};
+
+export const getChangeOwnPasswordUrl = () => {
+  return `/api/auth/change-password`;
+};
+
+export const changeOwnPassword = async (
+  changePasswordInput: ChangePasswordInput,
+  options?: RequestInit,
+): Promise<SessionUser> => {
+  return customFetch<SessionUser>(getChangeOwnPasswordUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(changePasswordInput),
+  });
+};
+
+export const getChangeOwnPasswordMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof changeOwnPassword>>,
+    TError,
+    { data: BodyType<ChangePasswordInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof changeOwnPassword>>,
+  TError,
+  { data: BodyType<ChangePasswordInput> },
+  TContext
+> => {
+  const mutationKey = ["changeOwnPassword"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof changeOwnPassword>>,
+    { data: BodyType<ChangePasswordInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return changeOwnPassword(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ChangeOwnPasswordMutationResult = NonNullable<
+  Awaited<ReturnType<typeof changeOwnPassword>>
+>;
+export type ChangeOwnPasswordMutationBody = BodyType<ChangePasswordInput>;
+export type ChangeOwnPasswordMutationError = ErrorType<unknown>;
+
+export const useChangeOwnPassword = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof changeOwnPassword>>,
+    TError,
+    { data: BodyType<ChangePasswordInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof changeOwnPassword>>,
+  TError,
+  { data: BodyType<ChangePasswordInput> },
+  TContext
+> => {
+  return useMutation(getChangeOwnPasswordMutationOptions(options));
 };
 
 export const getListUsersUrl = () => {

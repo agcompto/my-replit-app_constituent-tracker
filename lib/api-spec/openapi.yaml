@@ -81,6 +81,21 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SessionUser" }
+  /auth/change-password:
+    post:
+      operationId: changeOwnPassword
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChangePasswordInput" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionUser" }
 
   # ───────── Users (admin)
   /users:
@@ -736,7 +751,7 @@ components:
 
     SessionUser:
       type: object
-      required: [id, email, name, role, active, piiAcknowledged]
+      required: [id, email, name, role, active, piiAcknowledged, mustChangePassword]
       properties:
         id: { type: integer }
         email: { type: string }
@@ -744,6 +759,14 @@ components:
         role: { type: string, enum: [standard, admin, super_admin] }
         active: { type: boolean }
         piiAcknowledged: { type: boolean }
+        mustChangePassword: { type: boolean }
+
+    ChangePasswordInput:
+      type: object
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword: { type: string }
+        newPassword: { type: string, minLength: 8 }
 
     User:
       type: object

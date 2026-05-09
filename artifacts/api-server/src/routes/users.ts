@@ -42,7 +42,13 @@ router.post("/users", requireRole("admin", "super_admin"), async (req, res): Pro
   try {
     const [u] = await db
       .insert(usersTable)
-      .values({ email: email.toLowerCase().trim(), name, role, passwordHash })
+      .values({
+        email: email.toLowerCase().trim(),
+        name,
+        role,
+        passwordHash,
+        mustChangePassword: true,
+      })
       .returning();
     await audit({
       actor: req.currentUser!,
@@ -122,7 +128,7 @@ router.post(
     const passwordHash = await bcrypt.hash(body.data.password, 10);
     const [u] = await db
       .update(usersTable)
-      .set({ passwordHash })
+      .set({ passwordHash, mustChangePassword: true })
       .where(eq(usersTable.id, params.data.id))
       .returning();
     if (!u) {
