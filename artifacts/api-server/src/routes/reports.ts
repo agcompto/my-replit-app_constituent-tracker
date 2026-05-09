@@ -10,12 +10,12 @@ import {
   exportJobsTable,
   usersTable,
 } from "@workspace/db";
-import { requireAuth } from "../lib/auth";
+import { requireRole } from "../lib/auth";
 import { loadCampaignSummary } from "../lib/campaigns";
 
 const router: IRouter = Router();
 
-router.get("/reports/dashboard", requireAuth, async (_req, res): Promise<void> => {
+router.get("/reports/dashboard", requireRole("admin", "super_admin"), async (_req, res): Promise<void> => {
   const [totals] = await db
     .select({
       totalCampaigns: sql<number>`(select count(*)::int from ${campaignsTable})`,
@@ -62,7 +62,7 @@ router.get("/reports/dashboard", requireAuth, async (_req, res): Promise<void> =
   });
 });
 
-router.get("/reports/upcoming-volume", requireAuth, async (_req, res): Promise<void> => {
+router.get("/reports/upcoming-volume", requireRole("admin", "super_admin"), async (_req, res): Promise<void> => {
   const rows = await db
     .select({
       sendDate: touchpointsTable.sendDate,
@@ -86,7 +86,7 @@ router.get("/reports/upcoming-volume", requireAuth, async (_req, res): Promise<v
   );
 });
 
-router.get("/reports/high-volume-donors", requireAuth, async (req, res): Promise<void> => {
+router.get("/reports/high-volume-donors", requireRole("admin", "super_admin"), async (req, res): Promise<void> => {
   const minRaw = req.query.minTouchpoints;
   const min = typeof minRaw === "string" ? parseInt(minRaw, 10) : 5;
   const minVal = Number.isFinite(min) ? min : 5;
@@ -126,7 +126,7 @@ router.get("/reports/high-volume-donors", requireAuth, async (req, res): Promise
   );
 });
 
-router.get("/reports/upload-history", requireAuth, async (_req, res): Promise<void> => {
+router.get("/reports/upload-history", requireRole("admin", "super_admin"), async (_req, res): Promise<void> => {
   const rows = await db
     .select({
       id: uploadJobsTable.id,
@@ -146,7 +146,7 @@ router.get("/reports/upload-history", requireAuth, async (_req, res): Promise<vo
   res.json(rows.map((r) => ({ ...r, uploadedAt: r.uploadedAt.toISOString() })));
 });
 
-router.get("/reports/export-history", requireAuth, async (_req, res): Promise<void> => {
+router.get("/reports/export-history", requireRole("admin", "super_admin"), async (_req, res): Promise<void> => {
   const rows = await db
     .select({
       id: exportJobsTable.id,
