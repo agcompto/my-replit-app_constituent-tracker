@@ -1,0 +1,105 @@
+import { Router, type IRouter } from "express";
+import { eq } from "drizzle-orm";
+import { db, appSettingsTable, campaignsTable } from "@workspace/db";
+import { UpdateSettingsBody, RunRetentionDeleteBody } from "@workspace/api-zod";
+import { requireAuth, requireRole, audit } from "../lib/auth";
+
+const router: IRouter = Router();
+
+async function loadSettings() {
+  const [s] = await db.select().from(appSettingsTable).limit(1);
+  if (!s) {
+    const [created] = await db.insert(appSettingsTable).values({ id: 1 }).returning();
+    return created;
+  }
+  return s;
+}
+
+router.get("/settings", requireAuth, async (_req, res): Promise<void> => {
+  const s = await loadSettings();
+  res.json({
+    fiscalYearStartMonth: s.fiscalYearStartMonth,
+    fiscalYearStartDay: s.fiscalYearStartDay,
+    googleSheetImportEnabled: s.googleSheetImportEnabled,
+    retentionDeleteEnabled: s.retentionDeleteEnabled,
+    globalThresholdsEnabled: s.globalThresholdsEnabled,
+  });
+});
+
+router.patch(
+  "/settings",
+  requireRole("admin", "super_admin"),
+  async (req, res): Promise<void> => {
+    const parsed = UpdateSettingsBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.message });
+      return;
+    }
+    const s = await loadSettings();
+    const [updated] = await db
+      .update(appSettingsTable)
+      .set(parsed.data)
+      .where(eq(appSettingsTable.id, s.id))
+      .returning();
+    await audit({
+      actor: req.currentUser!,
+      action: "update_settings",
+      entityType: "settings",
+      entityId: updated.id,
+      details: JSON.stringify(parsed.data),
+    });
+    res.json({
+      fiscalYearStartMonth: updated.fiscalYearStartMonth,
+      fiscalYearStartDay: updated.fiscalYearStartDay,
+      googleSheetImportEnabled: updated.googleSheetImportEnabled,
+      retentionDeleteEnabled: updated.retentionDeleteEnabled,
+      globalThresholdsEnabled: updated.globalThresholdsEnabled,
+    });
+  },
+);
+
+router.post(
+  "/retention/delete",
+  requireRole("super_admin"),
+  async (req, res): Promise<void> => {
+    const parsed = RunRetentionDeleteBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.message });
+      return;
+    }
+    const s = await loadSettings();
+    if (!s.retentionDeleteEnabled) {
+      res.status(403).json({ error: "Retention delete is not enabled in settings." });
+      return;
+    }
+    if (!parsed.data.confirm) {
+      res.status(400).json({ error: "Confirmation required." });
+      return;
+    }
+    // Count touchpoints before deletion
+    const olderThan = parsed.data.olderThan;
+    const { sql } = await import("drizzle-orm");
+    const { touchpointsTable } = await import("@workspace/db");
+    const [counts] = await db
+      .select({
+        campaigns: sql<number>`(select count(*)::int from ${campaignsTable} where created_at < ${olderThan}::date)`,
+        touchpoints: sql<number>`(select count(*)::int from ${touchpointsTable} where send_date < ${olderThan}::date)`,
+      })
+      .from(sql`(select 1) t`);
+    await db.execute(
+      sql`delete from ${campaignsTable} where created_at < ${olderThan}::date`,
+    );
+    await audit({
+      actor: req.currentUser!,
+      action: "retention_delete",
+      entityType: "system",
+      details: `older_than=${olderThan} campaigns=${counts?.campaigns ?? 0} touchpoints=${counts?.touchpoints ?? 0}`,
+    });
+    res.json({
+      campaignsDeleted: counts?.campaigns ?? 0,
+      touchpointsDeleted: counts?.touchpoints ?? 0,
+    });
+  },
+);
+
+export default router;

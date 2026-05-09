@@ -1,0 +1,255 @@
+import { useGetSettings, useUpdateSettings, useListCampaignTypes, useCreateCampaignType, useUpdateCampaignType, useListChannels, useCreateChannel, useUpdateChannel, useRunRetentionDelete, getListCampaignTypesQueryKey, getListChannelsQueryKey, getGetSettingsQueryKey } from "@workspace/api-client-react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Loader2, Plus, AlertTriangle } from "lucide-react";
+import { useState } from "react";
+import { useGetMe } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+
+export default function Settings() {
+  const { data: me } = useGetMe();
+  const isAdmin = me?.role === "admin" || me?.role === "super_admin";
+  const isSuperAdmin = me?.role === "super_admin";
+
+  const { data: settings, isLoading: settingsLoading } = useGetSettings();
+  const updateSettings = useUpdateSettings();
+  
+  const { data: campaignTypes, isLoading: typesLoading } = useListCampaignTypes();
+  const createCampaignType = useCreateCampaignType();
+  const updateCampaignType = useUpdateCampaignType();
+
+  const { data: channels, isLoading: channelsLoading } = useListChannels();
+  const createChannel = useCreateChannel();
+  const updateChannel = useUpdateChannel();
+
+  const runRetention = useRunRetentionDelete();
+
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const [newTypeName, setNewTypeName] = useState("");
+  const [newChannelName, setNewChannelName] = useState("");
+
+  const [retentionDate, setRetentionDate] = useState("");
+  const [retentionConfirmOpen, setRetentionConfirmOpen] = useState(false);
+
+  if (!isAdmin) {
+    return <div className="p-8 text-center text-muted-foreground">Access denied.</div>;
+  }
+
+  const handleUpdateSetting = (key: string, value: any) => {
+    updateSettings.mutate({ data: { [key]: value } }, {
+      onSuccess: () => {
+        toast({ title: "Settings updated" });
+        queryClient.invalidateQueries({ queryKey: getGetSettingsQueryKey() });
+      }
+    });
+  };
+
+  const handleAddType = () => {
+    if (!newTypeName) return;
+    createCampaignType.mutate({ data: { name: newTypeName } }, {
+      onSuccess: () => {
+        setNewTypeName("");
+        toast({ title: "Campaign type added" });
+        queryClient.invalidateQueries({ queryKey: getListCampaignTypesQueryKey() });
+      }
+    });
+  };
+
+  const handleAddChannel = () => {
+    if (!newChannelName) return;
+    createChannel.mutate({ data: { name: newChannelName } }, {
+      onSuccess: () => {
+        setNewChannelName("");
+        toast({ title: "Channel added" });
+        queryClient.invalidateQueries({ queryKey: getListChannelsQueryKey() });
+      }
+    });
+  };
+
+  const handleToggleType = (id: number, active: boolean) => {
+    updateCampaignType.mutate({ id, data: { active } }, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListCampaignTypesQueryKey() });
+      }
+    });
+  };
+
+  const handleToggleChannel = (id: number, active: boolean) => {
+    updateChannel.mutate({ id, data: { active } }, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListChannelsQueryKey() });
+      }
+    });
+  };
+
+  const handleRetention = () => {
+    runRetention.mutate({ data: { olderThan: retentionDate, confirm: true } }, {
+      onSuccess: (res) => {
+        setRetentionConfirmOpen(false);
+        toast({ 
+          title: "Retention policy applied", 
+          description: `Deleted ${res.campaignsDeleted} campaigns and ${res.touchpointsDeleted} touchpoints.` 
+        });
+      }
+    });
+  };
+
+  return (
+    <div className="space-y-6 max-w-5xl">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">System Settings</h1>
+        <p className="text-muted-foreground text-sm">Configure system-wide parameters and taxonomy.</p>
+      </div>
+
+      <Tabs defaultValue="taxonomy">
+        <TabsList className="mb-4">
+          <TabsTrigger value="taxonomy">Taxonomy</TabsTrigger>
+          <TabsTrigger value="system">System Parameters</TabsTrigger>
+          {isSuperAdmin && <TabsTrigger value="retention" className="text-destructive data-[state=active]:text-destructive">Data Retention</TabsTrigger>}
+        </TabsList>
+
+        <TabsContent value="taxonomy" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Campaign Types</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-2 mb-4">
+                <Input placeholder="New Campaign Type Name" value={newTypeName} onChange={e => setNewTypeName(e.target.value)} className="max-w-xs" />
+                <Button onClick={handleAddType} disabled={!newTypeName || createCampaignType.isPending}><Plus className="h-4 w-4 mr-2" /> Add</Button>
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead className="w-[100px] text-right">Active</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {typesLoading ? <TableRow><TableCell colSpan={2} className="text-center h-24"><Loader2 className="animate-spin h-5 w-5 mx-auto" /></TableCell></TableRow> : 
+                  campaignTypes?.map(t => (
+                    <TableRow key={t.id}>
+                      <TableCell className="font-medium">{t.name}</TableCell>
+                      <TableCell className="text-right">
+                        <Switch checked={t.active} onCheckedChange={(checked) => handleToggleType(t.id, checked)} disabled={t.systemDefault} />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Channels</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-2 mb-4">
+                <Input placeholder="New Channel Name" value={newChannelName} onChange={e => setNewChannelName(e.target.value)} className="max-w-xs" />
+                <Button onClick={handleAddChannel} disabled={!newChannelName || createChannel.isPending}><Plus className="h-4 w-4 mr-2" /> Add</Button>
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead className="w-[100px] text-right">Active</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {channelsLoading ? <TableRow><TableCell colSpan={2} className="text-center h-24"><Loader2 className="animate-spin h-5 w-5 mx-auto" /></TableCell></TableRow> : 
+                  channels?.map(c => (
+                    <TableRow key={c.id}>
+                      <TableCell className="font-medium">{c.name}</TableCell>
+                      <TableCell className="text-right">
+                        <Switch checked={c.active} onCheckedChange={(checked) => handleToggleChannel(c.id, checked)} disabled={c.systemDefault} />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="system" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Feature Toggles</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {settingsLoading ? <Loader2 className="animate-spin h-5 w-5" /> : (
+                <>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label className="text-base">Google Sheets Import</Label>
+                      <p className="text-sm text-muted-foreground">Allow users to paste Google Sheet URLs for audience uploads.</p>
+                    </div>
+                    <Switch checked={settings?.googleSheetImportEnabled} onCheckedChange={c => handleUpdateSetting('googleSheetImportEnabled', c)} />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label className="text-base">Global Thresholds</Label>
+                      <p className="text-sm text-muted-foreground">Enable system-wide threshold limits (Disabled by default).</p>
+                    </div>
+                    <Switch checked={settings?.globalThresholdsEnabled} onCheckedChange={c => handleUpdateSetting('globalThresholdsEnabled', c)} />
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {isSuperAdmin && (
+          <TabsContent value="retention" className="space-y-6">
+            <Card className="border-destructive">
+              <CardHeader>
+                <CardTitle className="text-destructive flex items-center"><AlertTriangle className="h-5 w-5 mr-2" /> Data Retention Tool</CardTitle>
+                <CardDescription>Permanently remove old campaigns and touchpoints.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex gap-4 items-end">
+                  <div className="space-y-2 flex-1 max-w-xs">
+                    <Label>Delete records older than</Label>
+                    <Input type="date" value={retentionDate} onChange={e => setRetentionDate(e.target.value)} />
+                  </div>
+                  <Button variant="destructive" onClick={() => setRetentionConfirmOpen(true)} disabled={!retentionDate || runRetention.isPending}>
+                    Run Deletion
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Dialog open={retentionConfirmOpen} onOpenChange={setRetentionConfirmOpen}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle className="text-destructive">Confirm Permanent Deletion</DialogTitle>
+                </DialogHeader>
+                <div className="py-4">
+                  <p>You are about to permanently delete all campaigns and touchpoints older than <strong>{retentionDate}</strong>. This action cannot be undone.</p>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setRetentionConfirmOpen(false)}>Cancel</Button>
+                  <Button variant="destructive" onClick={handleRetention} disabled={runRetention.isPending}>
+                    {runRetention.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                    Yes, Delete Data
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </TabsContent>
+        )}
+      </Tabs>
+    </div>
+  );
+}

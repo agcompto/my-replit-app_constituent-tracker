@@ -1,0 +1,1634 @@
+Build a full-stack web app called “Constituent Touchpoint Planner.”
+
+This should be a production-quality MVP for an internal NC State University Advancement administrative tool.
+
+The primary goal of Constituent Touchpoint Planner is to help approved Alumni Engagement and Annual Giving staff upload donor ID-only campaign audiences, define planned communication touchpoints by channel and send date, check communication volume against user-defined thresholds, apply campaign-specific suppressions and seed IDs, generate final donor ID-only send lists, and store exported touchpoints for future communication volume reference.
+
+This app is not a CRM, not a marketing automation system, and not a PII storage system. It is a donor ID-only campaign communication volume planning and touchpoint tracking tool.
+
+The app should help answer:
+- Which Donor IDs are scheduled to receive communications?
+- How many touchpoints will each Donor ID receive in a selected timeframe?
+- How many touchpoints will each Donor ID receive by channel?
+- How many touchpoints will each Donor ID receive by campaign type?
+- Which Donor IDs exceed user-defined communication thresholds?
+- Which Donor IDs should be suppressed from specific sends, channels, or campaign types?
+- Which final Donor IDs should be exported for each send?
+- What communication touchpoints have already been exported/sent and should count toward future checks?
+- What is the communication volume by Donor ID, channel, campaign type, date, campaign, and submitting user?
+
+Optimize the application around accurate Donor ID normalization, clean no-PII workflows, reliable threshold checking, clear preview counts, accessible review/export workflows, and durable touchpoint history.
+
+Core workflow:
+Login → Create campaign → Upload donor ID audience via CSV or Google Sheet URL → Map/confirm donor ID column → Validate/normalize/deduplicate IDs → Build planned touchpoints → Create threshold checks → Preview projected volume → Review flagged IDs → Apply campaign-specific suppressions and seed IDs → Generate one final donor ID-only CSV per send → Mark exported touchpoints as sent/planned in the database → Use exported touchpoints in future threshold checks.
+
+────────────────────────────────────────
+IMPORTANT PRE-UPDATE / IMPLEMENTATION INSTRUCTIONS
+────────────────────────────────────────
+
+Before making changes:
+1. Inspect the existing codebase and summarize the current implementation.
+2. Identify which features are already partially or fully implemented.
+3. Do not duplicate existing tables, routes, components, or services.
+4. Prefer improving existing files over creating parallel replacements.
+5. Do not make broad rewrites unless absolutely necessary.
+6. Do not change generated files manually.
+7. Do not run destructive database commands.
+8. If a requested item is too large for one update, implement the safest foundational pieces first and document what remains.
+9. Preserve all existing working flows unless explicitly changing them.
+10. Make changes in small, reviewable logical groups if the environment supports it.
+
+Before editing, provide a short implementation plan listing:
+- existing files/routes/services to modify
+- new files/routes/services to add
+- database changes required
+- API changes required
+- frontend pages to update
+- risks or assumptions
+
+Do not claim completion unless the app runs and typechecks/builds.
+
+If typecheck/build fails, summarize:
+- exact errors
+- what was fixed
+- what still needs manual review
+
+────────────────────────────────────────
+PRIMARY USERS AND ROLES
+────────────────────────────────────────
+
+Primary users:
+The app will initially be used by approved staff in Alumni Engagement and Annual Giving.
+
+User roles:
+1. Standard User
+2. Admin
+3. Super Admin
+
+Role behavior:
+- All staff can see all campaigns.
+- All staff should have a quick filter for “My submissions.”
+- Standard users can create campaigns, upload audiences, build touchpoints, run threshold checks, override threshold flags, add campaign-specific suppressions/seeds, and export their own campaign files.
+- Standard users can view all campaigns but should only export their own campaign files.
+- Standard users cannot edit exported campaigns.
+- Admins can manage users, campaign types, channels, campaigns, reporting, settings, archive/void campaigns, and export all campaigns.
+- Admins can edit, archive, or void exported campaigns.
+- Super Admins can do everything Admins can do, plus manage retention/deletion tools and higher-risk system settings.
+- Super Admins can permanently delete old records according to retention tools.
+
+Authentication:
+- Use simple username/password or email/password login for the MVP.
+- Passwords must be hashed.
+- Use session-based authentication.
+- Include logout.
+- Restrict routes based on user role.
+- Enforce roles server-side, not only in the frontend.
+- New users should be created only by Admins or Super Admins.
+- Include basic login rate limiting.
+- Sessions should expire after inactivity.
+- Include a seeded default Super Admin or Admin account for development.
+- Make it clear in README and UI that seeded credentials must be changed before real use.
+
+Suggested seeded development credentials:
+- Email: admin@example.com
+- Password: changeme123
+
+Environment variables:
+Use environment variables for all secrets/configuration:
+- DATABASE_URL
+- SESSION_SECRET
+- ADMIN_EMAIL
+- ADMIN_PASSWORD
+- APP_ENV
+- GOOGLE_SHEET_IMPORT_ENABLED
+- RETENTION_DELETE_ENABLED
+
+Do not hard-code secrets.
+
+────────────────────────────────────────
+APP NAME AND BRAND HEADER
+────────────────────────────────────────
+
+App name:
+Constituent Touchpoint Planner
+
+Header/brand text:
+NC State University Advancement
+
+Do not use or fabricate an official NC State logo unless an approved logo asset is provided. Use text branding and NC State-inspired colors by default.
+
+────────────────────────────────────────
+NO-PII DATA HANDLING
+────────────────────────────────────────
+
+This app must be designed around a strict no-unnecessary-PII principle.
+
+The app should use Donor ID as the primary and only constituent identifier.
+
+Do not ask for, store, display, or export:
+- names
+- email addresses
+- phone numbers
+- mailing addresses
+- giving amounts
+- employment information
+- personal notes about constituents
+- any other unnecessary personal information
+
+Allowed constituent-level field:
+- normalized Donor ID only
+
+Donor ID normalization:
+- Donor IDs from Lobo/Salesforce are numeric.
+- Donor IDs may be uploaded with or without leading zeroes.
+- Normalize all Donor IDs to exactly 8 digits by left-padding with zeroes.
+- Examples:
+  - 258155 → 00258155
+  - 119454 → 00119454
+  - 1017955 → 01017955
+  - 00258155 → 00258155
+- Reject IDs longer than 8 digits.
+- Reject IDs containing letters or special characters.
+- Trim leading/trailing whitespace before validation.
+- Blank rows should be ignored and counted as skipped rows.
+- Preserve leading zeroes in all displays and exports.
+
+Upload requirements:
+- Main audience uploads should contain one Donor ID column.
+- CSV uploads may have a header row or no header row.
+- Users should be able to map/confirm the Donor ID column before processing.
+- Accept likely column names such as:
+  - donor_id
+  - Donor ID
+  - LOBO ID
+  - Lobo ID
+  - Salesforce ID
+  - Constituent ID
+  - ID
+- If extra columns are present, ignore them and do not store them.
+- Show a warning:
+  “Only Donor ID values were processed. Extra columns were ignored and not stored.”
+- Source upload files should be deleted after processing.
+- Store only normalized Donor IDs and campaign/touchpoint metadata.
+
+PII detection:
+Add basic PII warning support for campaign notes, internal notes, and suppression notes.
+
+When a user enters notes, check for common PII patterns such as:
+- email address pattern
+- phone number pattern
+- street address-like pattern
+
+If detected, show a non-blocking warning:
+“Please avoid entering names, phone numbers, email addresses, or other unnecessary PII. This system should use Donor ID only.”
+
+Allow the user to revise before saving.
+
+First-login or recurring acknowledgement:
+Add a simple acknowledgement modal or banner reminding users:
+“Use Donor ID only. Do not upload or enter unnecessary PII.”
+
+No-PII helper text:
+Add visible reminders on:
+- upload screens
+- notes fields
+- suppression screens
+- export screens
+
+Suggested helper text:
+“Use Donor ID only. Do not upload or enter names, phone numbers, email addresses, addresses, giving amounts, or other unnecessary PII.”
+
+────────────────────────────────────────
+CORE DATA MODEL CONCEPT
+────────────────────────────────────────
+
+A touchpoint equals:
+One planned send to one Donor ID.
+
+Example:
+If 10,000 Donor IDs receive 3 emails, that creates 30,000 touchpoint records after export.
+
+For the MVP:
+- One campaign has one primary uploaded audience.
+- Each campaign can have multiple planned sends/touchpoints.
+- Each touch applies to the full uploaded audience by default.
+- IDs can later be removed by channel/send-specific suppression.
+- Do not support multiple audience subsets per touch in the first version.
+- This may be revisited later.
+
+────────────────────────────────────────
+CAMPAIGN SETUP
+────────────────────────────────────────
+
+Users create a campaign with these fields:
+- Campaign name
+- Campaign type or types
+- Owning unit/team
+- Submitted by
+- Intended send start date
+- Audience description
+- Salesforce campaign ID, optional
+- Internal notes, optional
+
+Required fields:
+- Campaign name
+- At least one campaign type
+- At least one planned communication touch
+- Audience upload
+
+Campaign names do not need to be unique.
+
+Campaign type:
+- One campaign may have multiple campaign types.
+- Campaign-level types are overall categorization.
+- Touch-level campaign type is what should be used for threshold logic.
+- Campaign types should be admin-managed.
+- Seed defaults:
+  - Event Invite
+  - Solicitation
+  - General Communication
+- Admins should be able to add, edit, activate, and deactivate campaign types.
+- Do not hard-delete campaign types that have historical usage.
+- Historical records should preserve the campaign type label used at the time.
+
+────────────────────────────────────────
+AUDIENCE UPLOAD
+────────────────────────────────────────
+
+Main campaign audience upload options:
+1. CSV file upload
+2. Google Sheet URL one-time import
+
+Suppression and seed list input options:
+1. CSV file upload
+2. Google Sheet URL one-time import
+3. Manual paste/text box
+
+CSV upload behavior:
+- Accept a one-column CSV with or without a header.
+- Allow user to map/confirm Donor ID column.
+- Ignore extra columns and do not store them.
+- Display warning if extra columns exist.
+- Normalize all valid Donor IDs to 8 digits.
+- Deduplicate automatically.
+- Reject invalid Donor IDs.
+- Ignore blank rows and count them.
+- Show validation results before proceeding.
+- Allow rejected IDs to be downloaded.
+- Allow duplicate IDs to be downloaded if useful.
+- Delete source file after processing.
+- Store only normalized Donor IDs.
+
+Google Sheet URL behavior:
+- Accept a Google Sheet URL that is viewable by link or published/exportable as CSV.
+- Use one-time import only.
+- Do not build Google OAuth for the MVP.
+- If the Google Sheet is private or inaccessible, show a clear error:
+  “This Google Sheet could not be imported. For the MVP, the sheet must be accessible by link or exported as CSV.”
+- Allow user to map/confirm Donor ID column after import.
+- Apply the same validation, normalization, deduplication, and warning logic as CSV upload.
+
+Upload result summary:
+After processing, show:
+- Original uploaded row count
+- Blank rows skipped
+- Valid normalized Donor ID count
+- Unique Donor ID count
+- Duplicate Donor ID count
+- Invalid/rejected Donor ID count
+- Extra columns ignored warning, if applicable
+- Download rejected IDs button
+- Download duplicate IDs button, if applicable
+- Proceed to Touch Builder button
+
+────────────────────────────────────────
+TOUCH BUILDER
+────────────────────────────────────────
+
+Instead of only asking for a number of messages, use a Touch Builder where the user creates one row per planned communication.
+
+Each planned touch should include:
+- Touch name
+- Channel
+- Campaign type
+- Send date
+- Optional notes
+
+Initial channels:
+- Mail
+- Email
+- Text Message
+
+Channel behavior:
+- Channels should be admin-managed.
+- Default channels should be seeded.
+- System default channels cannot be hard-deleted.
+- System default channels may be deactivated by Super Admin if needed.
+- Admins can add, edit, activate, and deactivate channels.
+- Historical records should preserve the channel label used at the time.
+
+Touch behavior:
+- Each touch applies to the full uploaded audience by default.
+- Standard users may create touches with past dates, but the app should show a clear warning.
+- If two touches use the same channel and same date, allow it but warn the user.
+- Send date should be selected with an accessible calendar/date picker and also support keyboard entry.
+- Each touch should be editable while the campaign is in Draft, Uploaded, Previewed, or Finalized status.
+- Once exported, Standard Users cannot edit the campaign or touches.
+- Admins can edit exported campaigns/touches with full audit logging.
+
+Example touch plan:
+- Touch 1: Email — Event Invite — September 1, 2026
+- Touch 2: Email — Event Invite — September 8, 2026
+- Touch 3: Text Message — Event Invite — September 10, 2026
+- Touch 4: Mail — Solicitation — September 15, 2026
+
+────────────────────────────────────────
+THRESHOLD / COMMUNICATION VOLUME CHECKER
+────────────────────────────────────────
+
+Users create thresholds each time during campaign setup.
+
+Admin panel can support reusable/global threshold templates later, but global default thresholds should not be turned on by default.
+
+Threshold types:
+Users should be able to test:
+- Max total touchpoints in X days
+- Max touchpoints by channel in X days
+- Max touchpoints by campaign type in X days
+- Max touchpoints by channel + campaign type in X days
+- Max solicitations in X days
+- Max emails in X days
+- Max texts in X days
+- Max mail touches in X days
+
+Threshold filters:
+Users should be able to include:
+- All campaign types
+- Specific campaign types
+- All channels
+- Specific channels
+- Channel + campaign type combinations
+
+Threshold mode:
+Use any rolling window including the proposed touch.
+
+The UI must clearly explain this. Include text like:
+“A 14-day threshold checks any 14-day period that includes each selected send date. This includes other planned touches in this campaign and previously exported touchpoints.”
+
+Important threshold rules:
+- The proposed campaign’s own planned touches should count against itself.
+- Exported / Sent touchpoints from previous campaigns count.
+- Archived campaigns still count.
+- Voided campaigns do not count.
+- Deleted campaigns do not count.
+- Draft, Uploaded, Previewed, and Finalized campaigns do not count until exported.
+- Seed IDs do not count toward thresholds.
+- Suppressed donor touches should not count in final post-suppression export counts.
+- Because suppressions are applied near the end, the app should show both pre-suppression projected counts and post-suppression final export counts.
+
+Default threshold action:
+- Flag only.
+- Do not remove flagged IDs unless the user chooses to suppress/remove them.
+
+User actions for threshold results:
+- Track only, do not suppress
+- Flag only
+- Automatically remove flagged IDs
+- Manually review flagged IDs
+- Override flagged IDs
+
+Standard users can override threshold flags.
+
+No override reason is required.
+
+Threshold preview should include clear explanations:
+Example:
+“Donor ID 00258155 is projected to receive 6 email touchpoints in a 14-day rolling window. Your selected threshold is 5 email touchpoints in 14 days.”
+
+Live recalculation:
+- Counts should update live as users adjust threshold settings.
+- If full live recalculation is expensive, use a clear “Recalculate Preview” button and accessible loading state.
+
+────────────────────────────────────────
+PREVIEW RESULTS
+────────────────────────────────────────
+
+The preview should show:
+- Original uploaded row count
+- Blank rows skipped
+- Unique valid Donor ID count
+- Duplicate ID count
+- Invalid/rejected ID count
+- Extra-column warning if applicable
+- IDs exceeding selected threshold
+- IDs manually suppressed
+- Seed ID count
+- Final eligible count
+- Final eligible count by channel
+- Final eligible count by send/touch
+- Final suppressed count by channel
+- Final suppressed count by send/touch
+- Total planned touchpoints before suppression
+- Total planned touchpoints after suppression
+- Total touchpoint records to be stored after export
+
+The preview should clearly separate:
+1. Pre-suppression projected counts
+2. Threshold conflict counts
+3. Post-suppression final export counts
+
+Users should be able to download:
+- Original normalized list
+- Rejected ID list
+- Duplicate ID list
+- Flagged ID list
+- Suppressed ID list
+- Final eligible list by channel/send
+- Final seed list
+- Full campaign summary CSV
+
+Every flagged Donor ID should include a text explanation of why it was flagged.
+
+────────────────────────────────────────
+SUPPRESSION AND SEED HANDLING
+────────────────────────────────────────
+
+For the MVP:
+- No system-wide suppression lists.
+- No saved reusable suppression lists.
+- Campaign-specific suppressions only.
+- Suppression reasons are optional.
+
+Suppression input options:
+- CSV upload
+- Google Sheet URL
+- Manual paste box
+
+Suppression lists can apply to:
+- All channels
+- Specific channels
+- Specific campaign types
+- Specific sends/touchpoints
+
+Suppression behavior:
+- Suppressions remove Donor IDs from the selected final exports.
+- Suppressed touchpoints should not be stored as sent/included touchpoint records.
+- The system may store suppression metadata for the campaign/export summary.
+- Suppression reason is optional.
+- Suppression notes should include no-PII warning and basic PII pattern detection.
+
+Seed ID input options:
+- CSV upload
+- Google Sheet URL
+- Manual paste box
+
+Seed behavior:
+- Seed IDs are Donor IDs.
+- Seed IDs must pass the same 8-digit validation/normalization.
+- Invalid seed IDs should be rejected and downloadable.
+- Seed IDs can be added to:
+  - all exports
+  - specific channel exports
+  - specific send/touch exports
+- Seed IDs appear at the bottom of exported CSVs.
+- Seed IDs should not count toward thresholds.
+- Seed IDs should not create stored donor touchpoint records.
+- Seed IDs should not be stored as constituent communication history.
+- Seed IDs do not need to be stored in export history for MVP.
+- Deduplicate seed IDs within each export.
+- If a seed ID already exists in the audience, do not duplicate it in the export.
+
+────────────────────────────────────────
+FINAL EXPORTS
+────────────────────────────────────────
+
+The app should produce one CSV file per send/touchpoint.
+
+Example:
+If a campaign has:
+- Email — September 1, 2026
+- Email — September 8, 2026
+- Text Message — September 10, 2026
+- Mail — September 15, 2026
+
+The app should generate:
+- campaign-email-2026-09-01.csv
+- campaign-email-2026-09-08.csv
+- campaign-text-2026-09-10.csv
+- campaign-mail-2026-09-15.csv
+
+Each final send-list CSV should contain Donor IDs only.
+
+CSV structure:
+donor_id
+00258155
+00119454
+01017955
+
+Final send-list CSV rules:
+- Include only donor_id column.
+- Preserve leading zeroes.
+- No names.
+- No email addresses.
+- No phone numbers.
+- No addresses.
+- No giving amounts.
+- No campaign metadata.
+- No other PII.
+
+Administrative/reporting exports may include:
+- campaign metadata
+- counts
+- channel
+- send date
+- campaign type
+- status
+- submitting user
+- Donor ID
+- suppression reason/category
+- export metadata
+
+But no names, emails, phones, addresses, giving amounts, or other PII.
+
+Export behavior:
+- Once exports are generated, the campaign is considered Exported / Sent.
+- Exported touchpoints count toward future threshold checks based on the send dates in the system.
+- Export should warn the user before finalizing:
+  “Exporting this campaign will save these touchpoints as sent/planned communications and include them in future communication volume checks based on the send dates shown.”
+- Downloaded CSV files should be generated on demand and not stored on the server for MVP.
+- Store export metadata only.
+
+Each export should create an export job record with:
+- exported_by
+- exported_at
+- campaign_id
+- touch_id
+- row_count
+- seed_count
+- suppressed_count
+- file_name
+
+CSV safety:
+All CSV exports must protect against CSV formula injection.
+
+When generating CSVs, escape any cell beginning with:
+- =
+- +
+- -
+- @
+- tab
+- carriage return
+
+This applies to all exported CSV files, including:
+- final channel/send exports
+- rejected ID exports
+- duplicate ID exports
+- suppressed ID exports
+- flagged ID exports
+- campaign summary exports
+- system-wide touchpoint history exports
+- audit exports
+
+────────────────────────────────────────
+CAMPAIGN STATUS WORKFLOW
+────────────────────────────────────────
+
+Use these campaign statuses:
+- Draft
+- Uploaded
+- Previewed
+- Finalized
+- Exported / Sent
+- Archived
+- Voided
+
+Status rules:
+- Draft does not count toward future thresholds.
+- Uploaded does not count toward future thresholds.
+- Previewed does not count toward future thresholds.
+- Finalized does not count toward future thresholds.
+- Exported / Sent does count toward future thresholds.
+- Archived still counts.
+- Voided does not count.
+- Deleted does not count.
+
+Once exported, the campaign is considered sent based on the send dates in the system.
+
+After export:
+- Standard users cannot edit exported campaigns.
+- Admins can edit, archive, or void exported campaigns.
+- Super Admins can permanently delete records according to retention tools.
+- Any edit to an exported campaign must create an audit log entry.
+- If an Admin changes dates after export, future threshold calculations should use the updated date and preserve audit history.
+
+Admins should be able to remove or void a campaign from future calculations without deleting it.
+
+────────────────────────────────────────
+ADMIN DASHBOARD AND SETTINGS
+────────────────────────────────────────
+
+Admins should be able to manage:
+- Users
+- Roles
+- Campaign types
+- Communication channels
+- Campaigns
+- Upload history
+- Export history
+- Audit logs
+- Reporting settings
+- Fiscal year settings
+- Optional reusable/global thresholds, not enabled by default
+
+Super Admins should also manage:
+- Retention/deletion tools
+- Permanent delete actions
+- Higher-risk system settings
+
+Admin campaign type management:
+- Add campaign type
+- Edit campaign type
+- Activate/deactivate campaign type
+- Preserve historical labels
+- Do not hard-delete types used in historical records
+
+Admin channel management:
+- Add channel
+- Edit channel
+- Activate/deactivate channel
+- Preserve historical labels
+- Do not hard-delete channels used in historical records
+
+Threshold template settings:
+- Include an admin settings area where reusable/global thresholds could be configured later.
+- Do not turn on global default thresholds by default.
+- Users should create thresholds for each campaign in the MVP.
+
+Fiscal year settings:
+- Dashboard defaults to current fiscal year.
+- Fiscal year default is July 1–June 30.
+- Fiscal year boundaries should be configurable in Super Admin settings.
+
+Retention settings:
+- Use indefinite retention by default.
+- Super Admin should have a tool to permanently delete records older than a selected date/window.
+- Deletion should create an audit record.
+- If deletion is intended to remove Donor ID records, the audit record should avoid preserving deleted Donor IDs in detail fields.
+
+────────────────────────────────────────
+REPORTING AND DONOR ID LOOKUP
+────────────────────────────────────────
+
+Create reporting dashboards for:
+- Total campaigns submitted
+- Total Donor IDs processed
+- Total touchpoints by channel
+- Total touchpoints by campaign type
+- Upcoming touch volume by week
+- Upcoming touch volume by date
+- Volume by Donor ID
+- High-volume Donor IDs
+- Suppression trends
+- Campaigns by user/team/unit
+- Export history
+- Upload history
+
+Dashboard default:
+- Current fiscal year
+
+Date filters:
+- Current fiscal year
+- Rolling 12 months
+- All time
+- Custom date range
+
+Other filters:
+- Campaign
+- Campaign type
+- Channel
+- Send date
+- User/submitted by
+- Owning unit/team
+- Donor ID
+- Campaign status
+- Threshold conflict status
+- Export status
+
+Calendar view:
+Include a calendar-style or date-grouped view of upcoming/planned communications.
+
+Donor ID lookup:
+Allow users to search for a normalized Donor ID and see:
+- Upcoming touchpoints
+- Historical touchpoints
+- Included/exported touchpoints
+- Suppressed records
+- Voided records
+- Archived campaign records
+- Channel
+- Campaign type
+- Campaign name
+- Send date
+- Whether the touchpoint counts toward active thresholds
+
+Only included/exported touchpoints should count toward active thresholds.
+
+System-wide exports:
+- Restrict system-wide exports to Admin and Super Admin.
+- Standard users can export their own campaign files.
+- Admins can export all campaigns.
+
+Reports must be exportable as CSV and protected by role permissions.
+
+Reports should be accessible as tables, not only charts.
+
+────────────────────────────────────────
+PRIMARY NAVIGATION AND PAGES
+────────────────────────────────────────
+
+Primary navigation:
+- Dashboard
+- Campaigns
+- New Campaign
+- Touchpoint Planner
+- Donor ID Lookup
+- Reports
+- Exports
+- Settings
+- Users/Admin
+
+1. Login Page
+- Email or username
+- Password
+- Login button
+- Accessible error states
+- No-PII reminder or policy link if useful
+
+2. Dashboard Page
+- Metric cards
+- Recent campaigns
+- Upcoming touch volume
+- High-volume Donor IDs
+- Export history
+- Upload history
+- Filters for current fiscal year, rolling 12 months, all time, custom date range
+- Accessible table equivalents for charts
+
+3. Campaigns Page
+- Searchable table of all campaigns
+- Filter by my submissions
+- Filter by status
+- Filter by campaign type
+- Filter by channel
+- Filter by user/team/unit
+- View campaign details
+- Create new campaign button
+
+4. New Campaign / Campaign Setup Page
+- Campaign metadata
+- Campaign type selection
+- Upload donor ID audience
+- Column mapping/confirmation
+- Upload validation summary
+- Proceed to Touch Builder
+
+5. Touch Builder Page
+- Add/edit/remove planned touches
+- Touch name
+- Channel
+- Campaign type
+- Send date
+- Optional notes
+- Past-date warning
+- Same-channel/same-date warning
+- Proceed to Threshold Checker
+
+6. Threshold Checker / Preview Page
+- Create campaign-specific threshold checks
+- Show explanation of rolling window logic
+- Recalculate projected volume
+- Show flagged Donor IDs with reasons
+- Show counts
+- Download flagged/rejected/duplicate lists
+- Choose threshold action: track only, flag only, remove flagged, manual review, override
+- Proceed to Suppression and Seeds
+
+7. Suppression and Seeds Page
+- Upload or paste suppressions
+- Assign suppressions to all channels, specific channels, campaign types, or sends
+- Upload or paste seed IDs
+- Assign seeds to all exports, specific channels, or specific sends
+- Validate and normalize suppression/seed IDs
+- Show post-suppression counts
+- Proceed to Final Export
+
+8. Final Export Page
+- Show final one-file-per-send export list
+- Show row count per export
+- Show seed count per export
+- Show suppressed count per export
+- Warn that export marks campaign as Exported / Sent and affects future checks
+- Generate/download CSV files
+- Mark campaign Exported / Sent
+
+9. Campaign Detail Page
+- Campaign metadata
+- Uploaded audience summary
+- Touches
+- Threshold settings
+- Suppression summary
+- Export summary
+- Status history
+- Audit log
+- Admin actions: edit, archive, void
+- Super Admin actions: deletion/retention tools where appropriate
+
+10. Donor ID Lookup Page
+- Search by Donor ID
+- Normalize search input to 8 digits
+- Show historical and upcoming touchpoints
+- Show whether each record counts toward threshold calculations
+- Show included, suppressed, archived, and voided records with clear labels
+
+11. Reports Page
+- Touchpoints by channel
+- Touchpoints by campaign type
+- Volume by Donor ID
+- Upcoming volume by week/date
+- High-volume Donor IDs
+- Campaigns by user/team/unit
+- Suppression trends
+- Exportable tables
+
+12. Exports Page
+- Export history
+- Download campaign-level summaries
+- Admin/Super Admin system-wide exports
+- Clear role protection
+
+13. Settings Page
+- Campaign types
+- Channels
+- Fiscal year settings
+- Threshold template/global threshold configuration, disabled by default
+- Retention settings for Super Admin
+- No-PII policy text/settings if useful
+
+14. Users Page
+- Admin-only
+- Create users
+- Edit users
+- Assign roles
+- Disable users
+- Reset passwords
+
+────────────────────────────────────────
+DATABASE
+────────────────────────────────────────
+
+Preferred stack:
+- Frontend: React + TypeScript
+- Backend: Node.js + Express + TypeScript
+- Database: SQLite for Replit MVP
+- ORM: Prisma
+- Styling: Tailwind CSS
+- UI components: accessible component patterns, shadcn/ui if practical
+- CSV parsing/generation: backend utilities
+- Auth: session-based simple username/password
+
+Keep schema PostgreSQL-ready for future migration, even though MVP uses SQLite.
+
+Use migrations.
+Prefer additive migrations.
+Do not run destructive database commands unless explicitly asked.
+
+Suggested tables:
+- users
+- campaigns
+- campaign_types
+- communication_channels
+- campaign_campaign_types
+- campaign_audience_members
+- campaign_touches
+- threshold_checks
+- threshold_results
+- campaign_suppressions
+- campaign_seed_ids
+- touchpoint_records
+- upload_jobs
+- export_jobs
+- audit_log
+- app_settings
+
+Users table fields:
+- id
+- email
+- name
+- password_hash
+- role
+- active
+- pii_acknowledged_at
+- created_at
+- updated_at
+
+Campaigns table fields:
+- id
+- name
+- owning_unit
+- submitted_by_user_id
+- intended_send_start_date
+- audience_description
+- salesforce_campaign_id
+- internal_notes
+- status
+- original_row_count
+- blank_row_count
+- valid_id_count
+- unique_id_count
+- duplicate_id_count
+- rejected_id_count
+- extra_columns_ignored
+- created_at
+- updated_at
+- exported_at
+- archived_at
+- voided_at
+- deleted_at
+
+Campaign types table fields:
+- id
+- name
+- description
+- active
+- system_default
+- created_at
+- updated_at
+
+Communication channels table fields:
+- id
+- name
+- description
+- active
+- system_default
+- created_at
+- updated_at
+
+Campaign audience members table fields:
+- id
+- campaign_id
+- donor_id
+- source_row_number
+- created_at
+
+Campaign touches table fields:
+- id
+- campaign_id
+- touch_name
+- channel_id
+- channel_label_snapshot
+- campaign_type_id
+- campaign_type_label_snapshot
+- send_date
+- notes
+- created_at
+- updated_at
+
+Threshold checks table fields:
+- id
+- campaign_id
+- name
+- threshold_mode
+- max_touchpoints
+- window_days
+- applies_to_all_channels
+- applies_to_all_campaign_types
+- channel_id
+- campaign_type_id
+- action_mode
+- created_by_user_id
+- created_at
+- updated_at
+
+Threshold results table fields:
+- id
+- campaign_id
+- threshold_check_id
+- donor_id
+- touch_id
+- projected_count
+- max_allowed
+- window_start
+- window_end
+- reason
+- status
+- overridden_by_user_id
+- overridden_at
+- created_at
+- updated_at
+
+Campaign suppressions table fields:
+- id
+- campaign_id
+- donor_id
+- applies_to_all_channels
+- channel_id
+- campaign_type_id
+- touch_id
+- reason
+- notes
+- created_by_user_id
+- created_at
+
+Campaign seed IDs table fields:
+- id
+- campaign_id
+- donor_id
+- applies_to_all_exports
+- channel_id
+- touch_id
+- created_by_user_id
+- created_at
+
+Touchpoint records table fields:
+- id
+- campaign_id
+- touch_id
+- donor_id
+- channel_id
+- channel_label_snapshot
+- campaign_type_id
+- campaign_type_label_snapshot
+- send_date
+- status
+- counts_toward_thresholds
+- exported_by_user_id
+- exported_at
+- created_at
+- updated_at
+
+Touchpoint record status examples:
+- included_exported
+- suppressed
+- voided
+- archived
+
+Upload jobs table fields:
+- id
+- campaign_id
+- uploaded_by_user_id
+- source_type
+- original_file_name
+- row_count
+- blank_row_count
+- valid_id_count
+- unique_id_count
+- duplicate_id_count
+- rejected_id_count
+- extra_columns_ignored
+- status
+- error_message
+- created_at
+- completed_at
+
+Export jobs table fields:
+- id
+- campaign_id
+- touch_id
+- exported_by_user_id
+- file_name
+- row_count
+- seed_count
+- suppressed_count
+- status
+- error_message
+- created_at
+- completed_at
+
+Audit log table fields:
+- id
+- actor_user_id
+- action
+- entity_type
+- entity_id
+- summary
+- metadata_json
+- created_at
+
+Audit important actions:
+- User login
+- Campaign created
+- Campaign edited
+- Audience uploaded
+- Donor IDs validated
+- Touch created/edited/deleted
+- Threshold created/edited/deleted
+- Threshold overridden
+- Suppression added
+- Seed ID added
+- Export generated
+- Campaign marked Exported / Sent
+- Campaign archived
+- Campaign voided
+- Campaign deleted
+- Settings changed
+- User created/edited/disabled
+- Campaign type created/edited/deactivated
+- Channel created/edited/deactivated
+- Retention deletion performed
+
+Recommended indexes:
+- campaign_audience_members(campaign_id, donor_id)
+- touchpoint_records(donor_id)
+- touchpoint_records(send_date)
+- touchpoint_records(channel_id)
+- touchpoint_records(campaign_type_id)
+- touchpoint_records(counts_toward_thresholds)
+- campaigns(status)
+- campaigns(submitted_by_user_id)
+- campaign_touches(campaign_id)
+- campaign_touches(send_date)
+- threshold_results(campaign_id)
+- threshold_results(donor_id)
+- export_jobs(campaign_id)
+- upload_jobs(campaign_id)
+- audit_log(created_at)
+
+────────────────────────────────────────
+API / SERVICE STRUCTURE
+────────────────────────────────────────
+
+Create services for:
+- Auth/user service
+- Campaign service
+- Donor ID normalization/validation service
+- CSV import service
+- Google Sheet import service
+- Touch builder service
+- Threshold calculation service
+- Suppression service
+- Seed ID service
+- Export service
+- Reporting service
+- Audit log service
+- Settings service
+- Retention/deletion service
+
+API route examples:
+- POST /api/auth/login
+- POST /api/auth/logout
+- GET /api/me
+- GET /api/campaigns
+- POST /api/campaigns
+- GET /api/campaigns/:id
+- PATCH /api/campaigns/:id
+- POST /api/campaigns/:id/upload
+- POST /api/campaigns/:id/import-google-sheet
+- POST /api/campaigns/:id/touches
+- PATCH /api/touches/:id
+- DELETE /api/touches/:id
+- POST /api/campaigns/:id/thresholds
+- POST /api/campaigns/:id/recalculate
+- POST /api/campaigns/:id/suppressions
+- POST /api/campaigns/:id/seeds
+- POST /api/campaigns/:id/export
+- GET /api/campaigns/:id/export/:touchId
+- GET /api/donors/:donorId/touchpoints
+- GET /api/reports/volume
+- GET /api/reports/high-volume-donors
+- GET /api/settings
+- PATCH /api/settings
+- GET /api/admin/users
+- POST /api/admin/users
+- PATCH /api/admin/users/:id
+
+All protected routes must verify authentication and role permissions server-side.
+
+────────────────────────────────────────
+THRESHOLD CALCULATION DETAILS
+────────────────────────────────────────
+
+Threshold calculation must consider:
+1. Existing exported/sent touchpoint records that count toward thresholds.
+2. Proposed touches in the current campaign.
+3. Selected threshold filters by channel and/or campaign type.
+4. Rolling windows that include each proposed touch.
+
+Use “any rolling window including the proposed touch” logic.
+
+Example:
+If the user creates a threshold:
+“Max 5 email touchpoints in 14 days”
+
+For each Donor ID and each proposed email touch:
+- Find all email touchpoints for that Donor ID that count toward thresholds.
+- Include existing exported/sent records.
+- Include proposed touches in the current campaign.
+- Evaluate any 14-day window that includes the proposed touch.
+- If count > 5, flag the Donor ID and explain why.
+
+The explanation should be human-readable:
+“Donor ID 00258155 is projected to receive 6 email touchpoints between September 1, 2026 and September 14, 2026. The selected threshold is 5 email touchpoints in 14 days.”
+
+Make sure users understand rolling window logic in the UI.
+
+────────────────────────────────────────
+BRANDING, UI, AND ACCESSIBILITY
+────────────────────────────────────────
+
+The frontend must align with NC State brand and accessibility expectations. This is an internal administrative tool, not a public marketing site. The goal is a clean, functional, accessible, on-brand dashboard for Alumni Engagement and Annual Giving staff.
+
+Use NC State brand and accessibility guidance as reference:
+- NC State Brand: https://brand.ncsu.edu/
+- NC State Color guidance: https://brand.ncsu.edu/designing-for-nc-state/color/
+- NC State Typography guidance: https://brand.ncsu.edu/designing-for-nc-state/typography/
+- NC State Logos and Marks guidance: https://brand.ncsu.edu/designing-for-nc-state/logos-and-marks/
+- NC State Web Documentation: https://university-communications.ncsu.edu/documentation/
+- Accessibility and the NC State Theme: https://university-communications.ncsu.edu/documentation/accessibility-and-the-nc-state-theme/
+- NC State Digital Accessibility: https://accessibility.ncsu.edu/digital-accessibility/
+- NC State ICT Accessibility Regulation: https://policies.ncsu.edu/regulation/reg-04-25-05/
+
+Brand alignment:
+- Preserve a clear NC State identity throughout the app.
+- Use Wolfpack Red as the primary brand color and keep it visually dominant.
+- Use secondary colors sparingly and subordinate to Wolfpack Red.
+- Keep the interface clean, direct, and functional.
+- Do not create unofficial logos, altered marks, stretched logos, modified bricks, or decorative variants of the NC State logo.
+- If a logo or wordmark is used, use approved NC State logo assets only.
+- If no approved logo asset is provided, use text branding only:
+  “NC State University Advancement”
+- Respect required spacing around logos if any approved logo asset is used.
+- Do not crowd the logo or brand text with navigation, text, buttons, cards, or icons.
+- Use a practical administrative dashboard style, not a marketing landing page style.
+- Continue using React, Tailwind CSS, and accessible component patterns.
+- Do not introduce a large design system dependency unless necessary.
+
+Recommended visual direction:
+- App name: Constituent Touchpoint Planner
+- Overall style: NC State-branded internal admin dashboard
+- Primary color: Wolfpack Red
+- Layout: clean sidebar or top navigation with clear page hierarchy
+- Components: cards, tables, badges, filters, forms, dialogs, status panels, upload panels, calendar/date selectors, and export panels
+- Tone: plain, direct, action-oriented, and operational
+- Avoid unnecessary marketing language
+
+Typography:
+- Use accessible font sizes and readable line heights.
+- Use headings consistently:
+  - page title
+  - page description
+  - primary actions
+  - dashboard/report content
+- Every page must have one clear h1.
+- Use title case for major page headings where appropriate.
+- Use sentence case for paragraphs, helper text, field labels, validation messages, and interface copy.
+- Avoid very small text for important metadata, filters, warnings, errors, and table content.
+- Avoid long all-caps labels.
+- Maintain readable spacing in dense tables and upload/result previews.
+
+Color and contrast:
+- Confirm that all foreground/background combinations meet WCAG 2.1 AA contrast expectations.
+- Do not rely on red alone to communicate errors, warnings, required fields, suppression status, threshold conflicts, or campaign status.
+- Pair color with clear text, icons, labels, or patterns.
+- Review contrast for:
+  - status badges
+  - threshold warning badges
+  - suppression badges
+  - channel badges
+  - queue tabs
+  - buttons
+  - alerts
+  - table rows
+  - filters
+  - charts
+  - disabled states
+  - helper text
+- Ensure focus outlines are visible against the background.
+- Avoid low-contrast gray text, especially in helper text and table metadata.
+- If using bright accent colors, ensure text remains legible.
+
+Accessibility baseline:
+Design and implement with digital accessibility at the forefront. Use WCAG 2.1 AA as the practical implementation baseline.
+
+Accessibility implementation requirements:
+- Every interactive element must be keyboard accessible.
+- Include a skip-to-main link.
+- Ensure <main id="main-content"> exists.
+- Maintain logical heading hierarchy; do not skip heading levels for visual styling.
+- Ensure forms have programmatically associated labels.
+- Do not rely only on placeholders as labels.
+- Ensure validation errors are associated with relevant inputs.
+- Use aria-describedby for helper text and validation messages where appropriate.
+- Use aria-live or equivalent accessible announcements for:
+  - upload progress
+  - Google Sheet import progress
+  - Donor ID validation results
+  - threshold recalculation
+  - suppression processing
+  - seed list processing
+  - export generation
+  - successful saves
+  - validation errors
+- Ensure dialogs/modals trap focus, restore focus on close, and have accessible names/descriptions.
+- Ensure destructive confirmation dialogs are clear and keyboard operable.
+- Ensure tables use semantic table markup with useful column headers.
+- Ensure sortable/filterable table controls are labeled clearly.
+- Ensure pagination controls are accessible and indicate the current page.
+- Ensure charts have text alternatives or adjacent data summaries.
+- Do not communicate dashboard analytics only through charts; provide numeric summaries or accessible tables.
+- Ensure status badges include accessible text, not color alone.
+- Ensure loading spinners include accessible loading text or aria-busy states.
+- Ensure toasts/alerts are announced to assistive technology.
+- Ensure icons used as buttons have accessible names.
+- Ensure upload, preview, suppress, override, export, archive, void, and delete buttons have clear labels.
+- Ensure custom components are used in accessible patterns.
+
+Upload workflow accessibility:
+- The campaign upload workflow must be fully keyboard operable.
+- Users must be able to upload a CSV, enter a Google Sheet URL, validate Donor IDs, review rejected IDs, configure touchpoints, preview threshold results, add suppressions/seeds, and export final files using keyboard navigation.
+- File upload controls must have clear labels and helper text.
+- Google Sheet URL input must have a visible label and validation message area.
+- Donor ID validation results must be summarized in text.
+- If invalid IDs are found, focus should move to an error/warning summary.
+- If extra columns are ignored, display a clear accessible warning:
+  “Only Donor ID values were processed. Extra columns were ignored and not stored.”
+- Required fields must be identified textually, not by color alone.
+
+Threshold and suppression accessibility:
+- Threshold conflicts must not be communicated by color alone.
+- Each flagged Donor ID should include a text explanation of why it was flagged.
+- Suppression and seed handling must use clear labels:
+  - Suppressed
+  - Channel-Specific Suppression
+  - Seed ID
+  - Included in Export
+  - Excluded from Export
+  - Threshold Conflict
+  - Override
+- Users must be able to download rejected, duplicate, suppressed, flagged, and final lists using clearly labeled buttons.
+
+Dashboard and reporting accessibility:
+- Reports must be accessible as tables, not only charts.
+- Charts should include nearby summary text and/or table equivalents.
+- Date range filters, campaign type filters, channel filters, Donor ID filters, threshold filters, user filters, and export controls must have labels and visible focus states.
+- Empty reports should show clear empty states explaining why no data appears.
+- Export buttons should clearly identify the export type, such as:
+  - “Download Final Email CSV”
+  - “Download Final Text Message CSV”
+  - “Download Final Mail CSV”
+  - “Download Rejected Donor IDs CSV”
+  - “Download Suppressed Donor IDs CSV”
+  - “Download Campaign Summary CSV”
+  - “Download System Touchpoint History CSV”
+
+Plain language:
+Use clear operational labels:
+- Campaign
+- Campaign Type
+- Channel
+- Touchpoint
+- Send Date
+- Donor ID
+- Threshold
+- Suppression
+- Seed ID
+- Final Export
+- Exported / Sent
+- Archived
+- Voided
+- Track Only
+- Flag Only
+- Remove Flagged IDs
+- Manual Review
+- Override
+
+Avoid vague or inappropriate labels:
+- Lead
+- Customer
+- Prospect name
+- Contact info
+- Email address
+- Phone number
+- Full name
+
+────────────────────────────────────────
+SECURITY AND PRIVACY
+────────────────────────────────────────
+
+Security:
+- Store secrets in environment variables.
+- Hash passwords.
+- Validate user roles server-side.
+- Sanitize inputs.
+- Add basic login rate limiting.
+- Protect all exports behind authentication and role checks.
+- Read-only or unauthorized users cannot mutate data.
+- Secrets must never be logged.
+- Avoid adding PII fields.
+- Protect CSV exports against formula injection.
+- Audit all mutating admin actions.
+- Delete source upload files after processing.
+- Store only normalized Donor IDs and campaign/touchpoint metadata.
+
+No unnecessary PII:
+- The system should use Donor ID as the primary identifier.
+- Do not ask for names, phone numbers, email addresses, mailing addresses, giving amounts, or other personal data.
+- Do not create fields for unnecessary personal information.
+- Export defaults should prioritize Donor ID and reviewed communication/touchpoint data, not personal contact data.
+
+────────────────────────────────────────
+MVP MUST-HAVE FEATURES
+────────────────────────────────────────
+
+MVP must-have features:
+- Simple username/password or email/password login
+- Password hashing
+- Session-based auth
+- Role-based access
+- Admin-created users
+- NC State University Advancement branded UI
+- Wolfpack Red as primary color
+- WCAG 2.1 AA-oriented accessibility baseline
+- No-PII reminders
+- First-login or recurring no-PII acknowledgement
+- Campaign creation
+- Campaign type management
+- Channel management
+- CSV donor ID upload
+- Google Sheet URL one-time import
+- Donor ID column mapping/confirmation
+- Donor ID normalization to 8 digits
+- Invalid ID rejection and downloadable rejected IDs
+- Duplicate ID detection/deduplication
+- Extra-column warning and ignore behavior
+- Touch Builder with channel, campaign type, send date, touch name
+- User-created threshold checks
+- Any rolling window threshold logic
+- Clear threshold explanations
+- Proposed campaign touches count against themselves
+- Existing exported/sent touchpoints count toward future checks
+- Flagged Donor ID preview with reasons
+- Standard users can override threshold flags
+- Campaign-specific suppressions
+- Campaign-specific seed IDs
+- One CSV export per send/touch
+- Final send-list CSVs contain donor_id only
+- Seed IDs added at bottom of exports
+- Seed IDs do not count toward thresholds or touchpoint history
+- Export marks campaign Exported / Sent
+- Exported touchpoints count toward future threshold checks
+- Campaign status workflow
+- Campaign detail page
+- Donor ID lookup page
+- Dashboard and reports
+- Current fiscal year default reporting
+- CSV exports with formula injection protection
+- Audit log
+- Admin settings
+- User management
+- Super Admin retention/deletion tool
+- README and data dictionary
+- Accessibility checklist in README
+
+────────────────────────────────────────
+ACCEPTANCE CRITERIA
+────────────────────────────────────────
+
+Primary acceptance criteria:
+- App allows approved users to log in.
+- App enforces Standard User, Admin, and Super Admin permissions server-side.
+- App creates campaigns with campaign metadata and campaign types.
+- App accepts CSV upload and Google Sheet URL import.
+- App allows user to map/confirm the Donor ID column.
+- App normalizes Donor IDs to exactly 8 digits.
+- App rejects invalid Donor IDs and makes rejected IDs downloadable.
+- App deduplicates uploaded Donor IDs.
+- App ignores and does not store extra columns.
+- App warns users when extra columns are ignored.
+- App deletes source upload files after processing.
+- App stores no unnecessary PII.
+- App allows users to build multiple planned touches by channel, campaign type, and send date.
+- App allows users to create campaign-specific threshold checks.
+- App uses any rolling window including proposed touch logic.
+- App clearly explains rolling window threshold logic.
+- App includes proposed campaign touches in threshold calculations.
+- App includes previously exported/sent touchpoints in threshold calculations.
+- App excludes draft, uploaded, previewed, finalized, voided, and deleted records from active threshold counts.
+- App flags Donor IDs exceeding thresholds and explains why.
+- App allows Standard Users to override threshold flags.
+- App supports campaign-specific suppressions.
+- App supports seed IDs.
+- App generates one donor_id-only CSV per send/touch.
+- App preserves leading zeroes in final CSVs.
+- App adds seed IDs at the bottom of exports.
+- App does not create touchpoint history for seed IDs.
+- App marks exported campaigns as Exported / Sent.
+- App stores exported touchpoints for future reference.
+- App has Donor ID lookup showing historical/upcoming touchpoints.
+- App has reporting dashboards for communication volume.
+- App has campaign, upload, export, and audit histories.
+- App supports admin management of users, campaign types, and channels.
+- App includes Super Admin retention/deletion tools.
+- App protects CSV exports against formula injection.
+- App is visually aligned with NC State University Advancement branding.
+- App does not fabricate or misuse official NC State logos.
+- App is keyboard accessible for core workflows.
+- App does not communicate status, warning, error, or threshold state by color alone.
+- Forms have labels and accessible validation.
+- Tables, reports, and charts have accessible text/data equivalents.
+- Typecheck/build passes.
+
+────────────────────────────────────────
+README / SETUP DOCUMENTATION
+────────────────────────────────────────
+
+Create or update README.md with:
+- Project overview
+- Tech stack
+- How to run locally in Replit
+- Required environment variables
+- How to run database migrations
+- How to seed the admin user
+- Default development login
+- How authentication and roles work
+- How to create users
+- How to create a campaign
+- How to upload CSV audience files
+- How Google Sheet URL import works
+- How Donor ID normalization works
+- Donor ID validation rules
+- No-PII policy
+- How Touch Builder works
+- How threshold checks work
+- Explanation of any rolling window including proposed touch
+- How suppressions work
+- How seed IDs work
+- How exports work
+- How exported touchpoints affect future threshold checks
+- How Donor ID lookup works
+- How reports work
+- How campaign statuses work
+- How audit logging works
+- How retention/deletion works
+- NC State brand/accessibility expectations
+- Accessibility checklist
+- CSV formula injection protection
+- Known limitations
+- Recommended next steps
+- Troubleshooting notes
+
+Data dictionary:
+Include a data dictionary covering:
+- Donor ID
+- normalized Donor ID
+- campaign
+- campaign type
+- channel
+- touchpoint
+- send date
+- threshold
+- rolling window
+- suppression
+- seed ID
+- exported/sent
+- archived
+- voided
+- touchpoint record
+- upload job
+- export job
+- audit log
+- current fiscal year
+- rolling 12 months
+- final send-list export
+- administrative export
+
+────────────────────────────────────────
+FINAL RESPONSE REQUIREMENTS AFTER IMPLEMENTATION
+────────────────────────────────────────
+
+When finished, provide a concise summary:
+- files changed
+- database changes
+- API changes
+- frontend pages created/updated
+- auth and role behavior
+- Donor ID normalization behavior
+- upload behavior
+- Google Sheet import behavior
+- touch builder behavior
+- threshold calculation behavior
+- suppression behavior
+- seed ID behavior
+- export behavior
+- reporting behavior
+- admin/settings behavior
+- brand/accessibility improvements
+- commands run
+- remaining manual setup steps
+- risks or limitations
+
+Do not claim completion unless the app runs and typechecks/builds.
+
+If typecheck/build fails, summarize:
+- exact errors
+- what was fixed
+- what still needs manual review

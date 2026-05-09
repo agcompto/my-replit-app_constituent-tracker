@@ -1,0 +1,85 @@
+import { db, usersTable, auditLogTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
+import type { Request, Response, NextFunction, RequestHandler } from "express";
+
+export type Role = "standard" | "admin" | "super_admin";
+
+export interface SessionUser {
+  id: number;
+  email: string;
+  name: string;
+  role: Role;
+  active: boolean;
+  piiAcknowledged: boolean;
+}
+
+declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
+  namespace Express {
+    interface Request {
+      currentUser?: SessionUser;
+    }
+  }
+}
+
+export async function loadUser(userId: number): Promise<SessionUser | null> {
+  const [u] = await db.select().from(usersTable).where(eq(usersTable.id, userId));
+  if (!u || !u.active) return null;
+  return {
+    id: u.id,
+    email: u.email,
+    name: u.name,
+    role: u.role as Role,
+    active: u.active,
+    piiAcknowledged: u.piiAcknowledgedAt != null,
+  };
+}
+
+export const attachUser: RequestHandler = async (req, _res, next) => {
+  const uid = req.session?.userId;
+  if (uid) {
+    const u = await loadUser(uid);
+    if (u) req.currentUser = u;
+  }
+  next();
+};
+
+export function requireAuth(req: Request, res: Response, next: NextFunction): void {
+  if (!req.currentUser) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  next();
+}
+
+export function requireRole(...roles: Role[]) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (!req.currentUser) {
+      res.status(401).json({ error: "Authentication required" });
+      return;
+    }
+    if (!roles.includes(req.currentUser.role)) {
+      res.status(403).json({ error: "Insufficient permissions" });
+      return;
+    }
+    next();
+  };
+}
+
+export async function audit(opts: {
+  actor: SessionUser;
+  action: string;
+  entityType: string;
+  entityId?: number | null;
+  details?: string | null;
+}): Promise<void> {
+  await db.insert(auditLogTable).values({
+    actorUserId: opts.actor.id,
+    actorName: opts.actor.name,
+    actorRole: opts.actor.role,
+    action: opts.action,
+    entityType: opts.entityType,
+    entityId: opts.entityId ?? null,
+    details: opts.details ?? null,
+  });
+}

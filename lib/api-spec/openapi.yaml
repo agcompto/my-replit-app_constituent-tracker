@@ -3,34 +3,1252 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Constituent Touchpoint Planner API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
-    description: Health operations
+  - name: auth
+  - name: users
+  - name: campaignTypes
+  - name: channels
+  - name: campaigns
+  - name: audience
+  - name: touches
+  - name: thresholds
+  - name: suppressions
+  - name: seeds
+  - name: exports
+  - name: donors
+  - name: reports
+  - name: audit
+  - name: settings
+  - name: retention
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
           content:
             application/json:
+              schema: { $ref: "#/components/schemas/HealthStatus" }
+
+  # ───────── Auth
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginInput" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionUser" }
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      responses:
+        "204": { description: Logged out }
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionUser" }
+  /auth/acknowledge-pii:
+    post:
+      operationId: acknowledgePii
+      tags: [auth]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionUser" }
+
+  # ───────── Users (admin)
+  /users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
               schema:
-                $ref: "#/components/schemas/HealthStatus"
+                type: array
+                items: { $ref: "#/components/schemas/User" }
+    post:
+      operationId: createUser
+      tags: [users]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UserInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+  /users/{id}:
+    patch:
+      operationId: updateUser
+      tags: [users]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UserUpdate" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+  /users/{id}/reset-password:
+    post:
+      operationId: resetUserPassword
+      tags: [users]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PasswordResetInput" }
+      responses:
+        "204": { description: Done }
+
+  # ───────── Campaign types
+  /campaign-types:
+    get:
+      operationId: listCampaignTypes
+      tags: [campaignTypes]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CampaignType" }
+    post:
+      operationId: createCampaignType
+      tags: [campaignTypes]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CampaignTypeInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CampaignType" }
+  /campaign-types/{id}:
+    patch:
+      operationId: updateCampaignType
+      tags: [campaignTypes]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CampaignTypeUpdate" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CampaignType" }
+
+  # ───────── Channels
+  /channels:
+    get:
+      operationId: listChannels
+      tags: [channels]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Channel" }
+    post:
+      operationId: createChannel
+      tags: [channels]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChannelInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Channel" }
+  /channels/{id}:
+    patch:
+      operationId: updateChannel
+      tags: [channels]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChannelUpdate" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Channel" }
+
+  # ───────── Campaigns
+  /campaigns:
+    get:
+      operationId: listCampaigns
+      tags: [campaigns]
+      parameters:
+        - { name: mine, in: query, schema: { type: boolean } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: q, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CampaignSummary" }
+    post:
+      operationId: createCampaign
+      tags: [campaigns]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CampaignInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Campaign" }
+  /campaigns/{id}:
+    get:
+      operationId: getCampaign
+      tags: [campaigns]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Campaign" }
+    patch:
+      operationId: updateCampaign
+      tags: [campaigns]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CampaignUpdate" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Campaign" }
+  /campaigns/{id}/archive:
+    post:
+      operationId: archiveCampaign
+      tags: [campaigns]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Campaign" }
+  /campaigns/{id}/void:
+    post:
+      operationId: voidCampaign
+      tags: [campaigns]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Campaign" }
+
+  # ───────── Audience
+  /campaigns/{id}/audience:
+    post:
+      operationId: uploadAudience
+      tags: [audience]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AudienceInput" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AudienceUploadResult" }
+    get:
+      operationId: getAudienceSummary
+      tags: [audience]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AudienceUploadResult" }
+
+  # ───────── Touches
+  /campaigns/{id}/touches:
+    get:
+      operationId: listTouches
+      tags: [touches]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Touch" }
+    post:
+      operationId: createTouch
+      tags: [touches]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TouchInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Touch" }
+  /campaigns/{id}/touches/{touchId}:
+    patch:
+      operationId: updateTouch
+      tags: [touches]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: touchId, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TouchUpdate" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Touch" }
+    delete:
+      operationId: deleteTouch
+      tags: [touches]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: touchId, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: Deleted }
+
+  # ───────── Thresholds
+  /campaigns/{id}/thresholds:
+    get:
+      operationId: listThresholds
+      tags: [thresholds]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ThresholdCheck" }
+    post:
+      operationId: createThreshold
+      tags: [thresholds]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ThresholdInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ThresholdCheck" }
+  /campaigns/{id}/thresholds/{thresholdId}:
+    delete:
+      operationId: deleteThreshold
+      tags: [thresholds]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: thresholdId, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: Deleted }
+  /campaigns/{id}/threshold-preview:
+    post:
+      operationId: previewThresholds
+      tags: [thresholds]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ThresholdPreview" }
+  /campaigns/{id}/threshold-overrides:
+    post:
+      operationId: setThresholdOverrides
+      tags: [thresholds]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OverrideInput" }
+      responses:
+        "204": { description: Saved }
+
+  # ───────── Suppressions
+  /campaigns/{id}/suppressions:
+    get:
+      operationId: listSuppressions
+      tags: [suppressions]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Suppression" }
+    post:
+      operationId: createSuppression
+      tags: [suppressions]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SuppressionInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Suppression" }
+  /campaigns/{id}/suppressions/{suppressionId}:
+    delete:
+      operationId: deleteSuppression
+      tags: [suppressions]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: suppressionId, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: Deleted }
+
+  # ───────── Seeds
+  /campaigns/{id}/seeds:
+    get:
+      operationId: listSeeds
+      tags: [seeds]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SeedGroup" }
+    post:
+      operationId: createSeedGroup
+      tags: [seeds]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SeedGroupInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SeedGroup" }
+  /campaigns/{id}/seeds/{seedId}:
+    delete:
+      operationId: deleteSeedGroup
+      tags: [seeds]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: seedId, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: Deleted }
+
+  # ───────── Preview / Export
+  /campaigns/{id}/preview:
+    get:
+      operationId: getCampaignPreview
+      tags: [exports]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CampaignPreview" }
+  /campaigns/{id}/finalize:
+    post:
+      operationId: finalizeCampaign
+      tags: [exports]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Campaign" }
+  /campaigns/{id}/export:
+    post:
+      operationId: exportCampaign
+      tags: [exports]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExportResult" }
+
+  # ───────── Donor lookup
+  /donors/{donorId}/touchpoints:
+    get:
+      operationId: getDonorTouchpoints
+      tags: [donors]
+      parameters:
+        - { name: donorId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DonorLookup" }
+
+  # ───────── Reports
+  /reports/dashboard:
+    get:
+      operationId: getDashboard
+      tags: [reports]
+      parameters:
+        - { name: range, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Dashboard" }
+  /reports/upcoming-volume:
+    get:
+      operationId: getUpcomingVolume
+      tags: [reports]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/UpcomingVolumeRow" }
+  /reports/high-volume-donors:
+    get:
+      operationId: getHighVolumeDonors
+      tags: [reports]
+      parameters:
+        - { name: minTouchpoints, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/HighVolumeDonor" }
+  /reports/upload-history:
+    get:
+      operationId: getUploadHistory
+      tags: [reports]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/UploadJob" }
+  /reports/export-history:
+    get:
+      operationId: getExportHistory
+      tags: [reports]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ExportJob" }
+
+  # ───────── Audit / Settings / Retention
+  /audit-log:
+    get:
+      operationId: getAuditLog
+      tags: [audit]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AuditEntry" }
+  /settings:
+    get:
+      operationId: getSettings
+      tags: [settings]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppSettings" }
+    patch:
+      operationId: updateSettings
+      tags: [settings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SettingsUpdate" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppSettings" }
+  /retention/delete:
+    post:
+      operationId: runRetentionDelete
+      tags: [retention]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RetentionInput" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RetentionResult" }
+
 components:
   schemas:
     HealthStatus:
       type: object
       properties:
-        status:
-          type: string
-      required:
-        - status
+        status: { type: string }
+      required: [status]
 
+    LoginInput:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string }
+        password: { type: string }
+
+    SessionUser:
+      type: object
+      required: [id, email, name, role, active, piiAcknowledged]
+      properties:
+        id: { type: integer }
+        email: { type: string }
+        name: { type: string }
+        role: { type: string, enum: [standard, admin, super_admin] }
+        active: { type: boolean }
+        piiAcknowledged: { type: boolean }
+
+    User:
+      type: object
+      required: [id, email, name, role, active, createdAt]
+      properties:
+        id: { type: integer }
+        email: { type: string }
+        name: { type: string }
+        role: { type: string, enum: [standard, admin, super_admin] }
+        active: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    UserInput:
+      type: object
+      required: [email, name, role, password]
+      properties:
+        email: { type: string }
+        name: { type: string }
+        role: { type: string, enum: [standard, admin, super_admin] }
+        password: { type: string, minLength: 8 }
+    UserUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        role: { type: string, enum: [standard, admin, super_admin] }
+        active: { type: boolean }
+    PasswordResetInput:
+      type: object
+      required: [password]
+      properties:
+        password: { type: string, minLength: 8 }
+
+    CampaignType:
+      type: object
+      required: [id, name, active, systemDefault]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        description: { type: ["string", "null"] }
+        active: { type: boolean }
+        systemDefault: { type: boolean }
+    CampaignTypeInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        description: { type: string }
+    CampaignTypeUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        active: { type: boolean }
+
+    Channel:
+      type: object
+      required: [id, name, active, systemDefault]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        description: { type: ["string", "null"] }
+        active: { type: boolean }
+        systemDefault: { type: boolean }
+    ChannelInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        description: { type: string }
+    ChannelUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        active: { type: boolean }
+
+    CampaignInput:
+      type: object
+      required: [name, campaignTypeIds]
+      properties:
+        name: { type: string }
+        owningUnit: { type: string }
+        intendedSendStartDate: { type: ["string", "null"], format: date }
+        audienceDescription: { type: string }
+        salesforceCampaignId: { type: string }
+        internalNotes: { type: string }
+        campaignTypeIds:
+          type: array
+          items: { type: integer }
+    CampaignUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        owningUnit: { type: string }
+        intendedSendStartDate: { type: ["string", "null"], format: date }
+        audienceDescription: { type: string }
+        salesforceCampaignId: { type: string }
+        internalNotes: { type: string }
+        campaignTypeIds:
+          type: array
+          items: { type: integer }
+    CampaignSummary:
+      type: object
+      required: [id, name, status, submittedByName, owningUnit, createdAt, touchCount, audienceSize, campaignTypes]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        status: { type: string }
+        submittedByName: { type: string }
+        submittedByUserId: { type: integer }
+        owningUnit: { type: ["string", "null"] }
+        intendedSendStartDate: { type: ["string", "null"], format: date }
+        createdAt: { type: string, format: date-time }
+        exportedAt: { type: ["string", "null"], format: date-time }
+        touchCount: { type: integer }
+        audienceSize: { type: integer }
+        campaignTypes:
+          type: array
+          items: { type: string }
+    Campaign:
+      type: object
+      required: [id, name, status, submittedByUserId, submittedByName, createdAt, campaignTypes]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        status: { type: string }
+        owningUnit: { type: ["string", "null"] }
+        submittedByUserId: { type: integer }
+        submittedByName: { type: string }
+        intendedSendStartDate: { type: ["string", "null"], format: date }
+        audienceDescription: { type: ["string", "null"] }
+        salesforceCampaignId: { type: ["string", "null"] }
+        internalNotes: { type: ["string", "null"] }
+        originalRowCount: { type: integer }
+        blankRowCount: { type: integer }
+        validIdCount: { type: integer }
+        uniqueIdCount: { type: integer }
+        duplicateIdCount: { type: integer }
+        rejectedIdCount: { type: integer }
+        extraColumnsIgnored: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        exportedAt: { type: ["string", "null"], format: date-time }
+        archivedAt: { type: ["string", "null"], format: date-time }
+        voidedAt: { type: ["string", "null"], format: date-time }
+        campaignTypes:
+          type: array
+          items: { $ref: "#/components/schemas/CampaignType" }
+
+    AudienceInput:
+      type: object
+      properties:
+        # Provide one of: rawText, googleSheetUrl
+        rawText: { type: string }
+        googleSheetUrl: { type: string }
+        hasHeader: { type: boolean }
+        columnIndex: { type: integer }
+    AudienceUploadResult:
+      type: object
+      required: [originalRowCount, blankRowCount, validCount, uniqueCount, duplicateCount, rejectedCount, extraColumnsIgnored, rejectedSamples, duplicateSamples]
+      properties:
+        originalRowCount: { type: integer }
+        blankRowCount: { type: integer }
+        validCount: { type: integer }
+        uniqueCount: { type: integer }
+        duplicateCount: { type: integer }
+        rejectedCount: { type: integer }
+        extraColumnsIgnored: { type: boolean }
+        detectedColumns:
+          type: array
+          items: { type: string }
+        rejectedSamples:
+          type: array
+          items: { type: string }
+        duplicateSamples:
+          type: array
+          items: { type: string }
+
+    Touch:
+      type: object
+      required: [id, campaignId, touchName, channelId, channelLabel, campaignTypeId, campaignTypeLabel, sendDate]
+      properties:
+        id: { type: integer }
+        campaignId: { type: integer }
+        touchName: { type: string }
+        channelId: { type: integer }
+        channelLabel: { type: string }
+        campaignTypeId: { type: integer }
+        campaignTypeLabel: { type: string }
+        sendDate: { type: string, format: date }
+        notes: { type: ["string", "null"] }
+    TouchInput:
+      type: object
+      required: [touchName, channelId, campaignTypeId, sendDate]
+      properties:
+        touchName: { type: string }
+        channelId: { type: integer }
+        campaignTypeId: { type: integer }
+        sendDate: { type: string, format: date }
+        notes: { type: string }
+    TouchUpdate:
+      type: object
+      properties:
+        touchName: { type: string }
+        channelId: { type: integer }
+        campaignTypeId: { type: integer }
+        sendDate: { type: string, format: date }
+        notes: { type: string }
+
+    ThresholdCheck:
+      type: object
+      required: [id, campaignId, name, maxTouchpoints, windowDays, scope, actionMode]
+      properties:
+        id: { type: integer }
+        campaignId: { type: integer }
+        name: { type: string }
+        maxTouchpoints: { type: integer }
+        windowDays: { type: integer }
+        scope: { type: string, enum: [all, channel, campaign_type, channel_and_type] }
+        channelId: { type: ["integer", "null"] }
+        campaignTypeId: { type: ["integer", "null"] }
+        actionMode: { type: string, enum: [track, flag, remove, manual] }
+    ThresholdInput:
+      type: object
+      required: [name, maxTouchpoints, windowDays, scope, actionMode]
+      properties:
+        name: { type: string }
+        maxTouchpoints: { type: integer, minimum: 1 }
+        windowDays: { type: integer, minimum: 1 }
+        scope: { type: string, enum: [all, channel, campaign_type, channel_and_type] }
+        channelId: { type: integer }
+        campaignTypeId: { type: integer }
+        actionMode: { type: string, enum: [track, flag, remove, manual] }
+    ThresholdConflict:
+      type: object
+      required: [donorId, thresholdId, thresholdName, projectedCount, maxAllowed, windowDays, explanation, overridden]
+      properties:
+        donorId: { type: string }
+        thresholdId: { type: integer }
+        thresholdName: { type: string }
+        projectedCount: { type: integer }
+        maxAllowed: { type: integer }
+        windowDays: { type: integer }
+        explanation: { type: string }
+        overridden: { type: boolean }
+    ThresholdPreview:
+      type: object
+      required: [conflicts, totalFlaggedDonors, totalProjectedTouchpoints, byThreshold]
+      properties:
+        conflicts:
+          type: array
+          items: { $ref: "#/components/schemas/ThresholdConflict" }
+        totalFlaggedDonors: { type: integer }
+        totalProjectedTouchpoints: { type: integer }
+        byThreshold:
+          type: array
+          items:
+            type: object
+            required: [thresholdId, thresholdName, flaggedCount]
+            properties:
+              thresholdId: { type: integer }
+              thresholdName: { type: string }
+              flaggedCount: { type: integer }
+    OverrideInput:
+      type: object
+      required: [donorIds]
+      properties:
+        donorIds:
+          type: array
+          items: { type: string }
+
+    Suppression:
+      type: object
+      required: [id, campaignId, scope, donorIdCount, createdAt]
+      properties:
+        id: { type: integer }
+        campaignId: { type: integer }
+        scope: { type: string, enum: [all, channel, campaign_type, touch] }
+        channelId: { type: ["integer", "null"] }
+        campaignTypeId: { type: ["integer", "null"] }
+        touchId: { type: ["integer", "null"] }
+        reason: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+        donorIdCount: { type: integer }
+        createdAt: { type: string, format: date-time }
+    SuppressionInput:
+      type: object
+      required: [scope]
+      properties:
+        scope: { type: string, enum: [all, channel, campaign_type, touch] }
+        channelId: { type: integer }
+        campaignTypeId: { type: integer }
+        touchId: { type: integer }
+        reason: { type: string }
+        notes: { type: string }
+        rawText: { type: string }
+        googleSheetUrl: { type: string }
+
+    SeedGroup:
+      type: object
+      required: [id, campaignId, scope, seedCount, createdAt]
+      properties:
+        id: { type: integer }
+        campaignId: { type: integer }
+        scope: { type: string, enum: [all, channel, touch] }
+        channelId: { type: ["integer", "null"] }
+        touchId: { type: ["integer", "null"] }
+        seedCount: { type: integer }
+        createdAt: { type: string, format: date-time }
+    SeedGroupInput:
+      type: object
+      required: [scope]
+      properties:
+        scope: { type: string, enum: [all, channel, touch] }
+        channelId: { type: integer }
+        touchId: { type: integer }
+        rawText: { type: string }
+        googleSheetUrl: { type: string }
+
+    CampaignPreview:
+      type: object
+      required: [campaignId, audienceUnique, totalPlannedTouchpointsBefore, totalPlannedTouchpointsAfter, perTouch]
+      properties:
+        campaignId: { type: integer }
+        audienceUnique: { type: integer }
+        thresholdFlaggedDonors: { type: integer }
+        manuallySuppressedDonors: { type: integer }
+        totalSeedIds: { type: integer }
+        totalPlannedTouchpointsBefore: { type: integer }
+        totalPlannedTouchpointsAfter: { type: integer }
+        perTouch:
+          type: array
+          items: { $ref: "#/components/schemas/PerTouchPreview" }
+    PerTouchPreview:
+      type: object
+      required: [touchId, touchName, channelLabel, campaignTypeLabel, sendDate, eligibleCount, suppressedCount, seedCount, totalRowsInExport, fileName]
+      properties:
+        touchId: { type: integer }
+        touchName: { type: string }
+        channelLabel: { type: string }
+        campaignTypeLabel: { type: string }
+        sendDate: { type: string, format: date }
+        eligibleCount: { type: integer }
+        suppressedCount: { type: integer }
+        seedCount: { type: integer }
+        totalRowsInExport: { type: integer }
+        fileName: { type: string }
+
+    ExportResult:
+      type: object
+      required: [campaignId, status, exportedAt, files]
+      properties:
+        campaignId: { type: integer }
+        status: { type: string }
+        exportedAt: { type: string, format: date-time }
+        files:
+          type: array
+          items:
+            type: object
+            required: [touchId, fileName, rowCount, downloadUrl]
+            properties:
+              touchId: { type: integer }
+              fileName: { type: string }
+              rowCount: { type: integer }
+              seedCount: { type: integer }
+              suppressedCount: { type: integer }
+              downloadUrl: { type: string }
+
+    DonorLookup:
+      type: object
+      required: [donorId, touchpoints]
+      properties:
+        donorId: { type: string }
+        touchpoints:
+          type: array
+          items:
+            type: object
+            required: [campaignId, campaignName, campaignStatus, channelLabel, campaignTypeLabel, sendDate, countsTowardThreshold]
+            properties:
+              campaignId: { type: integer }
+              campaignName: { type: string }
+              campaignStatus: { type: string }
+              channelLabel: { type: string }
+              campaignTypeLabel: { type: string }
+              sendDate: { type: string, format: date }
+              countsTowardThreshold: { type: boolean }
+
+    Dashboard:
+      type: object
+      required: [totalCampaigns, totalDonorsProcessed, totalTouchpoints, byChannel, byType, recentCampaigns]
+      properties:
+        totalCampaigns: { type: integer }
+        totalDonorsProcessed: { type: integer }
+        totalTouchpoints: { type: integer }
+        byChannel:
+          type: array
+          items:
+            type: object
+            required: [label, count]
+            properties:
+              label: { type: string }
+              count: { type: integer }
+        byType:
+          type: array
+          items:
+            type: object
+            required: [label, count]
+            properties:
+              label: { type: string }
+              count: { type: integer }
+        recentCampaigns:
+          type: array
+          items: { $ref: "#/components/schemas/CampaignSummary" }
+
+    UpcomingVolumeRow:
+      type: object
+      required: [sendDate, channelLabel, touchpointCount, campaignCount]
+      properties:
+        sendDate: { type: string, format: date }
+        channelLabel: { type: string }
+        touchpointCount: { type: integer }
+        campaignCount: { type: integer }
+
+    HighVolumeDonor:
+      type: object
+      required: [donorId, totalTouchpoints, byChannel]
+      properties:
+        donorId: { type: string }
+        totalTouchpoints: { type: integer }
+        byChannel:
+          type: array
+          items:
+            type: object
+            required: [label, count]
+            properties:
+              label: { type: string }
+              count: { type: integer }
+
+    UploadJob:
+      type: object
+      required: [id, campaignId, campaignName, uploadedByName, uploadedAt, source, validCount, rejectedCount]
+      properties:
+        id: { type: integer }
+        campaignId: { type: integer }
+        campaignName: { type: string }
+        uploadedByName: { type: string }
+        uploadedAt: { type: string, format: date-time }
+        source: { type: string }
+        validCount: { type: integer }
+        rejectedCount: { type: integer }
+
+    ExportJob:
+      type: object
+      required: [id, campaignId, campaignName, exportedByName, exportedAt, fileName, rowCount]
+      properties:
+        id: { type: integer }
+        campaignId: { type: integer }
+        campaignName: { type: string }
+        exportedByName: { type: string }
+        exportedAt: { type: string, format: date-time }
+        touchId: { type: ["integer", "null"] }
+        fileName: { type: string }
+        rowCount: { type: integer }
+        seedCount: { type: integer }
+        suppressedCount: { type: integer }
+
+    AuditEntry:
+      type: object
+      required: [id, actorName, action, entityType, createdAt]
+      properties:
+        id: { type: integer }
+        actorName: { type: string }
+        actorRole: { type: string }
+        action: { type: string }
+        entityType: { type: string }
+        entityId: { type: ["integer", "null"] }
+        details: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+
+    AppSettings:
+      type: object
+      required: [fiscalYearStartMonth, fiscalYearStartDay, googleSheetImportEnabled, retentionDeleteEnabled, globalThresholdsEnabled]
+      properties:
+        fiscalYearStartMonth: { type: integer, minimum: 1, maximum: 12 }
+        fiscalYearStartDay: { type: integer, minimum: 1, maximum: 31 }
+        googleSheetImportEnabled: { type: boolean }
+        retentionDeleteEnabled: { type: boolean }
+        globalThresholdsEnabled: { type: boolean }
+    SettingsUpdate:
+      type: object
+      properties:
+        fiscalYearStartMonth: { type: integer, minimum: 1, maximum: 12 }
+        fiscalYearStartDay: { type: integer, minimum: 1, maximum: 31 }
+        googleSheetImportEnabled: { type: boolean }
+        retentionDeleteEnabled: { type: boolean }
+        globalThresholdsEnabled: { type: boolean }
+
+    RetentionInput:
+      type: object
+      required: [olderThan]
+      properties:
+        olderThan: { type: string, format: date }
+        confirm: { type: boolean }
+    RetentionResult:
+      type: object
+      required: [campaignsDeleted, touchpointsDeleted]
+      properties:
+        campaignsDeleted: { type: integer }
+        touchpointsDeleted: { type: integer }

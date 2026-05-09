@@ -1,8 +1,36 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health";
+import authRouter from "./auth";
+import usersRouter from "./users";
+import lookupsRouter from "./lookups";
+import campaignsRouter from "./campaigns";
+import audienceRouter from "./audience";
+import touchesRouter from "./touches";
+import thresholdsRouter from "./thresholds";
+import suppressionsRouter from "./suppressions";
+import seedsRouter from "./seeds";
+import exportsRouter from "./exports";
+import donorsRouter from "./donors";
+import reportsRouter from "./reports";
+import auditRouter from "./audit";
+import settingsRouter from "./settings";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use(authRouter);
+router.use(usersRouter);
+router.use(lookupsRouter);
+router.use(campaignsRouter);
+router.use(audienceRouter);
+router.use(touchesRouter);
+router.use(thresholdsRouter);
+router.use(suppressionsRouter);
+router.use(seedsRouter);
+router.use(exportsRouter);
+router.use(donorsRouter);
+router.use(reportsRouter);
+router.use(auditRouter);
+router.use(settingsRouter);
 
 export default router;
