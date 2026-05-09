@@ -381,6 +381,11 @@ export const UploadAudienceParams = zod.object({
 export const UploadAudienceBody = zod.object({
   rawText: zod.string().optional(),
   googleSheetUrl: zod.string().optional(),
+  csvFileBase64: zod
+    .string()
+    .optional()
+    .describe("Base64-encoded CSV\/TSV\/text file contents"),
+  csvFileName: zod.string().optional(),
   hasHeader: zod.boolean().optional(),
   columnIndex: zod.number().optional(),
 });
@@ -429,6 +434,15 @@ export const ListTouchesResponseItem = zod.object({
   campaignTypeLabel: zod.string(),
   sendDate: zod.coerce.date(),
   notes: zod.string().nullish(),
+  audienceMode: zod.enum(["campaign", "custom"]),
+  customValidIdCount: zod.number().optional(),
+  customUniqueIdCount: zod.number().optional(),
+  customDuplicateIdCount: zod.number().optional(),
+  customRejectedIdCount: zod.number().optional(),
+  customOriginalRowCount: zod.number().optional(),
+  customExtraColumnsIgnored: zod.boolean().optional(),
+  customRejectedSamples: zod.array(zod.string()).optional(),
+  customDuplicateSamples: zod.array(zod.string()).optional(),
 });
 export const ListTouchesResponse = zod.array(ListTouchesResponseItem);
 
@@ -442,6 +456,41 @@ export const CreateTouchBody = zod.object({
   campaignTypeId: zod.number(),
   sendDate: zod.coerce.date(),
   notes: zod.string().optional(),
+});
+
+export const UploadTouchAudienceParams = zod.object({
+  id: zod.coerce.number(),
+  touchId: zod.coerce.number(),
+});
+
+export const UploadTouchAudienceBody = zod.object({
+  rawText: zod.string().optional(),
+  googleSheetUrl: zod.string().optional(),
+  csvFileBase64: zod
+    .string()
+    .optional()
+    .describe("Base64-encoded CSV\/TSV\/text file contents"),
+  csvFileName: zod.string().optional(),
+  hasHeader: zod.boolean().optional(),
+  columnIndex: zod.number().optional(),
+});
+
+export const UploadTouchAudienceResponse = zod.object({
+  originalRowCount: zod.number(),
+  blankRowCount: zod.number(),
+  validCount: zod.number(),
+  uniqueCount: zod.number(),
+  duplicateCount: zod.number(),
+  rejectedCount: zod.number(),
+  extraColumnsIgnored: zod.boolean(),
+  detectedColumns: zod.array(zod.string()).optional(),
+  rejectedSamples: zod.array(zod.string()),
+  duplicateSamples: zod.array(zod.string()),
+});
+
+export const ClearTouchAudienceParams = zod.object({
+  id: zod.coerce.number(),
+  touchId: zod.coerce.number(),
 });
 
 export const UpdateTouchParams = zod.object({
@@ -467,6 +516,15 @@ export const UpdateTouchResponse = zod.object({
   campaignTypeLabel: zod.string(),
   sendDate: zod.coerce.date(),
   notes: zod.string().nullish(),
+  audienceMode: zod.enum(["campaign", "custom"]),
+  customValidIdCount: zod.number().optional(),
+  customUniqueIdCount: zod.number().optional(),
+  customDuplicateIdCount: zod.number().optional(),
+  customRejectedIdCount: zod.number().optional(),
+  customOriginalRowCount: zod.number().optional(),
+  customExtraColumnsIgnored: zod.boolean().optional(),
+  customRejectedSamples: zod.array(zod.string()).optional(),
+  customDuplicateSamples: zod.array(zod.string()).optional(),
 });
 
 export const DeleteTouchParams = zod.object({

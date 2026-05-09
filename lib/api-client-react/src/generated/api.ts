@@ -2078,6 +2078,170 @@ export const useCreateTouch = <
   return useMutation(getCreateTouchMutationOptions(options));
 };
 
+export const getUploadTouchAudienceUrl = (id: number, touchId: number) => {
+  return `/api/campaigns/${id}/touches/${touchId}/audience`;
+};
+
+export const uploadTouchAudience = async (
+  id: number,
+  touchId: number,
+  audienceInput: AudienceInput,
+  options?: RequestInit,
+): Promise<AudienceUploadResult> => {
+  return customFetch<AudienceUploadResult>(
+    getUploadTouchAudienceUrl(id, touchId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(audienceInput),
+    },
+  );
+};
+
+export const getUploadTouchAudienceMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof uploadTouchAudience>>,
+    TError,
+    { id: number; touchId: number; data: BodyType<AudienceInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof uploadTouchAudience>>,
+  TError,
+  { id: number; touchId: number; data: BodyType<AudienceInput> },
+  TContext
+> => {
+  const mutationKey = ["uploadTouchAudience"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof uploadTouchAudience>>,
+    { id: number; touchId: number; data: BodyType<AudienceInput> }
+  > = (props) => {
+    const { id, touchId, data } = props ?? {};
+
+    return uploadTouchAudience(id, touchId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UploadTouchAudienceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof uploadTouchAudience>>
+>;
+export type UploadTouchAudienceMutationBody = BodyType<AudienceInput>;
+export type UploadTouchAudienceMutationError = ErrorType<unknown>;
+
+export const useUploadTouchAudience = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof uploadTouchAudience>>,
+    TError,
+    { id: number; touchId: number; data: BodyType<AudienceInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof uploadTouchAudience>>,
+  TError,
+  { id: number; touchId: number; data: BodyType<AudienceInput> },
+  TContext
+> => {
+  return useMutation(getUploadTouchAudienceMutationOptions(options));
+};
+
+export const getClearTouchAudienceUrl = (id: number, touchId: number) => {
+  return `/api/campaigns/${id}/touches/${touchId}/audience`;
+};
+
+export const clearTouchAudience = async (
+  id: number,
+  touchId: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getClearTouchAudienceUrl(id, touchId), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getClearTouchAudienceMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof clearTouchAudience>>,
+    TError,
+    { id: number; touchId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof clearTouchAudience>>,
+  TError,
+  { id: number; touchId: number },
+  TContext
+> => {
+  const mutationKey = ["clearTouchAudience"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof clearTouchAudience>>,
+    { id: number; touchId: number }
+  > = (props) => {
+    const { id, touchId } = props ?? {};
+
+    return clearTouchAudience(id, touchId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ClearTouchAudienceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof clearTouchAudience>>
+>;
+
+export type ClearTouchAudienceMutationError = ErrorType<unknown>;
+
+export const useClearTouchAudience = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof clearTouchAudience>>,
+    TError,
+    { id: number; touchId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof clearTouchAudience>>,
+  TError,
+  { id: number; touchId: number },
+  TContext
+> => {
+  return useMutation(getClearTouchAudienceMutationOptions(options));
+};
+
 export const getUpdateTouchUrl = (id: number, touchId: number) => {
   return `/api/campaigns/${id}/touches/${touchId}`;
 };

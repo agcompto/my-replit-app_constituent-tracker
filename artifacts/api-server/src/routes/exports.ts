@@ -1,13 +1,18 @@
 import { Router, type IRouter } from "express";
 import { and, eq } from "drizzle-orm";
-import { db, campaignsTable, touchpointsTable, exportJobsTable, audienceDonorsTable } from "@workspace/db";
+import { db, campaignsTable, touchpointsTable, exportJobsTable } from "@workspace/db";
 import {
   GetCampaignPreviewParams,
   FinalizeCampaignParams,
   ExportCampaignParams,
 } from "@workspace/api-zod";
 import { requireAuth, audit, canMutateCampaign } from "../lib/auth";
-import { buildPerTouchExports, computeThresholdPreview } from "../lib/threshold";
+import {
+  buildPerTouchExports,
+  computeThresholdPreview,
+  getCampaignTouchesForPreview,
+  getEffectiveAudienceByTouch,
+} from "../lib/threshold";
 import { loadCampaignFull } from "../lib/campaigns";
 import { buildCsv } from "../lib/donor";
 
@@ -19,15 +24,17 @@ router.get("/campaigns/:id/preview", requireAuth, async (req, res): Promise<void
     res.status(400).json({ error: params.error.message });
     return;
   }
-  const [perTouch, preview, audienceRows] = await Promise.all([
+  const [perTouch, preview, planned] = await Promise.all([
     buildPerTouchExports(params.data.id),
     computeThresholdPreview(params.data.id),
-    db
-      .select({ donorId: audienceDonorsTable.donorId })
-      .from(audienceDonorsTable)
-      .where(eq(audienceDonorsTable.campaignId, params.data.id)),
+    getCampaignTouchesForPreview(params.data.id),
   ]);
-  const audienceUnique = audienceRows.length;
+  const audienceByTouch = await getEffectiveAudienceByTouch(params.data.id, planned);
+  const uniqueDonors = new Set<string>();
+  for (const set of audienceByTouch.values()) {
+    for (const d of set) uniqueDonors.add(d);
+  }
+  const audienceUnique = uniqueDonors.size;
   const totalSeedIds = perTouch.reduce((sum, p) => sum + p.seedCount, 0);
   const totalBefore = perTouch.reduce((s, p) => s + (p.eligibleCount + p.suppressedCount), 0);
   const totalAfter = perTouch.reduce((s, p) => s + p.eligibleCount, 0);

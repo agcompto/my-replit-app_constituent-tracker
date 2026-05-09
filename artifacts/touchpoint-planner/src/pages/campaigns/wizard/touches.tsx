@@ -1,33 +1,68 @@
-import { useState } from "react";
-import { useListTouches, useCreateTouch, useUpdateTouch, useDeleteTouch, useListChannels, getListTouchesQueryKey } from "@workspace/api-client-react";
+import { useRef, useState } from "react";
+import {
+  useListTouches,
+  useCreateTouch,
+  useUpdateTouch,
+  useDeleteTouch,
+  useListChannels,
+  useUploadTouchAudience,
+  useClearTouchAudience,
+  useGetSettings,
+  getListTouchesQueryKey,
+} from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { PiiWarning } from "@/components/ui/PiiWarning";
-import { Loader2, Plus, Edit2, Trash2, AlertTriangle } from "lucide-react";
+import { Loader2, Plus, Edit2, Trash2, AlertTriangle, Users, Upload, FileText, X } from "lucide-react";
 import { format, isBefore, startOfDay } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import { useToast } from "@/hooks/use-toast";
+
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const ACCEPTED_EXT = [".csv", ".tsv", ".txt"];
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const r = reader.result as string;
+      const idx = r.indexOf(",");
+      resolve(idx >= 0 ? r.slice(idx + 1) : r);
+    };
+    reader.onerror = () => reject(new Error("Could not read file"));
+    reader.readAsDataURL(file);
+  });
+}
 
 export default function TouchesStep({ campaign }: { campaign: any }) {
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const { data: touches, isLoading } = useListTouches(campaign.id, {
     query: { queryKey: getListTouchesQueryKey(campaign.id) }
   });
   const { data: channels } = useListChannels();
+  const { data: settings } = useGetSettings();
 
   const createTouch = useCreateTouch();
   const updateTouch = useUpdateTouch();
   const deleteTouch = useDeleteTouch();
+  const uploadTouchAudience = useUploadTouchAudience();
+  const clearTouchAudience = useClearTouchAudience();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  
+
   const [form, setForm] = useState({
     touchName: "",
     channelId: "",
@@ -36,8 +71,21 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
     notes: ""
   });
 
+  // Audience override dialog
+  const [audienceDialogOpen, setAudienceDialogOpen] = useState(false);
+  const [audienceTouch, setAudienceTouch] = useState<any | null>(null);
+  const [audRawText, setAudRawText] = useState("");
+  const [audSheetUrl, setAudSheetUrl] = useState("");
+  const [audFile, setAudFile] = useState<File | null>(null);
+  const [audHasHeader, setAudHasHeader] = useState(true);
+  const [audColumnIndex, setAudColumnIndex] = useState(0);
+  const [audError, setAudError] = useState<string | null>(null);
+  const audFileRef = useRef<HTMLInputElement>(null);
+
   const activeChannels = channels?.filter(c => c.active) || [];
   const activeCampaignTypes = campaign.campaignTypes || [];
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: getListTouchesQueryKey(campaign.id) });
 
   const handleOpenNew = () => {
     setEditingId(null);
@@ -64,10 +112,8 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
   };
 
   const handleDelete = (id: number) => {
-    if (confirm("Remove this touchpoint?")) {
-      deleteTouch.mutate({ campaignId: campaign.id, id }, {
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: getListTouchesQueryKey(campaign.id) })
-      });
+    if (confirm("Remove this touchpoint? Any per-touch audience list will also be deleted.")) {
+      deleteTouch.mutate({ id: campaign.id, touchId: id }, { onSuccess: invalidate });
     }
   };
 
@@ -81,29 +127,79 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
     };
 
     if (editingId) {
-      updateTouch.mutate({ campaignId: campaign.id, id: editingId, data }, {
-        onSuccess: () => {
-          setDialogOpen(false);
-          queryClient.invalidateQueries({ queryKey: getListTouchesQueryKey(campaign.id) });
-        }
+      updateTouch.mutate({ id: campaign.id, touchId: editingId, data }, {
+        onSuccess: () => { setDialogOpen(false); invalidate(); }
       });
     } else {
-      createTouch.mutate({ campaignId: campaign.id, data }, {
-        onSuccess: () => {
-          setDialogOpen(false);
-          queryClient.invalidateQueries({ queryKey: getListTouchesQueryKey(campaign.id) });
-        }
+      createTouch.mutate({ id: campaign.id, data }, {
+        onSuccess: () => { setDialogOpen(false); invalidate(); }
       });
     }
   };
 
+  const openAudienceDialog = (touch: any) => {
+    setAudienceTouch(touch);
+    setAudRawText("");
+    setAudSheetUrl("");
+    setAudFile(null);
+    setAudHasHeader(true);
+    setAudColumnIndex(0);
+    setAudError(null);
+    setAudienceDialogOpen(true);
+  };
+
+  const submitTouchAudience = async (type: "text" | "sheet" | "file") => {
+    if (!audienceTouch) return;
+    setAudError(null);
+    try {
+      let payload: any = { hasHeader: audHasHeader, columnIndex: audColumnIndex };
+      if (type === "text") payload.rawText = audRawText;
+      else if (type === "sheet") payload.googleSheetUrl = audSheetUrl;
+      else if (type === "file") {
+        if (!audFile) throw new Error("Choose a file first.");
+        if (audFile.size > MAX_FILE_BYTES) throw new Error("File is too large (max 10 MB).");
+        payload.csvFileBase64 = await fileToBase64(audFile);
+        payload.csvFileName = audFile.name;
+      }
+      uploadTouchAudience.mutate(
+        { id: campaign.id, touchId: audienceTouch.id, data: payload },
+        {
+          onSuccess: (res) => {
+            toast({ title: `Per-touch audience saved (${res.uniqueCount.toLocaleString()} unique IDs)` });
+            setAudienceDialogOpen(false);
+            invalidate();
+          },
+          onError: (e: any) => {
+            setAudError(e?.response?.data?.error ?? e?.message ?? "Upload failed");
+          },
+        },
+      );
+    } catch (e) {
+      setAudError(e instanceof Error ? e.message : "Upload failed");
+    }
+  };
+
+  const clearAudience = (touch: any) => {
+    if (!confirm(`Remove the per-touch audience for "${touch.touchName}"? This touch will revert to using the campaign-wide audience.`)) return;
+    clearTouchAudience.mutate({ id: campaign.id, touchId: touch.id }, {
+      onSuccess: () => {
+        toast({ title: "Reverted to campaign-wide audience" });
+        invalidate();
+      },
+    });
+  };
+
   const isFormValid = form.touchName && form.channelId && form.campaignTypeId && form.sendDate;
   const isPastDate = form.sendDate && isBefore(new Date(form.sendDate), startOfDay(new Date()));
-  const isDuplicate = touches?.some(t => 
-    t.id !== editingId && 
-    t.channelId.toString() === form.channelId && 
+  const isDuplicate = touches?.some(t =>
+    t.id !== editingId &&
+    t.channelId.toString() === form.channelId &&
     new Date(t.sendDate).toISOString().split('T')[0] === form.sendDate
   );
+
+  const campaignAudienceMissing = !campaign.validIdCount || campaign.validIdCount === 0;
+  const touchesUsingCampaign = (touches ?? []).filter((t: any) => t.audienceMode !== "custom");
+  const touchesMissingAudience = campaignAudienceMissing && touchesUsingCampaign.length > 0;
 
   return (
     <div className="space-y-6">
@@ -111,7 +207,9 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle>Touch Builder</CardTitle>
-            <CardDescription>Define the individual planned communications for this campaign.</CardDescription>
+            <CardDescription>
+              Define the individual planned communications. Each touch sends to the campaign-wide audience by default, or you can set a per-touch list.
+            </CardDescription>
           </div>
           <Button onClick={handleOpenNew} size="sm"><Plus className="h-4 w-4 mr-2"/> Add Touch</Button>
         </CardHeader>
@@ -123,38 +221,74 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
                 <TableHead>Channel</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Send Date</TableHead>
+                <TableHead>Audience</TableHead>
                 <TableHead className="pr-6 text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={5} className="h-32 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell></TableRow>
+                <TableRow><TableCell colSpan={6} className="h-32 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell></TableRow>
               ) : !touches?.length ? (
-                <TableRow><TableCell colSpan={5} className="h-32 text-center text-muted-foreground">No touchpoints defined yet. Add one to get started.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">No touchpoints defined yet. Add one to get started.</TableCell></TableRow>
               ) : (
-                touches.map(t => (
-                  <TableRow key={t.id}>
-                    <TableCell className="pl-6 font-medium">{t.touchName}</TableCell>
-                    <TableCell>{t.channelLabel}</TableCell>
-                    <TableCell>{t.campaignTypeLabel}</TableCell>
-                    <TableCell>{format(new Date(t.sendDate), "MMM d, yyyy")}</TableCell>
-                    <TableCell className="pr-6 text-right">
-                      <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(t)}><Edit2 className="h-4 w-4" /></Button>
-                      <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => handleDelete(t.id)}><Trash2 className="h-4 w-4" /></Button>
-                    </TableCell>
-                  </TableRow>
-                ))
+                touches.map((t: any) => {
+                  const custom = t.audienceMode === "custom";
+                  return (
+                    <TableRow key={t.id}>
+                      <TableCell className="pl-6 font-medium">{t.touchName}</TableCell>
+                      <TableCell>{t.channelLabel}</TableCell>
+                      <TableCell>{t.campaignTypeLabel}</TableCell>
+                      <TableCell>{format(new Date(t.sendDate), "MMM d, yyyy")}</TableCell>
+                      <TableCell>
+                        {custom ? (
+                          <div className="flex items-center gap-2">
+                            <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/30">
+                              Custom · {t.customUniqueIdCount?.toLocaleString() ?? 0}
+                            </Badge>
+                            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => openAudienceDialog(t)}>
+                              Replace
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" onClick={() => clearAudience(t)} title="Revert to campaign audience">
+                              <X className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="text-muted-foreground">Campaign-wide</Badge>
+                            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => openAudienceDialog(t)}>
+                              <Users className="h-3.5 w-3.5 mr-1" /> Set custom
+                            </Button>
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell className="pr-6 text-right">
+                        <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(t)}><Edit2 className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => handleDelete(t.id)}><Trash2 className="h-4 w-4" /></Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
 
+      {touchesMissingAudience && (
+        <div className="bg-amber-50 border border-amber-200 p-3 rounded-md flex gap-3 text-amber-800 text-sm">
+          <AlertTriangle className="h-5 w-5 shrink-0" />
+          <div>
+            <strong>Missing audience.</strong> {touchesUsingCampaign.length} touch(es) are set to use the campaign-wide audience, but no campaign-wide list has been uploaded. Either upload a campaign-wide list or give every touch its own list.
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-between pt-4 border-t">
         <Button variant="outline" onClick={() => setLocation(`/campaigns/${campaign.id}/edit?step=audience`)}>Back</Button>
         <Button onClick={() => setLocation(`/campaigns/${campaign.id}/edit?step=thresholds`)}>Proceed to Thresholds</Button>
       </div>
 
+      {/* Touch create/edit dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -165,7 +299,7 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
               <label className="text-sm font-medium">Touch Name *</label>
               <Input value={form.touchName} onChange={e => setForm({...form, touchName: e.target.value})} placeholder="e.g. Email #1 - Announcement" />
             </div>
-            
+
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium">Channel *</label>
@@ -210,6 +344,127 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
               {(createTouch.isPending || updateTouch.isPending) && <Loader2 className="h-4 w-4 animate-spin mr-2"/>} Save
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Per-touch audience dialog */}
+      <Dialog open={audienceDialogOpen} onOpenChange={setAudienceDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Per-Touch Audience{audienceTouch ? `: ${audienceTouch.touchName}` : ""}</DialogTitle>
+            <DialogDescription>
+              Provide a list of Donor IDs for just this touch. It will <strong>replace</strong> the campaign-wide list for this touch only — other touches are unaffected.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Tabs defaultValue="paste">
+              <TabsList className="mb-4">
+                <TabsTrigger value="paste">Paste / CSV Text</TabsTrigger>
+                <TabsTrigger value="file"><Upload className="h-4 w-4 mr-1.5" /> Upload CSV</TabsTrigger>
+                {settings?.googleSheetImportEnabled && (
+                  <TabsTrigger value="sheet">Google Sheet URL</TabsTrigger>
+                )}
+              </TabsList>
+
+              <TabsContent value="paste" className="space-y-3">
+                <Textarea
+                  className="font-mono text-sm h-48"
+                  placeholder="Paste Donor IDs here..."
+                  value={audRawText}
+                  onChange={(e) => setAudRawText(e.target.value)}
+                />
+                <div className="flex items-center gap-4 text-sm">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox id="audHeader1" checked={audHasHeader} onCheckedChange={(c) => setAudHasHeader(!!c)} />
+                    <Label htmlFor="audHeader1">First row is header</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Label htmlFor="audCol1">Column index</Label>
+                    <Input id="audCol1" type="number" min="0" value={audColumnIndex} onChange={(e) => setAudColumnIndex(Number(e.target.value))} className="w-16" />
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <Button onClick={() => submitTouchAudience("text")} disabled={!audRawText.trim() || uploadTouchAudience.isPending}>
+                    {uploadTouchAudience.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Save Audience
+                  </Button>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="file" className="space-y-3">
+                <div className="border-2 border-dashed border-gray-300 rounded-md p-6 text-center">
+                  <input
+                    ref={audFileRef}
+                    type="file"
+                    accept={ACCEPTED_EXT.join(",")}
+                    className="hidden"
+                    onChange={(e) => { setAudFile(e.target.files?.[0] ?? null); setAudError(null); }}
+                  />
+                  {audFile ? (
+                    <div className="space-y-2">
+                      <FileText className="h-8 w-8 mx-auto text-primary" />
+                      <p className="font-medium text-sm">{audFile.name}</p>
+                      <p className="text-xs text-muted-foreground">{(audFile.size / 1024).toFixed(1)} KB</p>
+                      <Button variant="outline" size="sm" onClick={() => { setAudFile(null); if (audFileRef.current) audFileRef.current.value = ""; }}>Choose different file</Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Upload className="h-8 w-8 mx-auto text-muted-foreground" />
+                      <p className="text-xs text-muted-foreground">.csv, .tsv, .txt — up to 10 MB</p>
+                      <Button variant="outline" size="sm" onClick={() => audFileRef.current?.click()}>Choose File</Button>
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-4 text-sm">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox id="audHeader2" checked={audHasHeader} onCheckedChange={(c) => setAudHasHeader(!!c)} />
+                    <Label htmlFor="audHeader2">First row is header</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Label htmlFor="audCol2">Column index</Label>
+                    <Input id="audCol2" type="number" min="0" value={audColumnIndex} onChange={(e) => setAudColumnIndex(Number(e.target.value))} className="w-16" />
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <Button onClick={() => submitTouchAudience("file")} disabled={!audFile || uploadTouchAudience.isPending}>
+                    {uploadTouchAudience.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Save Audience
+                  </Button>
+                </div>
+              </TabsContent>
+
+              {settings?.googleSheetImportEnabled && (
+              <TabsContent value="sheet" className="space-y-3">
+                <div className="space-y-2">
+                  <Label>Google Sheet URL</Label>
+                  <Input
+                    placeholder="https://docs.google.com/spreadsheets/d/..."
+                    value={audSheetUrl}
+                    onChange={(e) => setAudSheetUrl(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">Share as <strong>"Anyone with the link &mdash; Viewer"</strong>.</p>
+                </div>
+                <div className="flex items-center gap-4 text-sm">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox id="audHeader3" checked={audHasHeader} onCheckedChange={(c) => setAudHasHeader(!!c)} />
+                    <Label htmlFor="audHeader3">First row is header</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Label htmlFor="audCol3">Column index</Label>
+                    <Input id="audCol3" type="number" min="0" value={audColumnIndex} onChange={(e) => setAudColumnIndex(Number(e.target.value))} className="w-16" />
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <Button onClick={() => submitTouchAudience("sheet")} disabled={!audSheetUrl.trim() || uploadTouchAudience.isPending}>
+                    {uploadTouchAudience.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Import & Save
+                  </Button>
+                </div>
+              </TabsContent>
+              )}
+            </Tabs>
+
+            {audError && (
+              <div className="mt-3 text-sm text-destructive bg-red-50 border border-red-200 rounded p-3">{audError}</div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>

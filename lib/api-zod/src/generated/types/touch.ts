@@ -5,6 +5,7 @@
  * Constituent Touchpoint Planner API
  * OpenAPI spec version: 0.1.0
  */
+import type { TouchAudienceMode } from "./touchAudienceMode";
 
 export interface Touch {
   id: number;
@@ -17,4 +18,13 @@ export interface Touch {
   sendDate: Date;
   /** @nullable */
   notes?: string | null;
+  audienceMode: TouchAudienceMode;
+  customValidIdCount?: number;
+  customUniqueIdCount?: number;
+  customDuplicateIdCount?: number;
+  customRejectedIdCount?: number;
+  customOriginalRowCount?: number;
+  customExtraColumnsIgnored?: boolean;
+  customRejectedSamples?: string[];
+  customDuplicateSamples?: string[];
 }

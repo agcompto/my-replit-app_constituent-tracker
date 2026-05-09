@@ -390,6 +390,32 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Touch" }
+  /campaigns/{id}/touches/{touchId}/audience:
+    post:
+      operationId: uploadTouchAudience
+      tags: [touches]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: touchId, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AudienceInput" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AudienceUploadResult" }
+    delete:
+      operationId: clearTouchAudience
+      tags: [touches]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: touchId, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: Cleared }
   /campaigns/{id}/touches/{touchId}:
     patch:
       operationId: updateTouch
@@ -918,9 +944,11 @@ components:
     AudienceInput:
       type: object
       properties:
-        # Provide one of: rawText, googleSheetUrl
+        # Provide exactly one of: rawText, googleSheetUrl, csvFileBase64
         rawText: { type: string }
         googleSheetUrl: { type: string }
+        csvFileBase64: { type: string, description: "Base64-encoded CSV/TSV/text file contents" }
+        csvFileName: { type: string }
         hasHeader: { type: boolean }
         columnIndex: { type: integer }
     AudienceUploadResult:
@@ -946,7 +974,7 @@ components:
 
     Touch:
       type: object
-      required: [id, campaignId, touchName, channelId, channelLabel, campaignTypeId, campaignTypeLabel, sendDate]
+      required: [id, campaignId, touchName, channelId, channelLabel, campaignTypeId, campaignTypeLabel, sendDate, audienceMode]
       properties:
         id: { type: integer }
         campaignId: { type: integer }
@@ -957,6 +985,19 @@ components:
         campaignTypeLabel: { type: string }
         sendDate: { type: string, format: date }
         notes: { type: ["string", "null"] }
+        audienceMode: { type: string, enum: [campaign, custom] }
+        customValidIdCount: { type: integer }
+        customUniqueIdCount: { type: integer }
+        customDuplicateIdCount: { type: integer }
+        customRejectedIdCount: { type: integer }
+        customOriginalRowCount: { type: integer }
+        customExtraColumnsIgnored: { type: boolean }
+        customRejectedSamples:
+          type: array
+          items: { type: string }
+        customDuplicateSamples:
+          type: array
+          items: { type: string }
     TouchInput:
       type: object
       required: [touchName, channelId, campaignTypeId, sendDate]

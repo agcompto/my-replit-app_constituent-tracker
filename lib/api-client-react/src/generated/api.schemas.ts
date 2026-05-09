@@ -209,6 +209,9 @@ export interface Campaign {
 export interface AudienceInput {
   rawText?: string;
   googleSheetUrl?: string;
+  /** Base64-encoded CSV/TSV/text file contents */
+  csvFileBase64?: string;
+  csvFileName?: string;
   hasHeader?: boolean;
   columnIndex?: number;
 }
@@ -226,6 +229,14 @@ export interface AudienceUploadResult {
   duplicateSamples: string[];
 }
 
+export type TouchAudienceMode =
+  (typeof TouchAudienceMode)[keyof typeof TouchAudienceMode];
+
+export const TouchAudienceMode = {
+  campaign: "campaign",
+  custom: "custom",
+} as const;
+
 export interface Touch {
   id: number;
   campaignId: number;
@@ -237,6 +248,15 @@ export interface Touch {
   sendDate: string;
   /** @nullable */
   notes?: string | null;
+  audienceMode: TouchAudienceMode;
+  customValidIdCount?: number;
+  customUniqueIdCount?: number;
+  customDuplicateIdCount?: number;
+  customRejectedIdCount?: number;
+  customOriginalRowCount?: number;
+  customExtraColumnsIgnored?: boolean;
+  customRejectedSamples?: string[];
+  customDuplicateSamples?: string[];
 }
 
 export interface TouchInput {

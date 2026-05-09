@@ -138,11 +138,36 @@ export const touchesTable = pgTable(
       .references(() => campaignTypesTable.id),
     sendDate: date("send_date").notNull(),
     notes: text("notes"),
+    // Audience source: "campaign" (use campaign-wide audience) or "custom" (per-touch list)
+    audienceMode: text("audience_mode").notNull().default("campaign"),
+    customOriginalRowCount: integer("custom_original_row_count").notNull().default(0),
+    customValidIdCount: integer("custom_valid_id_count").notNull().default(0),
+    customUniqueIdCount: integer("custom_unique_id_count").notNull().default(0),
+    customDuplicateIdCount: integer("custom_duplicate_id_count").notNull().default(0),
+    customRejectedIdCount: integer("custom_rejected_id_count").notNull().default(0),
+    customExtraColumnsIgnored: boolean("custom_extra_columns_ignored").notNull().default(false),
+    customRejectedSamples: jsonb("custom_rejected_samples").$type<string[]>().notNull().default([]),
+    customDuplicateSamples: jsonb("custom_duplicate_samples").$type<string[]>().notNull().default([]),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     campaignIdx: index("touches_campaign_idx").on(t.campaignId),
     sendDateIdx: index("touches_send_date_idx").on(t.sendDate),
+  }),
+);
+
+// Per-touch audience overrides (populated only when touchesTable.audienceMode = "custom")
+export const touchAudienceDonorsTable = pgTable(
+  "touch_audience_donors",
+  {
+    touchId: integer("touch_id")
+      .notNull()
+      .references(() => touchesTable.id, { onDelete: "cascade" }),
+    donorId: text("donor_id").notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.touchId, t.donorId] }),
+    donorIdx: index("touch_audience_donor_id_idx").on(t.donorId),
   }),
 );
 
@@ -259,7 +284,7 @@ export const uploadJobsTable = pgTable("upload_jobs", {
   campaignId: integer("campaign_id")
     .notNull()
     .references(() => campaignsTable.id, { onDelete: "cascade" }),
-  source: text("source").notNull(), // paste | google_sheet
+  source: text("source").notNull(), // paste | google_sheet | file
   validCount: integer("valid_count").notNull().default(0),
   rejectedCount: integer("rejected_count").notNull().default(0),
   uploadedByUserId: integer("uploaded_by_user_id")

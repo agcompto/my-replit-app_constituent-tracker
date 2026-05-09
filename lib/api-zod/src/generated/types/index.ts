@@ -63,6 +63,7 @@ export * from "./thresholdInputScope";
 export * from "./thresholdPreview";
 export * from "./thresholdPreviewByThresholdItem";
 export * from "./touch";
+export * from "./touchAudienceMode";
 export * from "./touchInput";
 export * from "./touchUpdate";
 export * from "./upcomingVolumeRow";

@@ -1,9 +1,14 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
-import { db, audienceDonorsTable, campaignsTable, uploadJobsTable } from "@workspace/db";
+import { db, audienceDonorsTable, campaignsTable, uploadJobsTable, appSettingsTable } from "@workspace/db";
 import { UploadAudienceParams, UploadAudienceBody, GetAudienceSummaryParams } from "@workspace/api-zod";
 import { requireAuth, audit, canMutateCampaign } from "../lib/auth";
-import { parseDonorIdInput } from "../lib/donor";
+import { resolveAudienceSource } from "../lib/audienceSource";
+
+async function googleSheetImportAllowed(): Promise<boolean> {
+  const [s] = await db.select().from(appSettingsTable);
+  return !!s?.googleSheetImportEnabled;
+}
 
 const router: IRouter = Router();
 
@@ -21,19 +26,29 @@ router.post("/campaigns/:id/audience", requireAuth, async (req, res): Promise<vo
   const access = await canMutateCampaign(params.data.id, req.currentUser!);
   if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
   if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
-  const raw = body.data.rawText;
-  if (!raw || !raw.trim()) {
-    res.status(400).json({ error: "Provide rawText with donor IDs (Google Sheet imports require server enablement)." });
+
+  if (body.data.googleSheetUrl && !(await googleSheetImportAllowed())) {
+    res.status(403).json({ error: "Google Sheet import is disabled by an administrator." });
     return;
   }
-  const result = parseDonorIdInput(raw, {
-    hasHeader: body.data.hasHeader,
-    columnIndex: body.data.columnIndex,
-  });
+
+  let result;
+  try {
+    result = await resolveAudienceSource({
+      rawText: body.data.rawText,
+      googleSheetUrl: body.data.googleSheetUrl,
+      csvFileBase64: body.data.csvFileBase64,
+      hasHeader: body.data.hasHeader,
+      columnIndex: body.data.columnIndex,
+    });
+  } catch (e) {
+    res.status(400).json({ error: e instanceof Error ? e.message : "Could not parse audience input." });
+    return;
+  }
+
   // Replace audience
   await db.delete(audienceDonorsTable).where(eq(audienceDonorsTable.campaignId, params.data.id));
   if (result.validIds.length > 0) {
-    // Insert in chunks
     const chunkSize = 1000;
     for (let i = 0; i < result.validIds.length; i += chunkSize) {
       const chunk = result.validIds.slice(i, i + chunkSize);
@@ -53,14 +68,18 @@ router.post("/campaigns/:id/audience", requireAuth, async (req, res): Promise<vo
       duplicateIdCount: result.duplicateIds.length,
       rejectedIdCount: result.rejectedSamples.length,
       extraColumnsIgnored: result.extraColumnsIgnored,
-      rejectedSamples: result.rejectedSamples,
-      duplicateSamples: result.duplicateSamples,
+      // Do NOT persist raw rejected/duplicate samples — they may contain PII
+      // from CSV/Sheet uploads (names, emails, phones). Counts are stored above
+      // and the immediate POST response below returns the samples just for
+      // the uploader's one-time cleanup download.
+      rejectedSamples: [],
+      duplicateSamples: [],
     })
     .where(eq(campaignsTable.id, params.data.id));
 
   await db.insert(uploadJobsTable).values({
     campaignId: params.data.id,
-    source: "paste",
+    source: result.source,
     validCount: result.validIds.length,
     rejectedCount: result.rejectedSamples.length,
     uploadedByUserId: req.currentUser!.id,
@@ -71,7 +90,7 @@ router.post("/campaigns/:id/audience", requireAuth, async (req, res): Promise<vo
     action: "upload_audience",
     entityType: "campaign",
     entityId: params.data.id,
-    details: `valid=${result.validIds.length} rejected=${result.rejectedSamples.length} duplicates=${result.duplicateIds.length}`,
+    details: `source=${result.source} valid=${result.validIds.length} rejected=${result.rejectedSamples.length} duplicates=${result.duplicateIds.length}`,
   });
 
   res.json({
@@ -108,8 +127,9 @@ router.get("/campaigns/:id/audience", requireAuth, async (req, res): Promise<voi
     rejectedCount: c.rejectedIdCount,
     extraColumnsIgnored: c.extraColumnsIgnored,
     detectedColumns: [],
-    rejectedSamples: c.rejectedSamples ?? [],
-    duplicateSamples: c.duplicateSamples ?? [],
+    // Samples are intentionally not persisted (may contain PII from uploads).
+    rejectedSamples: [],
+    duplicateSamples: [],
   });
 });
 

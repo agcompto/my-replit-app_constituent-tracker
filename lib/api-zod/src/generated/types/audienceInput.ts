@@ -9,6 +9,9 @@
 export interface AudienceInput {
   rawText?: string;
   googleSheetUrl?: string;
+  /** Base64-encoded CSV/TSV/text file contents */
+  csvFileBase64?: string;
+  csvFileName?: string;
   hasHeader?: boolean;
   columnIndex?: number;
 }

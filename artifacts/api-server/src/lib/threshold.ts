@@ -1,4 +1,4 @@
-import { db, touchesTable, touchpointsTable, audienceDonorsTable, suppressionsTable, seedGroupsTable, thresholdsTable, thresholdOverridesTable, channelsTable, campaignTypesTable, campaignsTable } from "@workspace/db";
+import { db, touchesTable, touchpointsTable, audienceDonorsTable, touchAudienceDonorsTable, suppressionsTable, seedGroupsTable, thresholdsTable, thresholdOverridesTable, channelsTable, campaignTypesTable, campaignsTable } from "@workspace/db";
 import { eq, and, ne, inArray } from "drizzle-orm";
 
 export interface PlannedTouch {
@@ -9,6 +9,7 @@ export interface PlannedTouch {
   channelLabel: string;
   campaignTypeLabel: string;
   touchName: string;
+  audienceMode: string;
 }
 
 interface HistoryRow {
@@ -46,6 +47,7 @@ export async function getCampaignTouchesForPreview(campaignId: number): Promise<
     channelLabel: channels.find((c) => c.id === r.channelId)?.name ?? "Unknown",
     campaignTypeLabel: types.find((t) => t.id === r.campaignTypeId)?.name ?? "Unknown",
     touchName: r.touchName,
+    audienceMode: r.audienceMode,
   }));
 }
 
@@ -55,6 +57,47 @@ export async function getCampaignAudience(campaignId: number): Promise<string[]>
     .from(audienceDonorsTable)
     .where(eq(audienceDonorsTable.campaignId, campaignId));
   return rows.map((r) => r.donorId);
+}
+
+export async function getTouchAudience(touchId: number): Promise<string[]> {
+  const rows = await db
+    .select({ donorId: touchAudienceDonorsTable.donorId })
+    .from(touchAudienceDonorsTable)
+    .where(eq(touchAudienceDonorsTable.touchId, touchId));
+  return rows.map((r) => r.donorId);
+}
+
+/**
+ * Returns a Map<touchId, Set<donorId>> giving the effective audience for each touch:
+ * - touch.audienceMode === "custom" → use the touch's own list
+ * - otherwise → use the campaign-wide audience
+ */
+export async function getEffectiveAudienceByTouch(
+  campaignId: number,
+  planned: PlannedTouch[],
+): Promise<Map<number, Set<string>>> {
+  const campaignAudience = new Set(await getCampaignAudience(campaignId));
+  const customTouchIds = planned.filter((p) => p.audienceMode === "custom").map((p) => p.id);
+  const customRows = customTouchIds.length
+    ? await db
+        .select({ touchId: touchAudienceDonorsTable.touchId, donorId: touchAudienceDonorsTable.donorId })
+        .from(touchAudienceDonorsTable)
+        .where(inArray(touchAudienceDonorsTable.touchId, customTouchIds))
+    : [];
+  const customByTouch = new Map<number, Set<string>>();
+  for (const r of customRows) {
+    if (!customByTouch.has(r.touchId)) customByTouch.set(r.touchId, new Set());
+    customByTouch.get(r.touchId)!.add(r.donorId);
+  }
+  const out = new Map<number, Set<string>>();
+  for (const p of planned) {
+    if (p.audienceMode === "custom") {
+      out.set(p.id, customByTouch.get(p.id) ?? new Set());
+    } else {
+      out.set(p.id, campaignAudience);
+    }
+  }
+  return out;
 }
 
 export async function getHistoricalTouchpoints(
@@ -136,15 +179,20 @@ export interface PreviewOutput {
 }
 
 export async function computeThresholdPreview(campaignId: number): Promise<PreviewOutput> {
-  const [audience, planned, history, thresholds, overrides] = await Promise.all([
-    getCampaignAudience(campaignId),
+  const [planned, history, thresholds, overrides] = await Promise.all([
     getCampaignTouchesForPreview(campaignId),
     getHistoricalTouchpoints(campaignId),
     getThresholds(campaignId),
     getOverrides(campaignId),
   ]);
+  const audienceByTouch = await getEffectiveAudienceByTouch(campaignId, planned);
 
-  const audienceSet = new Set(audience);
+  // Union of all donors who will receive any touch in this campaign
+  const allDonors = new Set<string>();
+  for (const set of audienceByTouch.values()) {
+    for (const d of set) allDonors.add(d);
+  }
+
   const conflicts: Array<ConflictAccum & { overridden: boolean }> = [];
   const byThreshold = new Map<number, { name: string; flagged: Set<string> }>();
   const flaggedDonors = new Set<string>();
@@ -157,23 +205,23 @@ export async function computeThresholdPreview(campaignId: number): Promise<Previ
   // Build per-donor combined timeline
   const perDonorEvents = new Map<string, Array<{ sendDate: string; channelId: number; campaignTypeId: number; isPlanned: boolean }>>();
   for (const h of history) {
-    if (!audienceSet.has(h.donorId)) continue;
+    if (!allDonors.has(h.donorId)) continue;
     const arr = perDonorEvents.get(h.donorId) ?? [];
     arr.push({ sendDate: h.sendDate, channelId: h.channelId, campaignTypeId: h.campaignTypeId, isPlanned: false });
     perDonorEvents.set(h.donorId, arr);
   }
-  for (const donorId of audienceSet) {
+  for (const donorId of allDonors) {
     const arr = perDonorEvents.get(donorId) ?? [];
     for (const p of planned) {
+      if (!audienceByTouch.get(p.id)?.has(donorId)) continue;
       arr.push({ sendDate: p.sendDate, channelId: p.channelId, campaignTypeId: p.campaignTypeId, isPlanned: true });
+      totalProjected += 1;
     }
     perDonorEvents.set(donorId, arr);
-    totalProjected += planned.length;
   }
 
   for (const [donorId, events] of perDonorEvents) {
     for (const t of thresholds) {
-      // Filter events by scope
       const filtered = events.filter((e) => {
         if (t.scope === "channel") return e.channelId === t.channelId;
         if (t.scope === "campaign_type") return e.campaignTypeId === t.campaignTypeId;
@@ -182,9 +230,6 @@ export async function computeThresholdPreview(campaignId: number): Promise<Previ
         return true; // all
       });
       if (filtered.length === 0) continue;
-      // For each planned event, compute the window centered (or rolling) — use rolling window: count events within (windowDays-1) before to (windowDays-1) after this date
-      // Simpler: for each pair of dates, if diff < windowDays, they're in same rolling window.
-      // We'll compute the max count of events in any windowDays-day rolling window that contains a planned send date.
       for (const planned of filtered.filter((e) => e.isPlanned)) {
         const inWindow = filtered.filter((e) => diffDays(e.sendDate, planned.sendDate) < t.windowDays);
         if (inWindow.length > t.maxTouchpoints) {
@@ -201,7 +246,7 @@ export async function computeThresholdPreview(campaignId: number): Promise<Previ
           });
           flaggedDonors.add(donorId);
           byThreshold.get(t.id)!.flagged.add(donorId);
-          break; // one conflict per donor per threshold
+          break;
         }
       }
     }
@@ -241,19 +286,17 @@ function safeFileName(s: string): string {
 export async function buildPerTouchExports(
   campaignId: number,
 ): Promise<PerTouchExport[]> {
-  const [audience, planned, suppressions, seeds, preview, campaign] = await Promise.all([
-    getCampaignAudience(campaignId),
+  const [planned, suppressions, seeds, preview, campaign] = await Promise.all([
     getCampaignTouchesForPreview(campaignId),
     getSuppressionsForCampaign(campaignId),
     getSeedGroupsForCampaign(campaignId),
     computeThresholdPreview(campaignId),
     db.select().from(campaignsTable).where(eq(campaignsTable.id, campaignId)).then((r) => r[0]),
   ]);
+  const audienceByTouch = await getEffectiveAudienceByTouch(campaignId, planned);
   const thresholds = await getThresholds(campaignId);
   const overrides = await getOverrides(campaignId);
-  const audienceSet = new Set(audience);
 
-  // Determine donors to remove globally based on threshold actionMode = remove and not overridden
   const donorsRemovedByThreshold = new Set<string>();
   for (const conf of preview.conflicts) {
     const t = thresholds.find((x) => x.id === conf.thresholdId);
@@ -265,8 +308,11 @@ export async function buildPerTouchExports(
 
   const out: PerTouchExport[] = [];
   for (const p of planned) {
-    // Determine suppressed set for this touch
-    const suppressedSet = new Set<string>(donorsRemovedByThreshold);
+    const touchAudience = audienceByTouch.get(p.id) ?? new Set<string>();
+    const suppressedSet = new Set<string>();
+    for (const d of donorsRemovedByThreshold) {
+      if (touchAudience.has(d)) suppressedSet.add(d);
+    }
     for (const s of suppressions) {
       const matches =
         s.scope === "all" ||
@@ -274,11 +320,13 @@ export async function buildPerTouchExports(
         (s.scope === "campaign_type" && s.campaignTypeId === p.campaignTypeId) ||
         (s.scope === "touch" && s.touchId === p.id);
       if (matches) {
-        for (const d of (s.donorIds as string[]) ?? []) suppressedSet.add(d);
+        for (const d of (s.donorIds as string[]) ?? []) {
+          if (touchAudience.has(d)) suppressedSet.add(d);
+        }
       }
     }
     const eligible: string[] = [];
-    for (const d of audienceSet) {
+    for (const d of touchAudience) {
       if (!suppressedSet.has(d)) eligible.push(d);
     }
     const seedSet = new Set<string>();
@@ -292,7 +340,7 @@ export async function buildPerTouchExports(
       }
     }
     const eligibleCount = eligible.length;
-    const suppressedCount = audienceSet.size - eligibleCount;
+    const suppressedCount = touchAudience.size - eligibleCount;
     const seedCount = seedSet.size;
     const fileName = `${safeFileName(campaign?.name ?? "campaign")}__${safeFileName(p.touchName)}__${p.sendDate}.csv`;
     out.push({

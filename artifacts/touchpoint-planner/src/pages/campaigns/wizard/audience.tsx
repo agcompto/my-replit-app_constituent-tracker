@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useUploadAudience, useGetSettings, getGetCampaignQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -9,9 +9,26 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, Download, AlertTriangle, Info } from "lucide-react";
+import { Loader2, Download, AlertTriangle, Info, Upload, FileText } from "lucide-react";
 import { downloadCSV } from "@/lib/utils";
 import { useLocation } from "wouter";
+
+const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
+const ACCEPTED_EXT = [".csv", ".tsv", ".txt"];
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const r = reader.result as string;
+      // strip data URI prefix
+      const idx = r.indexOf(",");
+      resolve(idx >= 0 ? r.slice(idx + 1) : r);
+    };
+    reader.onerror = () => reject(new Error("Could not read file"));
+    reader.readAsDataURL(file);
+  });
+}
 
 export default function AudienceStep({ campaign }: { campaign: any }) {
   const { data: settings } = useGetSettings();
@@ -24,22 +41,43 @@ export default function AudienceStep({ campaign }: { campaign: any }) {
   const [googleSheetUrl, setGoogleSheetUrl] = useState("");
   const [hasHeader, setHasHeader] = useState(true);
   const [columnIndex, setColumnIndex] = useState(0);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleUpload = (type: "text" | "sheet") => {
-    uploadMutation.mutate({
-      id: campaign.id,
-      data: {
-        rawText: type === "text" ? rawText : undefined,
-        googleSheetUrl: type === "sheet" ? googleSheetUrl : undefined,
-        hasHeader,
-        columnIndex
+  const onError = (err: unknown) => {
+    const msg = err instanceof Error ? err.message : "Upload failed";
+    setUploadError(msg);
+    toast({ title: "Upload failed", description: msg, variant: "destructive" });
+  };
+
+  const handleUpload = async (type: "text" | "sheet" | "file") => {
+    setUploadError(null);
+    try {
+      let payload: any = { hasHeader, columnIndex };
+      if (type === "text") payload.rawText = rawText;
+      else if (type === "sheet") payload.googleSheetUrl = googleSheetUrl;
+      else if (type === "file") {
+        if (!selectedFile) throw new Error("Choose a file first.");
+        if (selectedFile.size > MAX_FILE_BYTES) {
+          throw new Error("File is too large (max 10 MB).");
+        }
+        payload.csvFileBase64 = await fileToBase64(selectedFile);
+        payload.csvFileName = selectedFile.name;
       }
-    }, {
-      onSuccess: () => {
-        toast({ title: "Audience uploaded successfully" });
-        queryClient.invalidateQueries({ queryKey: getGetCampaignQueryKey(campaign.id) });
-      }
-    });
+      uploadMutation.mutate({ id: campaign.id, data: payload }, {
+        onSuccess: () => {
+          toast({ title: "Audience uploaded successfully" });
+          queryClient.invalidateQueries({ queryKey: getGetCampaignQueryKey(campaign.id) });
+        },
+        onError: (e: any) => {
+          const serverMsg = e?.response?.data?.error ?? e?.message ?? "Upload failed";
+          onError(new Error(serverMsg));
+        },
+      });
+    } catch (e) {
+      onError(e);
+    }
   };
 
   const result = uploadMutation.data;
@@ -53,10 +91,17 @@ export default function AudienceStep({ campaign }: { campaign: any }) {
         </div>
       </div>
 
-      {campaign.validIdCount !== undefined && !result && (
+      <div className="bg-blue-50 border border-blue-200 p-4 rounded-md flex gap-3 text-blue-900 text-sm">
+        <Info className="h-5 w-5 shrink-0" />
+        <div>
+          <strong className="font-semibold">Optional step.</strong> If every touch will have its own audience list (set in the Touch Builder), you can skip this campaign-wide list entirely.
+        </div>
+      </div>
+
+      {campaign.validIdCount !== undefined && campaign.validIdCount > 0 && !result && (
         <Card className="bg-blue-50/50 border-blue-100">
           <CardHeader className="py-4">
-            <CardTitle className="text-lg text-blue-900 flex items-center gap-2"><Info className="h-5 w-5" /> Current Audience</CardTitle>
+            <CardTitle className="text-lg text-blue-900 flex items-center gap-2"><Info className="h-5 w-5" /> Current Campaign-Wide Audience</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -111,19 +156,22 @@ export default function AudienceStep({ campaign }: { campaign: any }) {
       ) : (
         <Card>
           <CardHeader>
-            <CardTitle>Upload Audience</CardTitle>
-            <CardDescription>Provide a list of Donor IDs for this campaign.</CardDescription>
+            <CardTitle>Upload Campaign-Wide Audience</CardTitle>
+            <CardDescription>Provide a list of Donor IDs for this campaign. You can skip this if every touch will use its own list.</CardDescription>
           </CardHeader>
           <CardContent>
             <Tabs defaultValue="paste">
               <TabsList className="mb-4">
                 <TabsTrigger value="paste">Paste / CSV Text</TabsTrigger>
-                {settings?.googleSheetImportEnabled && <TabsTrigger value="sheet">Google Sheet URL</TabsTrigger>}
+                <TabsTrigger value="file"><Upload className="h-4 w-4 mr-1.5" /> Upload CSV</TabsTrigger>
+                {settings?.googleSheetImportEnabled && (
+                  <TabsTrigger value="sheet">Google Sheet URL</TabsTrigger>
+                )}
               </TabsList>
 
               <TabsContent value="paste" className="space-y-4">
-                <Textarea 
-                  className="font-mono text-sm h-64" 
+                <Textarea
+                  className="font-mono text-sm h-64"
                   placeholder="Paste Donor IDs here... (one per line or comma separated)"
                   value={rawText}
                   onChange={(e) => setRawText(e.target.value)}
@@ -145,35 +193,91 @@ export default function AudienceStep({ campaign }: { campaign: any }) {
                 </div>
               </TabsContent>
 
+              <TabsContent value="file" className="space-y-4">
+                <div className="border-2 border-dashed border-gray-300 rounded-md p-8 text-center hover:border-primary transition-colors">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept={ACCEPTED_EXT.join(",")}
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0] ?? null;
+                      setSelectedFile(f);
+                      setUploadError(null);
+                    }}
+                  />
+                  {selectedFile ? (
+                    <div className="space-y-2">
+                      <FileText className="h-10 w-10 mx-auto text-primary" />
+                      <p className="font-medium">{selectedFile.name}</p>
+                      <p className="text-xs text-muted-foreground">{(selectedFile.size / 1024).toFixed(1)} KB</p>
+                      <Button variant="outline" size="sm" onClick={() => { setSelectedFile(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}>
+                        Choose a different file
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Upload className="h-10 w-10 mx-auto text-muted-foreground" />
+                      <p className="text-sm">Drop a CSV file here or click to browse</p>
+                      <p className="text-xs text-muted-foreground">Accepted: .csv, .tsv, .txt — up to 10 MB</p>
+                      <Button variant="outline" onClick={() => fileInputRef.current?.click()}>Choose File</Button>
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-6">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox id="hasHeaderFile" checked={hasHeader} onCheckedChange={(c) => setHasHeader(!!c)} />
+                    <Label htmlFor="hasHeaderFile">First row is header</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Label htmlFor="colIndexFile">Donor ID Column Index (0-based)</Label>
+                    <Input id="colIndexFile" type="number" min="0" value={columnIndex} onChange={(e) => setColumnIndex(Number(e.target.value))} className="w-20" />
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <Button onClick={() => handleUpload("file")} disabled={!selectedFile || uploadMutation.isPending}>
+                    {uploadMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Upload & Process
+                  </Button>
+                </div>
+              </TabsContent>
+
               {settings?.googleSheetImportEnabled && (
-                <TabsContent value="sheet" className="space-y-4">
-                  <div className="space-y-2">
-                    <Label>Google Sheet URL</Label>
-                    <Input 
-                      placeholder="https://docs.google.com/spreadsheets/d/..."
-                      value={googleSheetUrl}
-                      onChange={(e) => setGoogleSheetUrl(e.target.value)}
-                    />
-                    <p className="text-xs text-muted-foreground">Sheet must be accessible to anyone with the link.</p>
+              <TabsContent value="sheet" className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Google Sheet URL</Label>
+                  <Input
+                    placeholder="https://docs.google.com/spreadsheets/d/..."
+                    value={googleSheetUrl}
+                    onChange={(e) => setGoogleSheetUrl(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Sheet must be shared as <strong>"Anyone with the link &mdash; Viewer"</strong>. Include <code className="text-xs">#gid=...</code> in the URL to target a specific tab.
+                  </p>
+                </div>
+                <div className="flex items-center gap-6">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox id="hasHeaderSheet" checked={hasHeader} onCheckedChange={(c) => setHasHeader(!!c)} />
+                    <Label htmlFor="hasHeaderSheet">First row is header</Label>
                   </div>
-                  <div className="flex items-center gap-6">
-                    <div className="flex items-center space-x-2">
-                      <Checkbox id="hasHeaderSheet" checked={hasHeader} onCheckedChange={(c) => setHasHeader(!!c)} />
-                      <Label htmlFor="hasHeaderSheet">First row is header</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Label htmlFor="colIndexSheet">Donor ID Column Index (0-based)</Label>
-                      <Input id="colIndexSheet" type="number" min="0" value={columnIndex} onChange={(e) => setColumnIndex(Number(e.target.value))} className="w-20" />
-                    </div>
+                  <div className="flex items-center space-x-2">
+                    <Label htmlFor="colIndexSheet">Donor ID Column Index (0-based)</Label>
+                    <Input id="colIndexSheet" type="number" min="0" value={columnIndex} onChange={(e) => setColumnIndex(Number(e.target.value))} className="w-20" />
                   </div>
-                  <div className="flex justify-end">
-                    <Button onClick={() => handleUpload("sheet")} disabled={!googleSheetUrl.trim() || uploadMutation.isPending}>
-                      {uploadMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Import & Process
-                    </Button>
-                  </div>
-                </TabsContent>
+                </div>
+                <div className="flex justify-end">
+                  <Button onClick={() => handleUpload("sheet")} disabled={!googleSheetUrl.trim() || uploadMutation.isPending}>
+                    {uploadMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Import & Process
+                  </Button>
+                </div>
+              </TabsContent>
               )}
             </Tabs>
+
+            {uploadError && (
+              <div className="mt-4 text-sm text-destructive bg-red-50 border border-red-200 rounded p-3">
+                {uploadError}
+              </div>
+            )}
 
             <div className="flex justify-between pt-6 mt-6 border-t">
               <Button variant="outline" onClick={() => setLocation(`/campaigns/${campaign.id}/edit?step=setup`)}>Back</Button>
