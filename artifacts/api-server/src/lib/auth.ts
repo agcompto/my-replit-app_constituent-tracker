@@ -1,4 +1,4 @@
-import { db, usersTable, auditLogTable } from "@workspace/db";
+import { db, usersTable, auditLogTable, campaignsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 
@@ -66,6 +66,19 @@ export function requireRole(...roles: Role[]) {
     }
     next();
   };
+}
+
+export async function canMutateCampaign(
+  campaignId: number,
+  user: SessionUser,
+): Promise<"allowed" | "forbidden" | "not_found"> {
+  const [c] = await db
+    .select({ submittedByUserId: campaignsTable.submittedByUserId })
+    .from(campaignsTable)
+    .where(eq(campaignsTable.id, campaignId));
+  if (!c) return "not_found";
+  if (user.role === "admin" || user.role === "super_admin") return "allowed";
+  return c.submittedByUserId === user.id ? "allowed" : "forbidden";
 }
 
 export async function audit(opts: {

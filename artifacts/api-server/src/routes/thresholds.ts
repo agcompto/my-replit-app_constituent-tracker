@@ -10,7 +10,7 @@ import {
   SetThresholdOverridesParams,
   SetThresholdOverridesBody,
 } from "@workspace/api-zod";
-import { requireAuth, audit } from "../lib/auth";
+import { requireAuth, audit, canMutateCampaign } from "../lib/auth";
 import { computeThresholdPreview } from "../lib/threshold";
 
 const router: IRouter = Router();
@@ -39,6 +39,9 @@ router.post("/campaigns/:id/thresholds", requireAuth, async (req, res): Promise<
     res.status(400).json({ error: body.error.message });
     return;
   }
+  const access = await canMutateCampaign(params.data.id, req.currentUser!);
+  if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
+  if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
   const [row] = await db
     .insert(thresholdsTable)
     .values({
@@ -70,6 +73,9 @@ router.delete(
       res.status(400).json({ error: params.error.message });
       return;
     }
+    const access = await canMutateCampaign(params.data.id, req.currentUser!);
+    if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
+    if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
     await db
       .delete(thresholdsTable)
       .where(
@@ -116,6 +122,9 @@ router.post(
       res.status(400).json({ error: body.error.message });
       return;
     }
+    const access = await canMutateCampaign(params.data.id, req.currentUser!);
+    if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
+    if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
     await db
       .delete(thresholdOverridesTable)
       .where(eq(thresholdOverridesTable.campaignId, params.data.id));

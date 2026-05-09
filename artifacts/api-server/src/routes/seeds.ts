@@ -7,7 +7,7 @@ import {
   CreateSeedGroupBody,
   DeleteSeedGroupParams,
 } from "@workspace/api-zod";
-import { requireAuth, audit } from "../lib/auth";
+import { requireAuth, audit, canMutateCampaign } from "../lib/auth";
 import { parseDonorIdInput } from "../lib/donor";
 
 const router: IRouter = Router();
@@ -47,6 +47,9 @@ router.post("/campaigns/:id/seeds", requireAuth, async (req, res): Promise<void>
     res.status(400).json({ error: body.error.message });
     return;
   }
+  const access = await canMutateCampaign(params.data.id, req.currentUser!);
+  if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
+  if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
   const parsed = parseDonorIdInput(body.data.rawText ?? "");
   const [row] = await db
     .insert(seedGroupsTable)
@@ -86,6 +89,9 @@ router.delete(
       res.status(400).json({ error: params.error.message });
       return;
     }
+    const access = await canMutateCampaign(params.data.id, req.currentUser!);
+    if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
+    if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
     await db
       .delete(seedGroupsTable)
       .where(

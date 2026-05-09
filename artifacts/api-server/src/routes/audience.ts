@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db, audienceDonorsTable, campaignsTable, uploadJobsTable } from "@workspace/db";
 import { UploadAudienceParams, UploadAudienceBody, GetAudienceSummaryParams } from "@workspace/api-zod";
-import { requireAuth, audit } from "../lib/auth";
+import { requireAuth, audit, canMutateCampaign } from "../lib/auth";
 import { parseDonorIdInput } from "../lib/donor";
 
 const router: IRouter = Router();
@@ -18,6 +18,9 @@ router.post("/campaigns/:id/audience", requireAuth, async (req, res): Promise<vo
     res.status(400).json({ error: body.error.message });
     return;
   }
+  const access = await canMutateCampaign(params.data.id, req.currentUser!);
+  if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
+  if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
   const raw = body.data.rawText;
   if (!raw || !raw.trim()) {
     res.status(400).json({ error: "Provide rawText with donor IDs (Google Sheet imports require server enablement)." });

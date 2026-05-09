@@ -7,7 +7,7 @@ import {
   CreateSuppressionBody,
   DeleteSuppressionParams,
 } from "@workspace/api-zod";
-import { requireAuth, audit } from "../lib/auth";
+import { requireAuth, audit, canMutateCampaign } from "../lib/auth";
 import { parseDonorIdInput } from "../lib/donor";
 
 const router: IRouter = Router();
@@ -50,6 +50,9 @@ router.post("/campaigns/:id/suppressions", requireAuth, async (req, res): Promis
     res.status(400).json({ error: body.error.message });
     return;
   }
+  const access = await canMutateCampaign(params.data.id, req.currentUser!);
+  if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
+  if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
   const raw = body.data.rawText ?? "";
   const parsed = parseDonorIdInput(raw);
   const [row] = await db
@@ -96,6 +99,9 @@ router.delete(
       res.status(400).json({ error: params.error.message });
       return;
     }
+    const access = await canMutateCampaign(params.data.id, req.currentUser!);
+    if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
+    if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
     await db
       .delete(suppressionsTable)
       .where(

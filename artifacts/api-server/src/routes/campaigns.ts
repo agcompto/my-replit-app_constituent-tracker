@@ -9,7 +9,7 @@ import {
   ArchiveCampaignParams,
   VoidCampaignParams,
 } from "@workspace/api-zod";
-import { requireAuth, requireRole, audit } from "../lib/auth";
+import { requireAuth, requireRole, audit, canMutateCampaign } from "../lib/auth";
 import { loadCampaignFull, loadCampaignSummary, setCampaignTypes } from "../lib/campaigns";
 
 const router: IRouter = Router();
@@ -103,6 +103,9 @@ router.patch("/campaigns/:id", requireAuth, async (req, res): Promise<void> => {
     res.status(400).json({ error: body.error.message });
     return;
   }
+  const access = await canMutateCampaign(params.data.id, req.currentUser!);
+  if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
+  if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
   const existing = await loadCampaignFull(params.data.id);
   if (!existing) {
     res.status(404).json({ error: "Not found" });

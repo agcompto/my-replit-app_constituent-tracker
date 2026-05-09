@@ -9,7 +9,7 @@ import {
   UpdateTouchBody,
   DeleteTouchParams,
 } from "@workspace/api-zod";
-import { requireAuth, audit } from "../lib/auth";
+import { requireAuth, audit, canMutateCampaign } from "../lib/auth";
 
 const router: IRouter = Router();
 
@@ -58,6 +58,9 @@ router.post("/campaigns/:id/touches", requireAuth, async (req, res): Promise<voi
     res.status(400).json({ error: body.error.message });
     return;
   }
+  const access = await canMutateCampaign(params.data.id, req.currentUser!);
+  if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
+  if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
   const sendDateStr =
     body.data.sendDate instanceof Date
       ? body.data.sendDate.toISOString().slice(0, 10)
@@ -97,6 +100,9 @@ router.patch(
       res.status(400).json({ error: body.error.message });
       return;
     }
+    const access = await canMutateCampaign(params.data.id, req.currentUser!);
+    if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
+    if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
     const updates: Record<string, unknown> = { ...body.data };
     if (updates.sendDate instanceof Date) {
       updates.sendDate = updates.sendDate.toISOString().slice(0, 10);
@@ -134,6 +140,9 @@ router.delete(
       res.status(400).json({ error: params.error.message });
       return;
     }
+    const access = await canMutateCampaign(params.data.id, req.currentUser!);
+    if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
+    if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
     await db
       .delete(touchesTable)
       .where(

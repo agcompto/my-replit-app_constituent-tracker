@@ -6,7 +6,7 @@ import {
   FinalizeCampaignParams,
   ExportCampaignParams,
 } from "@workspace/api-zod";
-import { requireAuth, audit } from "../lib/auth";
+import { requireAuth, audit, canMutateCampaign } from "../lib/auth";
 import { buildPerTouchExports, computeThresholdPreview } from "../lib/threshold";
 import { loadCampaignFull } from "../lib/campaigns";
 import { buildCsv } from "../lib/donor";
@@ -61,6 +61,9 @@ router.post("/campaigns/:id/finalize", requireAuth, async (req, res): Promise<vo
     res.status(400).json({ error: params.error.message });
     return;
   }
+  const access = await canMutateCampaign(params.data.id, req.currentUser!);
+  if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
+  if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
   await db
     .update(campaignsTable)
     .set({ status: "finalized" })
@@ -80,6 +83,9 @@ router.post("/campaigns/:id/export", requireAuth, async (req, res): Promise<void
     res.status(400).json({ error: params.error.message });
     return;
   }
+  const access = await canMutateCampaign(params.data.id, req.currentUser!);
+  if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
+  if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
   const perTouch = await buildPerTouchExports(params.data.id);
   if (perTouch.length === 0) {
     res.status(400).json({ error: "No touches to export" });
@@ -189,6 +195,9 @@ router.get(
       res.status(400).json({ error: "Invalid params" });
       return;
     }
+    const access = await canMutateCampaign(id, req.currentUser!);
+    if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
+    if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
     const rows = await db
       .select({ donorId: touchpointsTable.donorId, isSeed: touchpointsTable.isSeed })
       .from(touchpointsTable)
