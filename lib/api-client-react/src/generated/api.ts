@@ -2798,6 +2798,88 @@ export const useCreateThreshold = <
   return useMutation(getCreateThresholdMutationOptions(options));
 };
 
+export const getUpdateThresholdUrl = (id: number, thresholdId: number) => {
+  return `/api/campaigns/${id}/thresholds/${thresholdId}`;
+};
+
+export const updateThreshold = async (
+  id: number,
+  thresholdId: number,
+  thresholdInput: ThresholdInput,
+  options?: RequestInit,
+): Promise<ThresholdCheck> => {
+  return customFetch<ThresholdCheck>(getUpdateThresholdUrl(id, thresholdId), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(thresholdInput),
+  });
+};
+
+export const getUpdateThresholdMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateThreshold>>,
+    TError,
+    { id: number; thresholdId: number; data: BodyType<ThresholdInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateThreshold>>,
+  TError,
+  { id: number; thresholdId: number; data: BodyType<ThresholdInput> },
+  TContext
+> => {
+  const mutationKey = ["updateThreshold"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateThreshold>>,
+    { id: number; thresholdId: number; data: BodyType<ThresholdInput> }
+  > = (props) => {
+    const { id, thresholdId, data } = props ?? {};
+
+    return updateThreshold(id, thresholdId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateThresholdMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateThreshold>>
+>;
+export type UpdateThresholdMutationBody = BodyType<ThresholdInput>;
+export type UpdateThresholdMutationError = ErrorType<unknown>;
+
+export const useUpdateThreshold = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateThreshold>>,
+    TError,
+    { id: number; thresholdId: number; data: BodyType<ThresholdInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateThreshold>>,
+  TError,
+  { id: number; thresholdId: number; data: BodyType<ThresholdInput> },
+  TContext
+> => {
+  return useMutation(getUpdateThresholdMutationOptions(options));
+};
+
 export const getDeleteThresholdUrl = (id: number, thresholdId: number) => {
   return `/api/campaigns/${id}/thresholds/${thresholdId}`;
 };

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useListThresholds, useCreateThreshold, useDeleteThreshold, usePreviewThresholds, useSetThresholdOverrides, useListChannels, useCreateSuppression, getListThresholdsQueryKey, getListSuppressionsQueryKey } from "@workspace/api-client-react";
+import { useListThresholds, useCreateThreshold, useUpdateThreshold, useDeleteThreshold, usePreviewThresholds, useSetThresholdOverrides, useListChannels, useCreateSuppression, getListThresholdsQueryKey, getListSuppressionsQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,7 +8,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Plus, Trash2, RefreshCw, Info, Search, ArrowUpDown, ArrowUp, ArrowDown, ShieldOff } from "lucide-react";
+import { Loader2, Plus, Trash2, Pencil, RefreshCw, Info, Search, ArrowUpDown, ArrowUp, ArrowDown, ShieldOff } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
@@ -24,6 +25,7 @@ export default function ThresholdsStep({ campaign }: { campaign: any }) {
   const activeCampaignTypes = campaign.campaignTypes || [];
 
   const createMutation = useCreateThreshold();
+  const updateMutation = useUpdateThreshold();
   const deleteMutation = useDeleteThreshold();
   const previewMutation = usePreviewThresholds();
   const overrideMutation = useSetThresholdOverrides();
@@ -131,9 +133,71 @@ export default function ThresholdsStep({ campaign }: { campaign: any }) {
     });
   };
 
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    maxTouchpoints: "3",
+    windowDays: "14",
+    scope: "all" as any,
+    channelId: "",
+    campaignTypeId: "",
+    actionMode: "track" as any,
+  });
+
+  const handleEdit = (t: any) => {
+    setEditingId(t.id);
+    setEditForm({
+      name: t.name,
+      maxTouchpoints: String(t.maxTouchpoints),
+      windowDays: String(t.windowDays),
+      scope: t.scope,
+      channelId: t.channelId != null ? String(t.channelId) : "",
+      campaignTypeId: t.campaignTypeId != null ? String(t.campaignTypeId) : "",
+      actionMode: t.actionMode,
+    });
+  };
+
+  const isEditFormValid = editForm.name && editForm.maxTouchpoints && editForm.windowDays &&
+    (editForm.scope === "all" ||
+     (editForm.scope === "channel" && editForm.channelId) ||
+     (editForm.scope === "campaign_type" && editForm.campaignTypeId) ||
+     (editForm.scope === "channel_and_type" && editForm.channelId && editForm.campaignTypeId));
+
+  const handleSaveEdit = () => {
+    if (editingId == null) return;
+    const data = {
+      name: editForm.name,
+      maxTouchpoints: Number(editForm.maxTouchpoints),
+      windowDays: Number(editForm.windowDays),
+      scope: editForm.scope,
+      channelId: editForm.scope === "channel" || editForm.scope === "channel_and_type" ? Number(editForm.channelId) : undefined,
+      campaignTypeId: editForm.scope === "campaign_type" || editForm.scope === "channel_and_type" ? Number(editForm.campaignTypeId) : undefined,
+      actionMode: editForm.actionMode,
+    };
+    updateMutation.mutate(
+      { id: campaign.id, thresholdId: editingId, data },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListThresholdsQueryKey(campaign.id) });
+          setEditingId(null);
+          setPreviewData(null);
+          setSelectedOverrides([]);
+          toast({ title: "Rule updated", description: "Preview cleared — recalculate to see updated conflicts." });
+        },
+        onError: (err: any) => {
+          toast({ title: "Failed to update rule", description: String(err?.message ?? err), variant: "destructive" });
+        },
+      },
+    );
+  };
+
   const handleDelete = (thresholdId: number) => {
     deleteMutation.mutate({ id: campaign.id, thresholdId }, {
-      onSuccess: () => queryClient.invalidateQueries({ queryKey: getListThresholdsQueryKey(campaign.id) })
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListThresholdsQueryKey(campaign.id) });
+        setPreviewData(null);
+        setSelectedOverrides([]);
+      },
     });
   };
 
@@ -256,7 +320,7 @@ export default function ThresholdsStep({ campaign }: { campaign: any }) {
                 <TableHead>Window</TableHead>
                 <TableHead>Scope</TableHead>
                 <TableHead>Action</TableHead>
-                <TableHead className="text-right">Remove</TableHead>
+                <TableHead className="text-right">Edit / Remove</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -273,15 +337,96 @@ export default function ThresholdsStep({ campaign }: { campaign: any }) {
                     <TableCell className="capitalize">{t.scope.replace(/_/g, ' ')}</TableCell>
                     <TableCell className="capitalize">{t.actionMode}</TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => handleDelete(t.id)}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <div className="flex justify-end gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => handleEdit(t)} title="Edit rule" aria-label={`Edit rule ${t.name}`}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => handleDelete(t.id)} title="Remove rule" aria-label={`Remove rule ${t.name}`}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))
               )}
             </TableBody>
           </Table>
+
+          <Dialog open={editingId !== null} onOpenChange={(open) => { if (!open) setEditingId(null); }}>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Edit Threshold Rule</DialogTitle>
+                <DialogDescription>Update the rule's limits, scope, or action mode.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div className="grid md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-rule-name">Rule Name</Label>
+                    <Input id="edit-rule-name" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-rule-max">Max Touchpoints</Label>
+                    <Input id="edit-rule-max" type="number" min="1" value={editForm.maxTouchpoints} onChange={e => setEditForm({ ...editForm, maxTouchpoints: e.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-rule-window">Window (Days)</Label>
+                    <Input id="edit-rule-window" type="number" min="1" value={editForm.windowDays} onChange={e => setEditForm({ ...editForm, windowDays: e.target.value })} />
+                  </div>
+                </div>
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div className="space-y-3">
+                    <Label>Scope</Label>
+                    <RadioGroup value={editForm.scope} onValueChange={v => setEditForm({ ...editForm, scope: v as any })}>
+                      <div className="flex items-center space-x-2"><RadioGroupItem value="all" id="edit-scope-all" /><Label htmlFor="edit-scope-all">All Communications</Label></div>
+                      <div className="flex items-center space-x-2"><RadioGroupItem value="channel" id="edit-scope-channel" /><Label htmlFor="edit-scope-channel">Specific Channel</Label></div>
+                      <div className="flex items-center space-x-2"><RadioGroupItem value="campaign_type" id="edit-scope-type" /><Label htmlFor="edit-scope-type">Specific Campaign Type</Label></div>
+                      <div className="flex items-center space-x-2"><RadioGroupItem value="channel_and_type" id="edit-scope-both" /><Label htmlFor="edit-scope-both">Channel + Type</Label></div>
+                    </RadioGroup>
+                  </div>
+                  <div className="space-y-4">
+                    {(editForm.scope === "channel" || editForm.scope === "channel_and_type") && (
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-rule-channel">Channel</Label>
+                        <Select value={editForm.channelId} onValueChange={v => setEditForm({ ...editForm, channelId: v })}>
+                          <SelectTrigger id="edit-rule-channel"><SelectValue placeholder="Select channel" /></SelectTrigger>
+                          <SelectContent>
+                            {activeChannels.map(c => <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                    {(editForm.scope === "campaign_type" || editForm.scope === "channel_and_type") && (
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-rule-type">Campaign Type</Label>
+                        <Select value={editForm.campaignTypeId} onValueChange={v => setEditForm({ ...editForm, campaignTypeId: v })}>
+                          <SelectTrigger id="edit-rule-type"><SelectValue placeholder="Select type" /></SelectTrigger>
+                          <SelectContent>
+                            {activeCampaignTypes.map((t: any) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-3 pt-2">
+                  <Label>Action Mode</Label>
+                  <RadioGroup value={editForm.actionMode} onValueChange={v => setEditForm({ ...editForm, actionMode: v as any })} className="flex flex-wrap gap-4">
+                    <div className="flex items-center space-x-2"><RadioGroupItem value="track" id="edit-action-track" /><Label htmlFor="edit-action-track">Track Only</Label></div>
+                    <div className="flex items-center space-x-2"><RadioGroupItem value="flag" id="edit-action-flag" /><Label htmlFor="edit-action-flag">Flag</Label></div>
+                    <div className="flex items-center space-x-2"><RadioGroupItem value="remove" id="edit-action-remove" /><Label htmlFor="edit-action-remove">Remove Flagged</Label></div>
+                    <div className="flex items-center space-x-2"><RadioGroupItem value="manual" id="edit-action-manual" /><Label htmlFor="edit-action-manual">Manual Review</Label></div>
+                  </RadioGroup>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setEditingId(null)}>Cancel</Button>
+                <Button onClick={handleSaveEdit} disabled={!isEditFormValid || updateMutation.isPending}>
+                  {updateMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  Save Changes
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           <div className="pt-6 border-t flex items-center justify-between">
             <p className="text-sm text-muted-foreground">Run a preview check to see which constituents will trigger thresholds.</p>

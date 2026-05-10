@@ -521,6 +521,23 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ThresholdCheck" }
   /campaigns/{id}/thresholds/{thresholdId}:
+    patch:
+      operationId: updateThreshold
+      tags: [thresholds]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: thresholdId, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ThresholdInput" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ThresholdCheck" }
     delete:
       operationId: deleteThreshold
       tags: [thresholds]

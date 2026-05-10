@@ -595,6 +595,33 @@ export const CreateThresholdBody = zod.object({
   actionMode: zod.enum(["track", "flag", "remove", "manual"]),
 });
 
+export const UpdateThresholdParams = zod.object({
+  id: zod.coerce.number(),
+  thresholdId: zod.coerce.number(),
+});
+
+export const UpdateThresholdBody = zod.object({
+  name: zod.string(),
+  maxTouchpoints: zod.number().min(1),
+  windowDays: zod.number().min(1),
+  scope: zod.enum(["all", "channel", "campaign_type", "channel_and_type"]),
+  channelId: zod.number().optional(),
+  campaignTypeId: zod.number().optional(),
+  actionMode: zod.enum(["track", "flag", "remove", "manual"]),
+});
+
+export const UpdateThresholdResponse = zod.object({
+  id: zod.number(),
+  campaignId: zod.number(),
+  name: zod.string(),
+  maxTouchpoints: zod.number(),
+  windowDays: zod.number(),
+  scope: zod.enum(["all", "channel", "campaign_type", "channel_and_type"]),
+  channelId: zod.number().nullish(),
+  campaignTypeId: zod.number().nullish(),
+  actionMode: zod.enum(["track", "flag", "remove", "manual"]),
+});
+
 export const DeleteThresholdParams = zod.object({
   id: zod.coerce.number(),
   thresholdId: zod.coerce.number(),

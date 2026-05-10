@@ -5,6 +5,8 @@ import {
   ListThresholdsParams,
   CreateThresholdParams,
   CreateThresholdBody,
+  UpdateThresholdParams,
+  UpdateThresholdBody,
   DeleteThresholdParams,
   PreviewThresholdsParams,
   SetThresholdOverridesParams,
@@ -64,6 +66,56 @@ router.post("/campaigns/:id/thresholds", requireAuth, async (req, res): Promise<
   });
   res.status(201).json(row);
 });
+
+router.patch(
+  "/campaigns/:id/thresholds/:thresholdId",
+  requireAuth,
+  async (req, res): Promise<void> => {
+    const params = UpdateThresholdParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const body = UpdateThresholdBody.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: body.error.message });
+      return;
+    }
+    const access = await canMutateCampaign(params.data.id, req.currentUser!);
+    if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
+    if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
+    if (access === "voided") { res.status(403).json({ error: "Cannot modify a voided campaign" }); return; }
+    const [row] = await db
+      .update(thresholdsTable)
+      .set({
+        name: body.data.name,
+        maxTouchpoints: body.data.maxTouchpoints,
+        windowDays: body.data.windowDays,
+        scope: body.data.scope,
+        channelId: body.data.channelId ?? null,
+        campaignTypeId: body.data.campaignTypeId ?? null,
+        actionMode: body.data.actionMode,
+      })
+      .where(
+        and(
+          eq(thresholdsTable.id, params.data.thresholdId),
+          eq(thresholdsTable.campaignId, params.data.id),
+        ),
+      )
+      .returning();
+    if (!row) {
+      res.status(404).json({ error: "Threshold not found" });
+      return;
+    }
+    await audit({
+      actor: req.currentUser!,
+      action: "update_threshold",
+      entityType: "threshold",
+      entityId: row.id,
+    });
+    res.json(row);
+  },
+);
 
 router.delete(
   "/campaigns/:id/thresholds/:thresholdId",
