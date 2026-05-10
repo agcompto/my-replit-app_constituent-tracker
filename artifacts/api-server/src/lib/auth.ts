@@ -71,12 +71,16 @@ export function requireRole(...roles: Role[]) {
 export async function canMutateCampaign(
   campaignId: number,
   user: SessionUser,
-): Promise<"allowed" | "forbidden" | "not_found"> {
+): Promise<"allowed" | "forbidden" | "not_found" | "voided"> {
   const [c] = await db
-    .select({ submittedByUserId: campaignsTable.submittedByUserId })
+    .select({
+      submittedByUserId: campaignsTable.submittedByUserId,
+      status: campaignsTable.status,
+    })
     .from(campaignsTable)
     .where(eq(campaignsTable.id, campaignId));
   if (!c) return "not_found";
+  if (c.status === "voided") return "voided";
   if (user.role === "admin" || user.role === "super_admin") return "allowed";
   return c.submittedByUserId === user.id ? "allowed" : "forbidden";
 }

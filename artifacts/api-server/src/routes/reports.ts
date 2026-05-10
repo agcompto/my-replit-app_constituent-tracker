@@ -18,9 +18,9 @@ const router: IRouter = Router();
 router.get("/reports/dashboard", requireRole("admin", "super_admin"), async (_req, res): Promise<void> => {
   const [totals] = await db
     .select({
-      totalCampaigns: sql<number>`(select count(*)::int from ${campaignsTable})`,
-      totalDonors: sql<number>`(select count(distinct donor_id)::int from ${touchpointsTable} where is_seed = false)`,
-      totalTouchpoints: sql<number>`(select count(*)::int from ${touchpointsTable} where is_seed = false)`,
+      totalCampaigns: sql<number>`(select count(*)::int from ${campaignsTable} where status <> 'voided')`,
+      totalDonors: sql<number>`(select count(distinct t.donor_id)::int from ${touchpointsTable} t join ${campaignsTable} c on c.id = t.campaign_id where t.is_seed = false and c.status <> 'voided')`,
+      totalTouchpoints: sql<number>`(select count(*)::int from ${touchpointsTable} t join ${campaignsTable} c on c.id = t.campaign_id where t.is_seed = false and c.status <> 'voided')`,
     })
     .from(sql`(select 1) t`);
   const byChannel = await db
@@ -30,7 +30,8 @@ router.get("/reports/dashboard", requireRole("admin", "super_admin"), async (_re
     })
     .from(touchpointsTable)
     .innerJoin(channelsTable, sql`${touchpointsTable.channelId} = ${channelsTable.id}`)
-    .where(sql`${touchpointsTable.isSeed} = false`)
+    .innerJoin(campaignsTable, sql`${touchpointsTable.campaignId} = ${campaignsTable.id}`)
+    .where(sql`${touchpointsTable.isSeed} = false AND ${campaignsTable.status} <> 'voided'`)
     .groupBy(channelsTable.name);
   const byType = await db
     .select({
@@ -42,7 +43,8 @@ router.get("/reports/dashboard", requireRole("admin", "super_admin"), async (_re
       campaignTypesTable,
       sql`${touchpointsTable.campaignTypeId} = ${campaignTypesTable.id}`,
     )
-    .where(sql`${touchpointsTable.isSeed} = false`)
+    .innerJoin(campaignsTable, sql`${touchpointsTable.campaignId} = ${campaignsTable.id}`)
+    .where(sql`${touchpointsTable.isSeed} = false AND ${campaignsTable.status} <> 'voided'`)
     .groupBy(campaignTypesTable.name);
   const recent = await db
     .select({ id: campaignsTable.id })
@@ -72,7 +74,8 @@ router.get("/reports/upcoming-volume", requireRole("admin", "super_admin"), asyn
     })
     .from(touchpointsTable)
     .innerJoin(channelsTable, sql`${touchpointsTable.channelId} = ${channelsTable.id}`)
-    .where(sql`${touchpointsTable.sendDate} >= CURRENT_DATE AND ${touchpointsTable.isSeed} = false`)
+    .innerJoin(campaignsTable, sql`${touchpointsTable.campaignId} = ${campaignsTable.id}`)
+    .where(sql`${touchpointsTable.sendDate} >= CURRENT_DATE AND ${touchpointsTable.isSeed} = false AND ${campaignsTable.status} <> 'voided'`)
     .groupBy(touchpointsTable.sendDate, channelsTable.name)
     .orderBy(touchpointsTable.sendDate);
   res.json(
@@ -96,7 +99,8 @@ router.get("/reports/high-volume-donors", requireRole("admin", "super_admin"), a
       total: sql<number>`count(*)::int`,
     })
     .from(touchpointsTable)
-    .where(sql`${touchpointsTable.isSeed} = false`)
+    .innerJoin(campaignsTable, sql`${touchpointsTable.campaignId} = ${campaignsTable.id}`)
+    .where(sql`${touchpointsTable.isSeed} = false AND ${campaignsTable.status} <> 'voided'`)
     .groupBy(touchpointsTable.donorId)
     .having(sql`count(*) >= ${minVal}`)
     .orderBy(sql`count(*) desc`)
@@ -109,7 +113,8 @@ router.get("/reports/high-volume-donors", requireRole("admin", "super_admin"), a
     })
     .from(touchpointsTable)
     .innerJoin(channelsTable, sql`${touchpointsTable.channelId} = ${channelsTable.id}`)
-    .where(sql`${touchpointsTable.isSeed} = false`)
+    .innerJoin(campaignsTable, sql`${touchpointsTable.campaignId} = ${campaignsTable.id}`)
+    .where(sql`${touchpointsTable.isSeed} = false AND ${campaignsTable.status} <> 'voided'`)
     .groupBy(touchpointsTable.donorId, channelsTable.name);
   const map = new Map<string, { label: string; count: number }[]>();
   for (const r of channelBreakdown) {

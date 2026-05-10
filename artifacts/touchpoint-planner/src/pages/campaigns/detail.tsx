@@ -24,7 +24,8 @@ export default function CampaignDetail() {
   const voidMutation = useVoidCampaign();
 
   const isAdmin = me?.role === "admin" || me?.role === "super_admin";
-  const canEdit = campaign && (campaign.status !== "exported" || isAdmin);
+  const isVoided = campaign?.status === "voided";
+  const canEdit = campaign && !isVoided && (campaign.status !== "exported" || isAdmin);
 
   const handleArchive = () => {
     if (confirm("Are you sure you want to archive this campaign?")) {
@@ -71,10 +72,10 @@ export default function CampaignDetail() {
               <Edit className="h-4 w-4 mr-2" /> Edit Campaign
             </Button>
           )}
-          {isAdmin && (
+          {isAdmin && !isVoided && (
             <>
               {campaign.status !== "archived" && <Button variant="secondary" onClick={handleArchive}><Archive className="h-4 w-4 mr-2" /> Archive</Button>}
-              {campaign.status !== "voided" && <Button variant="destructive" onClick={handleVoid}><Ban className="h-4 w-4 mr-2" /> Void</Button>}
+              <Button variant="destructive" onClick={handleVoid}><Ban className="h-4 w-4 mr-2" /> Void</Button>
             </>
           )}
         </div>

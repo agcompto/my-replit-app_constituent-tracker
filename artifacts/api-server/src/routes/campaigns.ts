@@ -106,6 +106,7 @@ router.patch("/campaigns/:id", requireAuth, async (req, res): Promise<void> => {
   const access = await canMutateCampaign(params.data.id, req.currentUser!);
   if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
   if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
+    if (access === "voided") { res.status(403).json({ error: "Cannot modify a voided campaign" }); return; }
   const existing = await loadCampaignFull(params.data.id);
   if (!existing) {
     res.status(404).json({ error: "Not found" });
@@ -161,6 +162,18 @@ router.post(
       res.status(400).json({ error: params.error.message });
       return;
     }
+    const [existing] = await db
+      .select({ status: campaignsTable.status })
+      .from(campaignsTable)
+      .where(eq(campaignsTable.id, params.data.id));
+    if (!existing) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    if (existing.status === "voided") {
+      res.status(403).json({ error: "Cannot archive a voided campaign" });
+      return;
+    }
     await db
       .update(campaignsTable)
       .set({ status: "archived", archivedAt: new Date() })
@@ -187,6 +200,18 @@ router.post(
     const params = VoidCampaignParams.safeParse(req.params);
     if (!params.success) {
       res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const [existing] = await db
+      .select({ status: campaignsTable.status })
+      .from(campaignsTable)
+      .where(eq(campaignsTable.id, params.data.id));
+    if (!existing) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    if (existing.status === "voided") {
+      res.status(403).json({ error: "Campaign is already voided" });
       return;
     }
     await db

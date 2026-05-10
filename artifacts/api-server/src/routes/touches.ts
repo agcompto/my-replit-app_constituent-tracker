@@ -81,6 +81,7 @@ router.post("/campaigns/:id/touches", requireAuth, async (req, res): Promise<voi
   const access = await canMutateCampaign(params.data.id, req.currentUser!);
   if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
   if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
+    if (access === "voided") { res.status(403).json({ error: "Cannot modify a voided campaign" }); return; }
   const sendDateStr =
     body.data.sendDate instanceof Date
       ? body.data.sendDate.toISOString().slice(0, 10)
@@ -123,6 +124,7 @@ router.patch(
     const access = await canMutateCampaign(params.data.id, req.currentUser!);
     if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
     if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
+    if (access === "voided") { res.status(403).json({ error: "Cannot modify a voided campaign" }); return; }
     const updates: Record<string, unknown> = { ...body.data };
     if (updates.sendDate instanceof Date) {
       updates.sendDate = updates.sendDate.toISOString().slice(0, 10);
@@ -163,6 +165,7 @@ router.delete(
     const access = await canMutateCampaign(params.data.id, req.currentUser!);
     if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
     if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
+    if (access === "voided") { res.status(403).json({ error: "Cannot modify a voided campaign" }); return; }
     await db
       .delete(touchesTable)
       .where(
@@ -199,6 +202,7 @@ router.post(
     const access = await canMutateCampaign(params.data.id, req.currentUser!);
     if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
     if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
+    if (access === "voided") { res.status(403).json({ error: "Cannot modify a voided campaign" }); return; }
 
     // Verify touch belongs to campaign
     const [touch] = await db
@@ -289,6 +293,7 @@ router.delete(
     const access = await canMutateCampaign(params.data.id, req.currentUser!);
     if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
     if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
+    if (access === "voided") { res.status(403).json({ error: "Cannot modify a voided campaign" }); return; }
     const [touch] = await db
       .select()
       .from(touchesTable)

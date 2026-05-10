@@ -42,6 +42,7 @@ router.post("/campaigns/:id/thresholds", requireAuth, async (req, res): Promise<
   const access = await canMutateCampaign(params.data.id, req.currentUser!);
   if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
   if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
+    if (access === "voided") { res.status(403).json({ error: "Cannot modify a voided campaign" }); return; }
   const [row] = await db
     .insert(thresholdsTable)
     .values({
@@ -76,6 +77,7 @@ router.delete(
     const access = await canMutateCampaign(params.data.id, req.currentUser!);
     if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
     if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
+    if (access === "voided") { res.status(403).json({ error: "Cannot modify a voided campaign" }); return; }
     await db
       .delete(thresholdsTable)
       .where(
@@ -125,6 +127,7 @@ router.post(
     const access = await canMutateCampaign(params.data.id, req.currentUser!);
     if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
     if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
+    if (access === "voided") { res.status(403).json({ error: "Cannot modify a voided campaign" }); return; }
     await db
       .delete(thresholdOverridesTable)
       .where(eq(thresholdOverridesTable.campaignId, params.data.id));

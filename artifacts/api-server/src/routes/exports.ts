@@ -71,6 +71,7 @@ router.post("/campaigns/:id/finalize", requireAuth, async (req, res): Promise<vo
   const access = await canMutateCampaign(params.data.id, req.currentUser!);
   if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
   if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
+    if (access === "voided") { res.status(403).json({ error: "Cannot modify a voided campaign" }); return; }
   await db
     .update(campaignsTable)
     .set({ status: "finalized" })
@@ -93,6 +94,7 @@ router.post("/campaigns/:id/export", requireAuth, async (req, res): Promise<void
   const access = await canMutateCampaign(params.data.id, req.currentUser!);
   if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
   if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
+    if (access === "voided") { res.status(403).json({ error: "Cannot modify a voided campaign" }); return; }
   const perTouch = await buildPerTouchExports(params.data.id);
   if (perTouch.length === 0) {
     res.status(400).json({ error: "No touches to export" });
@@ -205,6 +207,7 @@ router.get(
     const access = await canMutateCampaign(id, req.currentUser!);
     if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
     if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
+    if (access === "voided") { res.status(403).json({ error: "Cannot modify a voided campaign" }); return; }
     const rows = await db
       .select({ donorId: touchpointsTable.donorId, isSeed: touchpointsTable.isSeed })
       .from(touchpointsTable)

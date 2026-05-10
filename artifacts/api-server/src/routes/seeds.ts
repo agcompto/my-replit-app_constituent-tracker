@@ -50,6 +50,7 @@ router.post("/campaigns/:id/seeds", requireAuth, async (req, res): Promise<void>
   const access = await canMutateCampaign(params.data.id, req.currentUser!);
   if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
   if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
+    if (access === "voided") { res.status(403).json({ error: "Cannot modify a voided campaign" }); return; }
   const parsed = parseDonorIdInput(body.data.rawText ?? "");
   const [row] = await db
     .insert(seedGroupsTable)
@@ -92,6 +93,7 @@ router.delete(
     const access = await canMutateCampaign(params.data.id, req.currentUser!);
     if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
     if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
+    if (access === "voided") { res.status(403).json({ error: "Cannot modify a voided campaign" }); return; }
     await db
       .delete(seedGroupsTable)
       .where(

@@ -26,6 +26,7 @@ router.post("/campaigns/:id/audience", requireAuth, async (req, res): Promise<vo
   const access = await canMutateCampaign(params.data.id, req.currentUser!);
   if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
   if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
+    if (access === "voided") { res.status(403).json({ error: "Cannot modify a voided campaign" }); return; }
 
   if (body.data.googleSheetUrl && !(await googleSheetImportAllowed())) {
     res.status(403).json({ error: "Google Sheet import is disabled by an administrator." });
