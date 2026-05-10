@@ -86,13 +86,15 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         )}
         
         <header className="h-16 border-b bg-card flex items-center justify-between px-6 shrink-0">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 bg-primary rounded-sm flex items-center justify-center">
-              <span className="text-primary-foreground font-bold leading-none tracking-tighter">NC</span>
-            </div>
-            <div>
+          <div className="flex items-center gap-3">
+            <img
+              src={`${import.meta.env.BASE_URL}ncstate-brick.png`}
+              alt="NC State University"
+              className="h-8 w-auto shrink-0"
+            />
+            <div className="hidden sm:block border-l pl-3">
               <h1 className="font-semibold leading-tight text-foreground">Constituent Touchpoint Planner</h1>
-              <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">NC State University Advancement</p>
+              <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">University Advancement</p>
             </div>
           </div>
           
