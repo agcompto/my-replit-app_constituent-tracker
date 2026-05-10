@@ -1,0 +1,712 @@
+Enhance the existing Constituent Touchpoint Planner MVP with the following advanced workflow, reporting, AI-assist, and auditability improvements.
+
+Do not rebuild the app from scratch. Inspect the existing codebase first, identify what already exists, and make targeted improvements to the current implementation.
+
+Before editing, provide a short implementation plan listing:
+- existing files/routes/services/components to modify
+- new files/routes/services/components to add
+- database changes required
+- frontend pages to update
+- API changes required
+- risks or assumptions
+
+Do not duplicate existing tables, routes, components, services, or settings. Prefer improving existing implementation.
+
+Use additive database migrations only. Do not run destructive database commands.
+
+Do not claim completion unless the app runs and typechecks/builds. If typecheck/build fails, summarize:
+- exact errors
+- what was fixed
+- what still needs manual review
+
+Maintain the established product principles:
+- AI can recommend. The app calculates. The user approves.
+- Use “Constituent ID” and “constituents” in the UI.
+- Preserve donor_id as the technical backend/import/export field.
+- Final send-list CSVs continue to use donor_id as the column header.
+- No unnecessary PII should be collected, stored, displayed, or exported.
+- Backend deterministic logic remains the source of truth for validation, thresholds, suppressions, counts, exports, permissions, and audit logging.
+
+────────────────────────────────────────
+1. CAMPAIGN HEALTH CHECK
+────────────────────────────────────────
+
+Add a Campaign Health Check step before final export.
+
+The health check should summarize whether the campaign is ready to export and identify:
+- missing campaign name
+- missing campaign type
+- missing audience upload
+- missing planned sends
+- planned sends without channel
+- planned sends without campaign type
+- planned sends without send date
+- invalid Constituent IDs
+- rejected IDs not yet reviewed
+- duplicate IDs removed
+- extra columns ignored
+- no threshold checks run
+- unresolved threshold flags
+- threshold flags manually overridden
+- suppressions applied
+- invalid suppression IDs
+- invalid seed IDs
+- unusual volume patterns
+- same-channel/same-date warnings
+- past-dated sends
+- PII warnings in notes
+- export counts that appear unusually low or high
+- whether export will create touchpoint records that count toward future checks
+
+The health check should categorize findings as:
+- Pass
+- Warning
+- Error
+
+Rules:
+- Errors should block export until fixed.
+- Warnings should require acknowledgement but should not necessarily block export.
+- Pass items should confirm that checks are complete.
+- The backend determines the health check status.
+- AI may summarize the health check in plain language, but AI must not determine pass/warning/error status.
+
+Add a clear UI section:
+“Campaign Health Check”
+
+Example AI summary:
+“This campaign is ready to export. The only remaining warning is that 75 constituents exceeded the email threshold but were manually overridden.”
+
+Add health check results to:
+- Campaign detail page
+- Final Export page
+- Campaign activity timeline
+- Export summary where relevant
+
+Store or log health check snapshots when a campaign is exported.
+
+Suggested database addition if needed:
+campaign_health_checks
+- id
+- campaign_id
+- status
+- findings_json
+- ai_summary
+- created_by_user_id
+- created_at
+
+────────────────────────────────────────
+2. WHAT CHANGED? COMPARISON
+────────────────────────────────────────
+
+Add a “What changed?” comparison whenever a user edits:
+- thresholds
+- send dates
+- suppressions
+- seed lists
+- touchpoints
+- campaign status in ways that affect counts
+
+Show before/after counts for:
+- flagged constituents
+- final export counts
+- suppressed counts
+- seed counts
+- total planned touchpoints
+- total exported touchpoint records
+- per-channel counts
+- per-send counts
+- threshold conflict counts
+
+Example:
+Before:
+75 flagged constituents
+
+After suppressing Load 2 Email 2:
+22 flagged constituents
+
+Change:
+53 fewer flagged constituents
+Load 2 Email 2 export count reduced from 397 to 322
+
+The comparison should be deterministic and based on backend-calculated facts.
+
+AI may summarize the difference in plain language, labeled:
+“AI Summary — review before applying.”
+
+Do not apply changes automatically unless the user confirms.
+
+Suggested service:
+comparisonService or scenarioComparisonService
+
+Suggested API:
+POST /api/campaigns/:id/compare-change
+
+Suggested UI:
+- Show comparison in threshold preview
+- Show comparison in suppression step
+- Show comparison in scenario planning
+- Show comparison before applying AI action proposals
+
+────────────────────────────────────────
+3. CAMPAIGN-LEVEL REVIEW NOTES
+────────────────────────────────────────
+
+Add campaign-level review notes for operational context.
+
+Examples:
+- Reviewed with Annual Giving on May 12.
+- Proceeding as track-only due to event urgency.
+- Suppressed overlap from Email 3.
+- Threshold flags reviewed and manually overridden.
+
+Rules:
+- Notes are campaign-level, not constituent profile notes.
+- Notes must include the no-PII warning.
+- Notes fields should use basic PII pattern detection.
+- Notes should be included in campaign audit summaries.
+- Notes should not be included in final send-list CSVs.
+- Notes should be role-permission aware.
+- Notes should show who added the note and when.
+
+Suggested table:
+campaign_review_notes
+- id
+- campaign_id
+- note_text
+- created_by_user_id
+- created_at
+- updated_at
+- pii_warning_triggered
+
+Add notes to:
+- Campaign detail page
+- Campaign activity timeline
+- Export/audit summary
+- Admin view
+
+────────────────────────────────────────
+4. OPTIONAL THRESHOLD TEMPLATES
+────────────────────────────────────────
+
+Allow Admins to create optional threshold templates.
+
+Templates should not run automatically by default.
+
+Users may choose “Add from template” during campaign setup, then edit the threshold before running preview.
+
+Seed optional example templates, but keep them inactive or optional:
+- Max 3 emails in 14 days
+- Max 5 total touches in 21 days
+- Max 1 text in 7 days
+- Max 2 solicitations in 30 days
+- Max 1 direct mail in 14 days
+
+Template fields:
+- id
+- name
+- description
+- threshold_mode
+- max_touchpoints
+- window_days
+- channel_id, optional
+- campaign_type_id, optional
+- active
+- created_by_user_id
+- created_at
+- updated_at
+
+UI:
+- Admin Settings: Threshold Templates
+- Campaign Threshold Builder: Add from Template
+- User can edit template values before applying to campaign
+- Clearly label as optional templates
+
+AI behavior:
+- AI can recommend templates to use.
+- AI cannot apply templates without user approval.
+
+────────────────────────────────────────
+5. SCENARIO PLANNING
+────────────────────────────────────────
+
+Add scenario planning so users can preview possible changes before applying them.
+
+Users should be able to preview the impact of:
+- suppressing flagged constituents from a send
+- suppressing flagged constituents from a channel
+- moving a send date
+- removing a touch
+- changing a threshold
+- adding a threshold
+- switching to track-only
+- manually overriding flags
+
+Scenarios should not modify the live campaign until the user explicitly applies them.
+
+Each scenario should show:
+- scenario name
+- scenario description
+- affected touchpoints
+- affected constituent count
+- projected flagged constituent count
+- projected export counts
+- projected suppressed counts
+- projected seed counts
+- projected touchpoint records
+- comparison to current campaign state
+- warnings/errors
+
+Default scenario examples:
+- Scenario A: Track Only
+- Scenario B: Suppress Flagged Constituents from Email 3
+- Scenario C: Move Email 3 by 7 Days
+- Scenario D: Suppress Overlap from Load 2 Email 2
+
+AI may suggest scenarios, but the backend must calculate impact.
+
+Add buttons:
+- Preview Scenario
+- Apply Scenario
+- Duplicate Scenario
+- Reject Scenario
+
+Applying a scenario:
+- Requires confirmation
+- Must respect role permissions
+- Must write to audit log
+- Must show a What Changed? comparison
+
+Suggested tables:
+campaign_scenarios
+- id
+- campaign_id
+- name
+- description
+- scenario_type
+- proposed_changes_json
+- calculated_impact_json
+- ai_generated
+- status
+- created_by_user_id
+- applied_by_user_id
+- applied_at
+- created_at
+- updated_at
+
+Scenario statuses:
+- draft
+- previewed
+- applied
+- rejected
+- expired
+
+Suggested API:
+POST /api/campaigns/:id/scenarios
+POST /api/campaigns/:id/scenarios/:scenarioId/preview
+POST /api/campaigns/:id/scenarios/:scenarioId/apply
+POST /api/campaigns/:id/scenarios/:scenarioId/reject
+
+────────────────────────────────────────
+6. CLONE CAMPAIGN STRUCTURE
+────────────────────────────────────────
+
+Add a “Clone Campaign Structure” feature.
+
+Users should be able to copy:
+- campaign metadata
+- campaign types
+- planned touches
+- threshold settings
+- optional threshold template references
+
+Do not copy:
+- audience
+- uploaded IDs
+- suppressions
+- seed IDs
+- export records
+- touchpoint history
+- audit history
+- review notes unless user explicitly chooses to copy operational notes
+
+The cloned campaign should open as a new Draft.
+
+Suggested UI:
+- Button on Campaign Detail: Clone Structure
+- Modal to choose what to clone:
+  - Metadata
+  - Campaign types
+  - Planned touches
+  - Threshold checks
+  - Operational notes, optional
+- New campaign name field:
+  “Copy of [Original Campaign Name]”
+
+Audit:
+- Log the clone action.
+- Link new campaign to source campaign if useful.
+
+Suggested database field:
+campaigns.cloned_from_campaign_id, optional
+
+Suggested API:
+POST /api/campaigns/:id/clone
+
+────────────────────────────────────────
+7. EXPORT MANIFEST FILES
+────────────────────────────────────────
+
+Generate an export manifest CSV whenever final send files are generated.
+
+The manifest should include one row per generated send file.
+
+Manifest columns:
+- file_name
+- campaign_name
+- campaign_id
+- touch_name
+- channel
+- campaign_type
+- send_date
+- row_count
+- seed_count
+- suppressed_count
+- exported_by
+- exported_at
+
+Manifest rules:
+- The manifest may include campaign metadata.
+- The manifest must not include PII beyond counts and technical IDs.
+- Do not include names, emails, phone numbers, addresses, giving amounts, or other PII.
+- The manifest should be downloadable with the export batch.
+- The manifest should be recorded in export history.
+- Formula-injection protection still applies.
+
+Add:
+- Download Export Manifest button
+- Manifest row in export history
+- Manifest inclusion in export ZIP if ZIP export exists
+
+────────────────────────────────────────
+8. OPTIONAL SUPPRESSION REASON CODES
+────────────────────────────────────────
+
+Add optional suppression reason codes.
+
+Seed default reason codes:
+- Threshold Conflict
+- Manual Staff Decision
+- Duplicate Campaign Overlap
+- Channel-Specific Exclusion
+- Other
+
+Rules:
+- Suppression reasons are optional.
+- Suppression reason codes should be admin-managed.
+- Admins can add, edit, activate, and deactivate reason codes.
+- Do not hard-delete reason codes with historical usage.
+- Suppression reports should be filterable by reason code.
+- Final send-list CSVs should not include suppression reason codes.
+- Administrative exports may include reason codes.
+
+Suggested table:
+suppression_reason_codes
+- id
+- name
+- description
+- active
+- system_default
+- created_at
+- updated_at
+
+Update campaign_suppressions with:
+- reason_code_id, optional
+- reason_text, optional
+
+────────────────────────────────────────
+9. CAMPAIGN ACTIVITY TIMELINE
+────────────────────────────────────────
+
+Create a readable campaign activity timeline in addition to the raw audit log.
+
+The timeline should summarize major actions in plain language.
+
+Examples:
+- May 10, 2026 — Adam created the campaign.
+- May 10, 2026 — 323 valid constituents were uploaded.
+- May 10, 2026 — 75 constituents were flagged by threshold checks.
+- May 10, 2026 — 75 constituents were suppressed from Email 3.
+- May 10, 2026 — Adam exported 5 send files.
+- May 10, 2026 — Campaign marked Exported / Sent.
+
+Rules:
+- Timeline should respect role permissions.
+- Timeline should avoid unnecessary PII.
+- Timeline should use “constituents” and “Constituent ID” in UI text.
+- Timeline should link to detailed audit records for Admin/Super Admin users.
+- Timeline should appear on Campaign Detail page.
+- AI-generated summaries may appear, but deterministic audit events remain the source of truth.
+
+Suggested implementation:
+- Use existing audit_log as source if possible.
+- Add a timeline presentation layer rather than duplicating all data.
+- Add timeline event types if needed.
+
+────────────────────────────────────────
+10. DATA-QUALITY AND WORKFLOW BADGES
+────────────────────────────────────────
+
+Add data-quality and workflow badges on campaign lists and campaign detail pages.
+
+Badges should be text-based and not rely on color alone.
+
+Suggested badges:
+- Clean Upload
+- Extra Columns Ignored
+- Rejected IDs Present
+- Duplicate IDs Removed
+- Thresholds Reviewed
+- No Thresholds Run
+- Flags Present
+- Flags Overridden
+- Suppressions Applied
+- Seeds Added
+- Health Check Passed
+- Health Check Warnings
+- Health Check Errors
+- Exported / Sent
+- Track Only
+- Archived
+- Voided
+- AI Suggestions Available
+- Scenario Previewed
+- Cloned Campaign
+
+Each badge should have:
+- accessible text
+- tooltip/help text if useful
+- semantic meaning independent of color
+
+Add badges to:
+- Campaigns list
+- Campaign detail header
+- Dashboard recent campaigns
+- Final export page
+
+────────────────────────────────────────
+11. DATE-RANGE SHORTCUTS
+────────────────────────────────────────
+
+Add date-range shortcuts throughout reports and Constituent Lookup.
+
+Shortcuts:
+- Current Fiscal Year
+- Next 30 Days
+- Next 60 Days
+- Rolling 12 Months
+- All Time
+- Custom Range
+
+Rules:
+- Current Fiscal Year uses configurable fiscal year boundaries.
+- Default fiscal year remains July 1–June 30.
+- Custom Range must have accessible date inputs.
+- Date filters should be labeled and keyboard accessible.
+
+Apply shortcuts to:
+- Dashboard
+- Reports
+- Constituent Lookup
+- Campaign list filters
+- Export history filters
+- Touchpoint history filters
+
+────────────────────────────────────────
+12. EXPLAIN THIS COUNT
+────────────────────────────────────────
+
+Add “Explain this count” affordances near major preview/report metrics.
+
+Examples:
+- Why are there 75 flagged constituents?
+- Why did Email 3 drop from 397 to 322?
+- Why does this constituent have 8 touchpoints?
+- Why is this campaign marked Health Check Warning?
+- Why did the final export count change?
+
+The assistant should explain the count using backend-calculated facts.
+
+Rules:
+- AI may explain.
+- AI must not invent numbers.
+- AI must cite the relevant campaign, touch, threshold, scenario, suppression, or export record in plain language.
+- If AI is unavailable, provide a deterministic fallback explanation where possible.
+- Explanations must use “Constituent ID” and “constituents” in UI copy.
+- Do not expose unnecessary PII.
+
+Suggested API:
+POST /api/ai/explain-count
+
+Input should include:
+- metric_type
+- campaign_id
+- touch_id, optional
+- threshold_check_id, optional
+- scenario_id, optional
+- export_job_id, optional
+- deterministic_context_json
+
+Output:
+- explanation
+- related_records
+- confidence or source note, if applicable
+
+────────────────────────────────────────
+13. AI AND ASSISTANT UPDATES FOR THESE FEATURES
+────────────────────────────────────────
+
+Update the Planner Assistant so it can help with:
+- Campaign Health Check summaries
+- What Changed? summaries
+- Scenario suggestions
+- Scenario comparisons
+- Clone campaign guidance
+- Export manifest explanation
+- Suppression reason explanation
+- Campaign timeline summaries
+- Badge explanations
+- Date-range shortcut explanations
+- Explain this count
+
+AI must remain assistive only.
+
+AI may propose:
+- a scenario
+- a threshold template
+- a suppression approach
+- a date change
+- a summary
+- a report filter
+
+AI must not apply changes without user approval.
+
+Accepted AI suggestions must:
+- go through backend validation
+- respect role permissions
+- write audit log entries
+- show What Changed? when applicable
+
+────────────────────────────────────────
+14. ACCESSIBILITY REQUIREMENTS FOR NEW FEATURES
+────────────────────────────────────────
+
+All new features must follow the existing accessibility baseline.
+
+Specific requirements:
+- Campaign Health Check findings must not rely on color alone.
+- What Changed? comparisons must be readable as text and tables.
+- Scenario planning controls must be keyboard accessible.
+- Scenario preview/apply dialogs must trap and restore focus.
+- Clone Campaign modal must have accessible labels and confirmation text.
+- Export manifest download buttons must be clearly labeled.
+- Suppression reason code selectors must have labels.
+- Campaign activity timeline must be semantic and screen-reader friendly.
+- Badges must include visible text, not icon/color only.
+- Date shortcuts must be keyboard accessible and clearly indicate selected state.
+- Explain this count buttons must have accessible names like:
+  “Explain flagged constituent count”
+  “Explain Email 3 export count”
+- AI summaries should be announced or placed in accessible regions when generated.
+- Loading states for AI/explanations/scenarios must use aria-busy or accessible loading text.
+
+────────────────────────────────────────
+15. README UPDATES
+────────────────────────────────────────
+
+Update README.md to document:
+- Campaign Health Check
+- What Changed? comparison
+- Campaign-level review notes
+- Optional threshold templates
+- Scenario planning
+- Clone campaign structure
+- Export manifests
+- Suppression reason codes
+- Campaign activity timeline
+- Data-quality/workflow badges
+- Date-range shortcuts
+- Explain this count
+- AI’s role in these features
+- AI limitations
+- Accessibility behavior for these features
+- No-PII handling for notes, manifests, reports, and timelines
+
+Also update the data dictionary with:
+- health check
+- health check finding
+- scenario
+- action proposal
+- threshold template
+- suppression reason code
+- campaign activity timeline
+- data-quality badge
+- workflow badge
+- export manifest
+- explain this count
+
+────────────────────────────────────────
+16. ACCEPTANCE CRITERIA
+────────────────────────────────────────
+
+This enhancement is complete when:
+- Campaign Health Check exists and runs before export.
+- Health Check distinguishes Pass, Warning, and Error.
+- Errors block export.
+- Warnings require acknowledgement.
+- Health Check results appear on campaign detail and final export screens.
+- What Changed? comparisons appear after relevant edits.
+- Campaign-level review notes exist with no-PII warning and PII pattern detection.
+- Optional threshold templates can be managed by Admins and added to campaigns by users.
+- Scenario Planning allows previewing changes without applying them.
+- Applying a scenario requires confirmation and audit logging.
+- Campaign Clone copies structure only, not audience/suppressions/seeds/export history/touchpoint history.
+- Export manifest CSV is generated with export batches.
+- Optional suppression reason codes exist and are admin-managed.
+- Campaign activity timeline appears on campaign detail.
+- Data-quality/workflow badges appear on campaign list/detail.
+- Date-range shortcuts exist in reports and Constituent Lookup.
+- Explain this count exists near major metrics, with deterministic fallback if AI is unavailable.
+- Planner Assistant supports or is scaffolded for these new features.
+- All user-facing terminology refers to constituents, while technical donor_id compatibility is preserved.
+- Final send-list CSVs still use donor_id as the column header.
+- No unnecessary PII is added.
+- New UI follows accessibility requirements.
+- Manual workflow still works if OPENAI_API_KEY is missing.
+- Typecheck/build passes.
+
+────────────────────────────────────────
+17. FINAL RESPONSE REQUIREMENTS
+────────────────────────────────────────
+
+When finished, summarize:
+- files changed
+- database changes
+- API changes
+- frontend pages/components created or updated
+- Campaign Health Check behavior
+- What Changed? behavior
+- Scenario Planning behavior
+- Clone Campaign behavior
+- Export Manifest behavior
+- Suppression Reason Code behavior
+- Campaign Timeline behavior
+- Badge behavior
+- Date shortcut behavior
+- Explain this count behavior
+- AI/Planner Assistant changes
+- accessibility improvements
+- commands run
+- remaining manual setup steps
+- risks or limitations
+
+Do not claim completion unless the app runs and typechecks/builds.
