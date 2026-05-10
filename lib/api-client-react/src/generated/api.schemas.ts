@@ -132,6 +132,26 @@ export interface ChannelUpdate {
   active?: boolean;
 }
 
+export interface OwningUnit {
+  id: number;
+  name: string;
+  /** @nullable */
+  description?: string | null;
+  active: boolean;
+  systemDefault: boolean;
+}
+
+export interface OwningUnitInput {
+  name: string;
+  description?: string;
+}
+
+export interface OwningUnitUpdate {
+  name?: string;
+  description?: string;
+  active?: boolean;
+}
+
 export interface CampaignInput {
   name: string;
   owningUnit?: string;

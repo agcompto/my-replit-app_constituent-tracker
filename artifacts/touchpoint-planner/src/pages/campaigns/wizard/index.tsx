@@ -1,5 +1,4 @@
-import { Switch, Route, useRoute, useLocation } from "wouter";
-import { useEffect } from "react";
+import { useRoute, useLocation, useSearch } from "wouter";
 import SetupStep from "./setup";
 import AudienceStep from "./audience";
 import TouchesStep from "./touches";
@@ -18,7 +17,8 @@ export default function CampaignWizard() {
   const isNew = matchNew;
   const id = isNew ? null : Number(editParams?.id);
   
-  const stepMatch = new URLSearchParams(window.location.search).get("step") || "setup";
+  const search = useSearch();
+  const stepMatch = new URLSearchParams(search).get("step") || "setup";
 
   const { data: campaign, isLoading } = useGetCampaign(id as number, {
     query: {

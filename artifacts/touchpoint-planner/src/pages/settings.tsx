@@ -1,4 +1,4 @@
-import { useGetSettings, useUpdateSettings, useListCampaignTypes, useCreateCampaignType, useUpdateCampaignType, useListChannels, useCreateChannel, useUpdateChannel, useRunRetentionDelete, getListCampaignTypesQueryKey, getListChannelsQueryKey, getGetSettingsQueryKey } from "@workspace/api-client-react";
+import { useGetSettings, useUpdateSettings, useListCampaignTypes, useCreateCampaignType, useUpdateCampaignType, useListChannels, useCreateChannel, useUpdateChannel, useListOwningUnits, useCreateOwningUnit, useUpdateOwningUnit, useRunRetentionDelete, getListCampaignTypesQueryKey, getListChannelsQueryKey, getListOwningUnitsQueryKey, getGetSettingsQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +30,10 @@ export default function Settings() {
   const createChannel = useCreateChannel();
   const updateChannel = useUpdateChannel();
 
+  const { data: owningUnits, isLoading: unitsLoading } = useListOwningUnits();
+  const createOwningUnit = useCreateOwningUnit();
+  const updateOwningUnit = useUpdateOwningUnit();
+
   const runRetention = useRunRetentionDelete();
 
   const queryClient = useQueryClient();
@@ -37,6 +41,7 @@ export default function Settings() {
 
   const [newTypeName, setNewTypeName] = useState("");
   const [newChannelName, setNewChannelName] = useState("");
+  const [newUnitName, setNewUnitName] = useState("");
 
   const [retentionDate, setRetentionDate] = useState("");
   const [retentionConfirmOpen, setRetentionConfirmOpen] = useState(false);
@@ -88,6 +93,25 @@ export default function Settings() {
     updateChannel.mutate({ id, data: { active } }, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListChannelsQueryKey() });
+      }
+    });
+  };
+
+  const handleAddUnit = () => {
+    if (!newUnitName) return;
+    createOwningUnit.mutate({ data: { name: newUnitName } }, {
+      onSuccess: () => {
+        setNewUnitName("");
+        toast({ title: "Owning unit added" });
+        queryClient.invalidateQueries({ queryKey: getListOwningUnitsQueryKey() });
+      }
+    });
+  };
+
+  const handleToggleUnit = (id: number, active: boolean) => {
+    updateOwningUnit.mutate({ id, data: { active } }, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListOwningUnitsQueryKey() });
       }
     });
   };
@@ -182,6 +206,43 @@ export default function Settings() {
                           onCheckedChange={(checked) => handleToggleChannel(c.id, checked)}
                           disabled={c.systemDefault && !isSuperAdmin}
                           title={c.systemDefault && !isSuperAdmin ? "System default — only a super admin can change this" : undefined}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Owning Units</CardTitle>
+              <CardDescription>Units available in the Owning Unit dropdown when creating a campaign.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-2 mb-4">
+                <Input placeholder="New Owning Unit Name" value={newUnitName} onChange={e => setNewUnitName(e.target.value)} className="max-w-xs" />
+                <Button onClick={handleAddUnit} disabled={!newUnitName || createOwningUnit.isPending}><Plus className="h-4 w-4 mr-2" /> Add</Button>
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead className="w-[100px] text-right">Active</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {unitsLoading ? <TableRow><TableCell colSpan={2} className="text-center h-24"><Loader2 className="animate-spin h-5 w-5 mx-auto" /></TableCell></TableRow> :
+                  owningUnits?.map(u => (
+                    <TableRow key={u.id}>
+                      <TableCell className="font-medium">{u.name}</TableCell>
+                      <TableCell className="text-right">
+                        <Switch
+                          checked={u.active}
+                          onCheckedChange={(checked) => handleToggleUnit(u.id, checked)}
+                          disabled={u.systemDefault && !isSuperAdmin}
+                          title={u.systemDefault && !isSuperAdmin ? "System default — only a super admin can change this" : undefined}
                         />
                       </TableCell>
                     </TableRow>

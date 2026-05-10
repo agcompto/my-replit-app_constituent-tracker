@@ -44,6 +44,9 @@ import type {
   ListCampaignsParams,
   LoginInput,
   OverrideInput,
+  OwningUnit,
+  OwningUnitInput,
+  OwningUnitUpdate,
   PasswordResetInput,
   RetentionInput,
   RetentionResult,
@@ -1270,6 +1273,235 @@ export const useUpdateChannel = <
   TContext
 > => {
   return useMutation(getUpdateChannelMutationOptions(options));
+};
+
+export const getListOwningUnitsUrl = () => {
+  return `/api/owning-units`;
+};
+
+export const listOwningUnits = async (
+  options?: RequestInit,
+): Promise<OwningUnit[]> => {
+  return customFetch<OwningUnit[]>(getListOwningUnitsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListOwningUnitsQueryKey = () => {
+  return [`/api/owning-units`] as const;
+};
+
+export const getListOwningUnitsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listOwningUnits>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listOwningUnits>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListOwningUnitsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listOwningUnits>>> = ({
+    signal,
+  }) => listOwningUnits({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listOwningUnits>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListOwningUnitsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listOwningUnits>>
+>;
+export type ListOwningUnitsQueryError = ErrorType<unknown>;
+
+export function useListOwningUnits<
+  TData = Awaited<ReturnType<typeof listOwningUnits>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listOwningUnits>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListOwningUnitsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getCreateOwningUnitUrl = () => {
+  return `/api/owning-units`;
+};
+
+export const createOwningUnit = async (
+  owningUnitInput: OwningUnitInput,
+  options?: RequestInit,
+): Promise<OwningUnit> => {
+  return customFetch<OwningUnit>(getCreateOwningUnitUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(owningUnitInput),
+  });
+};
+
+export const getCreateOwningUnitMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createOwningUnit>>,
+    TError,
+    { data: BodyType<OwningUnitInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createOwningUnit>>,
+  TError,
+  { data: BodyType<OwningUnitInput> },
+  TContext
+> => {
+  const mutationKey = ["createOwningUnit"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createOwningUnit>>,
+    { data: BodyType<OwningUnitInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createOwningUnit(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateOwningUnitMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createOwningUnit>>
+>;
+export type CreateOwningUnitMutationBody = BodyType<OwningUnitInput>;
+export type CreateOwningUnitMutationError = ErrorType<unknown>;
+
+export const useCreateOwningUnit = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createOwningUnit>>,
+    TError,
+    { data: BodyType<OwningUnitInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createOwningUnit>>,
+  TError,
+  { data: BodyType<OwningUnitInput> },
+  TContext
+> => {
+  return useMutation(getCreateOwningUnitMutationOptions(options));
+};
+
+export const getUpdateOwningUnitUrl = (id: number) => {
+  return `/api/owning-units/${id}`;
+};
+
+export const updateOwningUnit = async (
+  id: number,
+  owningUnitUpdate: OwningUnitUpdate,
+  options?: RequestInit,
+): Promise<OwningUnit> => {
+  return customFetch<OwningUnit>(getUpdateOwningUnitUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(owningUnitUpdate),
+  });
+};
+
+export const getUpdateOwningUnitMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateOwningUnit>>,
+    TError,
+    { id: number; data: BodyType<OwningUnitUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateOwningUnit>>,
+  TError,
+  { id: number; data: BodyType<OwningUnitUpdate> },
+  TContext
+> => {
+  const mutationKey = ["updateOwningUnit"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateOwningUnit>>,
+    { id: number; data: BodyType<OwningUnitUpdate> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateOwningUnit(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateOwningUnitMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateOwningUnit>>
+>;
+export type UpdateOwningUnitMutationBody = BodyType<OwningUnitUpdate>;
+export type UpdateOwningUnitMutationError = ErrorType<unknown>;
+
+export const useUpdateOwningUnit = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateOwningUnit>>,
+    TError,
+    { id: number; data: BodyType<OwningUnitUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateOwningUnit>>,
+  TError,
+  { id: number; data: BodyType<OwningUnitUpdate> },
+  TContext
+> => {
+  return useMutation(getUpdateOwningUnitMutationOptions(options));
 };
 
 export const getListCampaignsUrl = (params?: ListCampaignsParams) => {

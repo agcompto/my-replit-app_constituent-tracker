@@ -59,6 +59,15 @@ export const channelsTable = pgTable("channels", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const owningUnitsTable = pgTable("owning_units", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  active: boolean("active").notNull().default(true),
+  systemDefault: boolean("system_default").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // ─────── Campaigns
 export const campaignsTable = pgTable("campaigns", {
   id: serial("id").primaryKey(),

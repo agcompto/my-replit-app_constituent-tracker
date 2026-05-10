@@ -13,6 +13,7 @@ tags:
   - name: users
   - name: campaignTypes
   - name: channels
+  - name: owningUnits
   - name: campaigns
   - name: audience
   - name: touches
@@ -244,6 +245,51 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Channel" }
+
+  # ───────── Owning units
+  /owning-units:
+    get:
+      operationId: listOwningUnits
+      tags: [owningUnits]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/OwningUnit" }
+    post:
+      operationId: createOwningUnit
+      tags: [owningUnits]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OwningUnitInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OwningUnit" }
+  /owning-units/{id}:
+    patch:
+      operationId: updateOwningUnit
+      tags: [owningUnits]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OwningUnitUpdate" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OwningUnit" }
 
   # ───────── Campaigns
   /campaigns:
@@ -862,6 +908,28 @@ components:
         name: { type: string }
         description: { type: string }
     ChannelUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        active: { type: boolean }
+
+    OwningUnit:
+      type: object
+      required: [id, name, active, systemDefault]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        description: { type: ["string", "null"] }
+        active: { type: boolean }
+        systemDefault: { type: boolean }
+    OwningUnitInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        description: { type: string }
+    OwningUnitUpdate:
       type: object
       properties:
         name: { type: string }

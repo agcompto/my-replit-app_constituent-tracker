@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import { randomBytes } from "crypto";
-import { db, usersTable, campaignTypesTable, channelsTable, appSettingsTable } from "@workspace/db";
+import { db, usersTable, campaignTypesTable, channelsTable, owningUnitsTable, appSettingsTable } from "@workspace/db";
 import { logger } from "./logger";
 
 const DEFAULT_CHANNELS = [
@@ -19,6 +19,25 @@ const DEFAULT_CAMPAIGN_TYPES = [
   "Event",
   "Survey",
   "Engagement",
+];
+
+const DEFAULT_OWNING_UNITS = [
+  "University Advancement",
+  "Annual Giving",
+  "Alumni Association",
+  "Athletics",
+  "Libraries",
+  "College of Agriculture and Life Sciences",
+  "College of Design",
+  "College of Education",
+  "College of Engineering",
+  "College of Humanities and Social Sciences",
+  "College of Natural Resources",
+  "College of Sciences",
+  "College of Textiles",
+  "College of Veterinary Medicine",
+  "Poole College of Management",
+  "Wilson College of Textiles",
 ];
 
 export async function seedDefaults(): Promise<void> {
@@ -65,6 +84,13 @@ export async function seedDefaults(): Promise<void> {
   if (existingTypes.length === 0) {
     await db.insert(campaignTypesTable).values(
       DEFAULT_CAMPAIGN_TYPES.map((name) => ({ name, active: true, systemDefault: true })),
+    );
+  }
+
+  const existingUnits = await db.select({ id: owningUnitsTable.id }).from(owningUnitsTable).limit(1);
+  if (existingUnits.length === 0) {
+    await db.insert(owningUnitsTable).values(
+      DEFAULT_OWNING_UNITS.map((name) => ({ name, active: true, systemDefault: true })),
     );
   }
 

@@ -1,7 +1,8 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { useCreateCampaign, useUpdateCampaign, useListCampaignTypes, getListCampaignsQueryKey, getGetCampaignQueryKey } from "@workspace/api-client-react";
+import { useCreateCampaign, useUpdateCampaign, useListCampaignTypes, useListOwningUnits, getListCampaignsQueryKey, getGetCampaignQueryKey } from "@workspace/api-client-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -29,6 +30,7 @@ export default function SetupStep({ campaign }: { campaign: any }) {
   const { toast } = useToast();
 
   const { data: campaignTypes, isLoading: typesLoading } = useListCampaignTypes();
+  const { data: owningUnits } = useListOwningUnits();
 
   const form = useForm<z.infer<typeof setupSchema>>({
     resolver: zodResolver(setupSchema),
@@ -93,13 +95,34 @@ export default function SetupStep({ campaign }: { campaign: any }) {
               <FormField
                 control={form.control}
                 name="owningUnit"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Owning Unit</FormLabel>
-                    <FormControl><Input {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
+                render={({ field }) => {
+                  const activeUnits = (owningUnits ?? []).filter(u => u.active);
+                  const currentValue = field.value ?? "";
+                  // If editing a campaign whose stored unit is now inactive/deleted, still show it as a disabled option
+                  const showLegacy = currentValue && !activeUnits.some(u => u.name === currentValue);
+                  return (
+                    <FormItem>
+                      <FormLabel>Owning Unit</FormLabel>
+                      <Select value={currentValue || undefined} onValueChange={(v) => field.onChange(v === "__none__" ? "" : v)}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select an owning unit" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="__none__">— None —</SelectItem>
+                          {activeUnits.map(u => (
+                            <SelectItem key={u.id} value={u.name}>{u.name}</SelectItem>
+                          ))}
+                          {showLegacy && (
+                            <SelectItem value={currentValue} disabled>{currentValue} (inactive)</SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }}
               />
 
               <FormField

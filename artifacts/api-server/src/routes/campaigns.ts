@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq, ilike, or } from "drizzle-orm";
-import { db, campaignsTable, campaignTypeLinksTable, campaignTypesTable, usersTable } from "@workspace/db";
+import { db, campaignsTable, campaignTypeLinksTable, campaignTypesTable, owningUnitsTable, usersTable } from "@workspace/db";
 import {
   CreateCampaignBody,
   GetCampaignParams,
@@ -50,6 +50,16 @@ router.post("/campaigns", requireAuth, async (req, res): Promise<void> => {
     return;
   }
   const { campaignTypeIds, ...fields } = parsed.data;
+  if (fields.owningUnit) {
+    const [u] = await db
+      .select({ id: owningUnitsTable.id })
+      .from(owningUnitsTable)
+      .where(and(eq(owningUnitsTable.name, fields.owningUnit), eq(owningUnitsTable.active, true)));
+    if (!u) {
+      res.status(400).json({ error: "Invalid owning unit" });
+      return;
+    }
+  }
   const sendDateStr =
     fields.intendedSendStartDate instanceof Date
       ? fields.intendedSendStartDate.toISOString().slice(0, 10)
@@ -120,6 +130,21 @@ router.patch("/campaigns/:id", requireAuth, async (req, res): Promise<void> => {
     return;
   }
   const { campaignTypeIds, ...fields } = body.data;
+  if (
+    fields.owningUnit !== undefined &&
+    fields.owningUnit !== null &&
+    fields.owningUnit !== "" &&
+    fields.owningUnit !== existing.owningUnit
+  ) {
+    const [u] = await db
+      .select({ id: owningUnitsTable.id })
+      .from(owningUnitsTable)
+      .where(and(eq(owningUnitsTable.name, fields.owningUnit), eq(owningUnitsTable.active, true)));
+    if (!u) {
+      res.status(400).json({ error: "Invalid owning unit" });
+      return;
+    }
+  }
   const sendDateStr2 =
     fields.intendedSendStartDate instanceof Date
       ? fields.intendedSendStartDate.toISOString().slice(0, 10)

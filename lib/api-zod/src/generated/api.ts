@@ -180,6 +180,38 @@ export const UpdateChannelResponse = zod.object({
   systemDefault: zod.boolean(),
 });
 
+export const ListOwningUnitsResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  description: zod.string().nullish(),
+  active: zod.boolean(),
+  systemDefault: zod.boolean(),
+});
+export const ListOwningUnitsResponse = zod.array(ListOwningUnitsResponseItem);
+
+export const CreateOwningUnitBody = zod.object({
+  name: zod.string(),
+  description: zod.string().optional(),
+});
+
+export const UpdateOwningUnitParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateOwningUnitBody = zod.object({
+  name: zod.string().optional(),
+  description: zod.string().optional(),
+  active: zod.boolean().optional(),
+});
+
+export const UpdateOwningUnitResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  description: zod.string().nullish(),
+  active: zod.boolean(),
+  systemDefault: zod.boolean(),
+});
+
 export const ListCampaignsQueryParams = zod.object({
   mine: zod.coerce.boolean().optional(),
   status: zod.coerce.string().optional(),
