@@ -98,15 +98,16 @@ export default function SetupStep({ campaign }: { campaign: any }) {
                 render={({ field }) => {
                   const activeUnits = (owningUnits ?? []).filter(u => u.active);
                   const currentValue = field.value ?? "";
+                  const selectValue = currentValue || "__none__";
                   // If editing a campaign whose stored unit is now inactive/deleted, still show it as a disabled option
                   const showLegacy = currentValue && !activeUnits.some(u => u.name === currentValue);
                   return (
                     <FormItem>
                       <FormLabel>Owning Unit</FormLabel>
-                      <Select value={currentValue || undefined} onValueChange={(v) => field.onChange(v === "__none__" ? "" : v)}>
+                      <Select value={selectValue} onValueChange={(v) => field.onChange(v === "__none__" ? "" : v)}>
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Select an owning unit" />
+                            <SelectValue />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>

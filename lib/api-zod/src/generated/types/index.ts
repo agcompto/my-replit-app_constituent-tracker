@@ -30,6 +30,7 @@ export * from "./donorLookupTouchpointsItem";
 export * from "./exportJob";
 export * from "./exportResult";
 export * from "./exportResultFilesItem";
+export * from "./getAuditLogParams";
 export * from "./getDashboardParams";
 export * from "./getHighVolumeDonorsParams";
 export * from "./getUpcomingVolumeParams";

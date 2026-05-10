@@ -174,10 +174,16 @@ router.get("/owning-units", requireAuth, async (_req, res): Promise<void> => {
   res.json(rows);
 });
 
+const RESERVED_LOOKUP_NAMES = new Set(["__none__", "__all__"]);
+
 router.post("/owning-units", requireRole("admin", "super_admin"), async (req, res): Promise<void> => {
   const parsed = CreateOwningUnitBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  if (RESERVED_LOOKUP_NAMES.has(parsed.data.name.trim().toLowerCase())) {
+    res.status(400).json({ error: "That name is reserved by the system" });
     return;
   }
   try {
@@ -209,6 +215,10 @@ router.patch(
     const body = UpdateOwningUnitBody.safeParse(req.body);
     if (!body.success) {
       res.status(400).json({ error: body.error.message });
+      return;
+    }
+    if (body.data.name && RESERVED_LOOKUP_NAMES.has(body.data.name.trim().toLowerCase())) {
+      res.status(400).json({ error: "That name is reserved by the system" });
       return;
     }
     const [existing] = await db

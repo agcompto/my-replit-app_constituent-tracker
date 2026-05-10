@@ -918,6 +918,14 @@ export const GetExportHistoryResponseItem = zod.object({
 });
 export const GetExportHistoryResponse = zod.array(GetExportHistoryResponseItem);
 
+export const GetAuditLogQueryParams = zod.object({
+  actor: zod.coerce.string().optional(),
+  action: zod.coerce.string().optional(),
+  entityType: zod.coerce.string().optional(),
+  startDate: zod.date().optional(),
+  endDate: zod.date().optional(),
+});
+
 export const GetAuditLogResponseItem = zod.object({
   id: zod.number(),
   actorName: zod.string(),

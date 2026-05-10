@@ -128,6 +128,9 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
   };
 
   const handleSave = () => {
+    if (isDuplicate && !confirm("Another touch already uses this channel and send date. Add it anyway?")) {
+      return;
+    }
     const data = {
       touchName: form.touchName,
       channelId: Number(form.channelId),
@@ -314,8 +317,8 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Touch Name *</label>
-              <Input value={form.touchName} onChange={e => setForm({...form, touchName: e.target.value})} placeholder="e.g. Email #1 - Announcement" />
+              <label className="text-sm font-medium" htmlFor="touchName">Touch Name *</label>
+              <Input id="touchName" autoFocus value={form.touchName} onChange={e => setForm({...form, touchName: e.target.value})} placeholder="e.g. Email #1 - Announcement" />
             </div>
 
             <div className="grid grid-cols-2 gap-4">

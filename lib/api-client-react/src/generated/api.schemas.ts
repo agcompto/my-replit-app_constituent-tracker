@@ -676,3 +676,11 @@ export type GetHighVolumeDonorsParams = {
   startDate?: string;
   endDate?: string;
 };
+
+export type GetAuditLogParams = {
+  actor?: string;
+  action?: string;
+  entityType?: string;
+  startDate?: string;
+  endDate?: string;
+};

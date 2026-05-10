@@ -1,18 +1,95 @@
+import { useState } from "react";
 import { useGetAuditLog } from "@workspace/api-client-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Loader2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Loader2, X } from "lucide-react";
 import { format } from "date-fns";
 
+type AuditFilters = {
+  actor?: string;
+  action?: string;
+  entityType?: string;
+  startDate?: string;
+  endDate?: string;
+};
+
+function hasAny(f: AuditFilters): boolean {
+  return !!(f.actor || f.action || f.entityType || f.startDate || f.endDate);
+}
+
 export default function Audit() {
-  const { data: auditLogs, isLoading } = useGetAuditLog();
+  const [filters, setFilters] = useState<AuditFilters>({});
+  const { data: auditLogs, isLoading } = useGetAuditLog(filters);
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Audit Log</h1>
         <p className="text-muted-foreground text-sm">System-wide record of critical actions.</p>
+      </div>
+
+      <div className="rounded-md border bg-card p-4 flex flex-col sm:flex-row sm:items-end gap-3 flex-wrap">
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-xs text-muted-foreground" htmlFor="audit-actor">Actor name</Label>
+          <Input
+            id="audit-actor"
+            placeholder="any"
+            value={filters.actor ?? ""}
+            onChange={(e) => setFilters({ ...filters, actor: e.target.value || undefined })}
+            className="w-[180px]"
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-xs text-muted-foreground" htmlFor="audit-action">Action</Label>
+          <Input
+            id="audit-action"
+            placeholder="e.g. login, export"
+            value={filters.action ?? ""}
+            onChange={(e) => setFilters({ ...filters, action: e.target.value || undefined })}
+            className="w-[180px]"
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-xs text-muted-foreground" htmlFor="audit-entity">Entity type</Label>
+          <Input
+            id="audit-entity"
+            placeholder="e.g. user, campaign"
+            value={filters.entityType ?? ""}
+            onChange={(e) => setFilters({ ...filters, entityType: e.target.value || undefined })}
+            className="w-[180px]"
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-xs text-muted-foreground" htmlFor="audit-start">Start date</Label>
+          <Input
+            id="audit-start"
+            type="date"
+            max={filters.endDate}
+            value={filters.startDate ?? ""}
+            onChange={(e) => setFilters({ ...filters, startDate: e.target.value || undefined })}
+            className="w-[160px]"
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-xs text-muted-foreground" htmlFor="audit-end">End date</Label>
+          <Input
+            id="audit-end"
+            type="date"
+            min={filters.startDate}
+            value={filters.endDate ?? ""}
+            onChange={(e) => setFilters({ ...filters, endDate: e.target.value || undefined })}
+            className="w-[160px]"
+          />
+        </div>
+        {hasAny(filters) && (
+          <Button variant="ghost" size="sm" onClick={() => setFilters({})} className="self-end">
+            <X className="h-3.5 w-3.5 mr-1" /> Clear
+          </Button>
+        )}
       </div>
 
       <Card>
@@ -41,7 +118,7 @@ export default function Audit() {
               ) : auditLogs?.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">
-                    No audit records found.
+                    No audit records match these filters.
                   </TableCell>
                 </TableRow>
               ) : (

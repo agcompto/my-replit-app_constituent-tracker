@@ -23,7 +23,31 @@ export default function PreviewStep({ campaign }: { campaign: any }) {
   
   const [exportResult, setExportResult] = useState<any>(null);
 
+  const buildSummary = (kind: "finalize" | "export"): string => {
+    const fileCount = preview?.perTouch?.length ?? 0;
+    const totalRows = preview?.totalPlannedTouchpointsAfter ?? 0;
+    const audienceUnique = preview?.audienceUnique ?? 0;
+    const flagged = preview?.thresholdFlaggedDonors ?? 0;
+    const suppressed = preview?.manuallySuppressedDonors ?? 0;
+    const seeds = preview?.totalSeedIds ?? 0;
+    const action = kind === "finalize" ? "Finalize this campaign?" : "Export this campaign?";
+    const consequence = kind === "finalize"
+      ? "Finalizing locks the audience, thresholds, and suppressions for this campaign. You can still export afterwards."
+      : "Exporting will permanently record these touchpoints in communication history and include them in future threshold checks.";
+    return [
+      action,
+      "",
+      `• ${fileCount} touch file(s)`,
+      `• ${totalRows.toLocaleString()} total rows in export`,
+      `• ${audienceUnique.toLocaleString()} unique donor(s) in audience`,
+      `• ${flagged.toLocaleString()} flagged · ${suppressed.toLocaleString()} suppressed · ${seeds.toLocaleString()} seed(s)`,
+      "",
+      consequence,
+    ].join("\n");
+  };
+
   const handleFinalize = () => {
+    if (!confirm(buildSummary("finalize"))) return;
     finalizeMutation.mutate({ id: campaign.id }, {
       onSuccess: () => {
         toast({ title: "Campaign finalized" });
@@ -33,8 +57,8 @@ export default function PreviewStep({ campaign }: { campaign: any }) {
   };
 
   const handleExport = () => {
-    if (!confirm("Are you sure? Exporting will save these touchpoints as planned/sent communications.")) return;
-    
+    if (!confirm(buildSummary("export"))) return;
+
     exportMutation.mutate({ id: campaign.id }, {
       onSuccess: (result) => {
         toast({ title: "Campaign exported successfully" });

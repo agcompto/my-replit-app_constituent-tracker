@@ -8,6 +8,9 @@ import {
   checkLoginRate,
   recordLoginFailure,
   recordLoginSuccess,
+  checkChangePasswordRate,
+  recordChangePasswordFailure,
+  recordChangePasswordSuccess,
 } from "../lib/rateLimit";
 
 const router: IRouter = Router();
@@ -40,15 +43,26 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     .select()
     .from(usersTable)
     .where(eq(usersTable.email, normalizedEmail));
+  const sendAuthFailure = (r: { allowed: boolean; retryAfterSec: number }) => {
+    if (!r.allowed) {
+      res
+        .status(429)
+        .setHeader("Retry-After", String(r.retryAfterSec))
+        .json({
+          error: `Too many failed login attempts. Try again in ${Math.ceil(r.retryAfterSec / 60)} minutes.`,
+        });
+    } else {
+      res.status(401).json({ error: "Invalid credentials" });
+    }
+  };
+
   if (!u || !u.active) {
-    const r = recordLoginFailure(rateKey);
-    res.status(r.allowed ? 401 : 429).json({ error: "Invalid credentials" });
+    sendAuthFailure(recordLoginFailure(rateKey));
     return;
   }
   const ok = await bcrypt.compare(password, u.passwordHash);
   if (!ok) {
-    const r = recordLoginFailure(rateKey);
-    res.status(r.allowed ? 401 : 429).json({ error: "Invalid credentials" });
+    sendAuthFailure(recordLoginFailure(rateKey));
     return;
   }
   recordLoginSuccess(rateKey);
@@ -107,31 +121,56 @@ router.post(
       res.status(400).json({ error: "New password must be different from current password." });
       return;
     }
+    const userId = req.currentUser!.id;
+    const ip = req.ip ?? "unknown";
+
+    const limit = checkChangePasswordRate(userId, ip);
+    if (!limit.allowed) {
+      res
+        .status(429)
+        .setHeader("Retry-After", String(limit.retryAfterSec))
+        .json({
+          error: `Too many attempts. Try again in ${Math.ceil(limit.retryAfterSec / 60)} minutes.`,
+        });
+      return;
+    }
+
     const [u] = await db
       .select()
       .from(usersTable)
-      .where(eq(usersTable.id, req.currentUser!.id));
+      .where(eq(usersTable.id, userId));
     if (!u) {
       res.status(404).json({ error: "User not found" });
       return;
     }
     const ok = await bcrypt.compare(currentPassword, u.passwordHash);
     if (!ok) {
-      res.status(401).json({ error: "Current password is incorrect." });
+      const r = recordChangePasswordFailure(userId, ip);
+      if (!r.allowed) {
+        res
+          .status(429)
+          .setHeader("Retry-After", String(r.retryAfterSec))
+          .json({
+            error: `Too many attempts. Try again in ${Math.ceil(r.retryAfterSec / 60)} minutes.`,
+          });
+      } else {
+        res.status(401).json({ error: "Current password is incorrect." });
+      }
       return;
     }
+    recordChangePasswordSuccess(userId, ip);
     const passwordHash = await bcrypt.hash(newPassword, 10);
     await db
       .update(usersTable)
       .set({ passwordHash, mustChangePassword: false })
-      .where(eq(usersTable.id, req.currentUser!.id));
+      .where(eq(usersTable.id, userId));
     await audit({
       actor: req.currentUser!,
       action: "change_own_password",
       entityType: "user",
-      entityId: req.currentUser!.id,
+      entityId: userId,
     });
-    const updated = await loadUser(req.currentUser!.id);
+    const updated = await loadUser(userId);
     res.json(updated);
   },
 );
