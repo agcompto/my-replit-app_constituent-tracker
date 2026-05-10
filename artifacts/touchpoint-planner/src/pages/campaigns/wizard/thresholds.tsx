@@ -282,7 +282,7 @@ export default function ThresholdsStep({ campaign }: { campaign: any }) {
       )}
 
       <div className="flex justify-between pt-4 border-t">
-        <Button variant="outline" onClick={() => setLocation(`/campaigns/${campaign.id}/edit?step=touches`)}>Back</Button>
+        <Button variant="outline" onClick={() => setLocation(`/campaigns/${campaign.id}/edit?step=audience`)}>Back</Button>
         <Button onClick={() => setLocation(`/campaigns/${campaign.id}/edit?step=suppressions`)}>Proceed to Suppressions</Button>
       </div>
     </div>

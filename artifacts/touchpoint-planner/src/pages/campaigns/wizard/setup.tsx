@@ -58,7 +58,7 @@ export default function SetupStep({ campaign }: { campaign: any }) {
         onSuccess: (newCampaign) => {
           queryClient.invalidateQueries({ queryKey: getListCampaignsQueryKey() });
           toast({ title: "Campaign created" });
-          setLocation(`/campaigns/${newCampaign.id}/edit?step=audience`);
+          setLocation(`/campaigns/${newCampaign.id}/edit?step=touches`);
         }
       });
     } else {
@@ -66,7 +66,7 @@ export default function SetupStep({ campaign }: { campaign: any }) {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getGetCampaignQueryKey(campaign.id) });
           toast({ title: "Campaign updated" });
-          setLocation(`/campaigns/${campaign.id}/edit?step=audience`);
+          setLocation(`/campaigns/${campaign.id}/edit?step=touches`);
         }
       });
     }

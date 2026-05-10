@@ -149,7 +149,7 @@ export default function AudienceStep({ campaign }: { campaign: any }) {
             </div>
 
             <div className="flex justify-end pt-4 border-t">
-              <Button onClick={() => setLocation(`/campaigns/${campaign.id}/edit?step=touches`)}>Proceed to Touch Builder</Button>
+              <Button onClick={() => setLocation(`/campaigns/${campaign.id}/edit?step=thresholds`)}>Proceed to Thresholds</Button>
             </div>
           </CardContent>
         </Card>
@@ -280,8 +280,8 @@ export default function AudienceStep({ campaign }: { campaign: any }) {
             )}
 
             <div className="flex justify-between pt-6 mt-6 border-t">
-              <Button variant="outline" onClick={() => setLocation(`/campaigns/${campaign.id}/edit?step=setup`)}>Back</Button>
-              <Button variant="secondary" onClick={() => setLocation(`/campaigns/${campaign.id}/edit?step=touches`)}>Skip & Proceed</Button>
+              <Button variant="outline" onClick={() => setLocation(`/campaigns/${campaign.id}/edit?step=touches`)}>Back</Button>
+              <Button variant="secondary" onClick={() => setLocation(`/campaigns/${campaign.id}/edit?step=thresholds`)}>Skip & Proceed</Button>
             </div>
           </CardContent>
         </Card>

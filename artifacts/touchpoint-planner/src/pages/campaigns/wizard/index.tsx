@@ -29,8 +29,8 @@ export default function CampaignWizard() {
 
   const steps = [
     { id: "setup", label: "Setup" },
-    { id: "audience", label: "Audience", disabled: isNew },
     { id: "touches", label: "Touches", disabled: isNew },
+    { id: "audience", label: "Audience", disabled: isNew },
     { id: "thresholds", label: "Thresholds", disabled: isNew },
     { id: "suppressions", label: "Suppressions & Seeds", disabled: isNew },
     { id: "preview", label: "Preview & Export", disabled: isNew },
