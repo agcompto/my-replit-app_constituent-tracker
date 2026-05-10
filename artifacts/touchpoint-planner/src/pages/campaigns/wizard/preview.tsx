@@ -1,13 +1,14 @@
-import { useGetCampaignPreview, useFinalizeCampaign, useExportCampaign, getGetCampaignQueryKey, getGetCampaignPreviewQueryKey } from "@workspace/api-client-react";
+import { useGetCampaignPreview, useFinalizeCampaign, useExportCampaign, useGetCampaignHealthCheck, getGetCampaignQueryKey, getGetCampaignPreviewQueryKey, getGetCampaignHealthCheckQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Download, AlertTriangle, Send } from "lucide-react";
+import { Loader2, Download, AlertTriangle, AlertOctagon, Send, FileText } from "lucide-react";
 import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { useState } from "react";
+import { HealthCheckPanel } from "@/components/health-check-panel";
 
 export default function PreviewStep({ campaign }: { campaign: any }) {
   const [, setLocation] = useLocation();
@@ -18,10 +19,19 @@ export default function PreviewStep({ campaign }: { campaign: any }) {
     query: { queryKey: getGetCampaignPreviewQueryKey(campaign.id), enabled: !!campaign.id }
   });
 
+  const { data: health } = useGetCampaignHealthCheck(campaign.id, {
+    query: { queryKey: getGetCampaignHealthCheckQueryKey(campaign.id), enabled: !!campaign.id },
+  });
+
   const finalizeMutation = useFinalizeCampaign();
   const exportMutation = useExportCampaign();
   
   const [exportResult, setExportResult] = useState<any>(null);
+  const [warningAck, setWarningAck] = useState(false);
+  const [exportError, setExportError] = useState<{ message: string; findings?: any[] } | null>(null);
+
+  const hasErrors = health?.status === "error";
+  const hasWarnings = health?.status === "warning";
 
   const buildSummary = (kind: "finalize" | "export"): string => {
     const fileCount = preview?.perTouch?.length ?? 0;
@@ -57,14 +67,44 @@ export default function PreviewStep({ campaign }: { campaign: any }) {
   };
 
   const handleExport = () => {
+    if (hasErrors) {
+      toast({
+        title: "Export blocked",
+        description: "Resolve the health-check errors above before exporting.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (hasWarnings && !warningAck) {
+      toast({
+        title: "Acknowledge warnings",
+        description: "Please review the health check and tick the acknowledgement before exporting.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (!confirm(buildSummary("export"))) return;
 
+    setExportError(null);
     exportMutation.mutate({ id: campaign.id }, {
       onSuccess: (result) => {
         toast({ title: "Campaign exported successfully" });
         setExportResult(result);
         queryClient.invalidateQueries({ queryKey: getGetCampaignQueryKey(campaign.id) });
-      }
+        queryClient.invalidateQueries({ queryKey: getGetCampaignHealthCheckQueryKey(campaign.id) });
+      },
+      onError: async (err: any) => {
+        // Surface server-side health-check block as inline UI, not just a toast.
+        let parsed: { error?: string; healthCheck?: { findings?: any[] } } | null = null;
+        try {
+          if (typeof err?.response?.json === "function") parsed = await err.response.json();
+          else if (err?.response?.data) parsed = err.response.data;
+        } catch { /* noop */ }
+        const message = parsed?.error || err?.message || "Export failed.";
+        setExportError({ message, findings: parsed?.healthCheck?.findings });
+        queryClient.invalidateQueries({ queryKey: getGetCampaignHealthCheckQueryKey(campaign.id) });
+        toast({ title: "Export failed", description: message, variant: "destructive" });
+      },
     });
   };
 
@@ -102,8 +142,16 @@ export default function PreviewStep({ campaign }: { campaign: any }) {
               ))}
             </TableBody>
           </Table>
-          
-          <div className="flex justify-end pt-6 mt-6 border-t">
+
+          <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between pt-6 mt-6 border-t">
+            <Button variant="outline" asChild>
+              <a
+                href={`/api/campaigns/${campaign.id}/export-manifest.csv`}
+                download
+              >
+                <FileText className="h-4 w-4 mr-2" /> Download Export Manifest CSV
+              </a>
+            </Button>
             <Button variant="outline" onClick={() => setLocation(`/campaigns/${campaign.id}`)}>View Campaign Details</Button>
           </div>
         </CardContent>
@@ -184,6 +232,26 @@ export default function PreviewStep({ campaign }: { campaign: any }) {
         </CardContent>
       </Card>
 
+      <HealthCheckPanel campaignId={campaign.id} />
+
+      {exportError && (
+        <div className="bg-destructive/10 border border-destructive/30 p-4 rounded-md flex gap-3 text-destructive" role="alert">
+          <AlertOctagon className="h-5 w-5 shrink-0" />
+          <div className="space-y-1 text-sm">
+            <div className="font-semibold">{exportError.message}</div>
+            {exportError.findings && exportError.findings.length > 0 && (
+              <ul className="list-disc pl-5">
+                {exportError.findings
+                  .filter((f: any) => f.severity === "error")
+                  .map((f: any, i: number) => (
+                    <li key={i}>{f.message}</li>
+                  ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="bg-destructive/10 border border-destructive/20 p-4 rounded-md flex gap-3 text-destructive">
         <AlertTriangle className="h-5 w-5 shrink-0" />
         <div>
@@ -191,13 +259,44 @@ export default function PreviewStep({ campaign }: { campaign: any }) {
         </div>
       </div>
 
+      {hasWarnings && (
+        <label className="flex items-start gap-2 text-sm bg-amber-50 border border-amber-200 rounded-md p-3 cursor-pointer">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={warningAck}
+            onChange={(e) => setWarningAck(e.target.checked)}
+            aria-label="I have reviewed the warnings in the campaign health check"
+          />
+          <span>
+            I have reviewed the <strong>warnings</strong> in the campaign health check and want to export anyway.
+          </span>
+        </label>
+      )}
+
       <div className="flex justify-between items-center pt-6 border-t mt-6">
         <Button variant="outline" onClick={() => setLocation(`/campaigns/${campaign.id}/edit?step=suppressions`)}>Back</Button>
         <div className="flex gap-4">
           <Button variant="secondary" onClick={handleFinalize} disabled={finalizeMutation.isPending || campaign.status === 'finalized' || campaign.status === 'exported'}>
             {finalizeMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Mark Finalized
           </Button>
-          <Button size="lg" onClick={handleExport} disabled={exportMutation.isPending || !preview?.perTouch.length}>
+          <Button
+            size="lg"
+            onClick={handleExport}
+            disabled={
+              exportMutation.isPending ||
+              !preview?.perTouch.length ||
+              hasErrors ||
+              (hasWarnings && !warningAck)
+            }
+            title={
+              hasErrors
+                ? "Resolve health-check errors before exporting."
+                : hasWarnings && !warningAck
+                  ? "Acknowledge the warnings to enable export."
+                  : undefined
+            }
+          >
             {exportMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />} 
             Export Campaign
           </Button>

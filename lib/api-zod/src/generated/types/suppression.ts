@@ -18,6 +18,10 @@ export interface Suppression {
   /** @nullable */
   touchId?: number | null;
   /** @nullable */
+  reasonCodeId?: number | null;
+  /** @nullable */
+  reasonCodeName?: string | null;
+  /** @nullable */
   reason?: string | null;
   /** @nullable */
   notes?: string | null;

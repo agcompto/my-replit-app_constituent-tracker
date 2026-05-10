@@ -174,6 +174,19 @@ export interface CampaignUpdate {
   campaignTypeIds?: number[];
 }
 
+/**
+ * @nullable
+ */
+export type CampaignSummaryLastHealthCheckStatus =
+  | (typeof CampaignSummaryLastHealthCheckStatus)[keyof typeof CampaignSummaryLastHealthCheckStatus]
+  | null;
+
+export const CampaignSummaryLastHealthCheckStatus = {
+  pass: "pass",
+  warning: "warning",
+  error: "error",
+} as const;
+
 export interface CampaignSummary {
   id: number;
   name: string;
@@ -189,6 +202,14 @@ export interface CampaignSummary {
   exportedAt?: string | null;
   touchCount: number;
   audienceSize: number;
+  validIdCount: number;
+  rejectedIdCount: number;
+  duplicateIdCount: number;
+  extraColumnsIgnored: boolean;
+  suppressionCount: number;
+  seedCount: number;
+  /** @nullable */
+  lastHealthCheckStatus?: CampaignSummaryLastHealthCheckStatus;
   campaignTypes: string[];
 }
 
@@ -410,6 +431,10 @@ export interface Suppression {
   /** @nullable */
   touchId?: number | null;
   /** @nullable */
+  reasonCodeId?: number | null;
+  /** @nullable */
+  reasonCodeName?: string | null;
+  /** @nullable */
   reason?: string | null;
   /** @nullable */
   notes?: string | null;
@@ -432,10 +457,79 @@ export interface SuppressionInput {
   channelId?: number;
   campaignTypeId?: number;
   touchId?: number;
+  reasonCodeId?: number;
   reason?: string;
   notes?: string;
   rawText?: string;
   googleSheetUrl?: string;
+}
+
+export interface SuppressionReasonCode {
+  id: number;
+  name: string;
+  /** @nullable */
+  description?: string | null;
+  active: boolean;
+  systemDefault: boolean;
+  createdAt: string;
+}
+
+export interface SuppressionReasonCodeInput {
+  /**
+   * @minLength 1
+   * @maxLength 80
+   */
+  name: string;
+  description?: string;
+  active?: boolean;
+}
+
+export interface SuppressionReasonCodeUpdate {
+  /**
+   * @minLength 1
+   * @maxLength 80
+   */
+  name?: string;
+  /** @nullable */
+  description?: string | null;
+  active?: boolean;
+}
+
+export type HealthFindingSeverity =
+  (typeof HealthFindingSeverity)[keyof typeof HealthFindingSeverity];
+
+export const HealthFindingSeverity = {
+  info: "info",
+  warning: "warning",
+  error: "error",
+} as const;
+
+export interface HealthFinding {
+  code: string;
+  severity: HealthFindingSeverity;
+  message: string;
+  /** @nullable */
+  recommendation?: string | null;
+  /** @nullable */
+  count?: number | null;
+}
+
+export type CampaignHealthCheckStatus =
+  (typeof CampaignHealthCheckStatus)[keyof typeof CampaignHealthCheckStatus];
+
+export const CampaignHealthCheckStatus = {
+  pass: "pass",
+  warning: "warning",
+  error: "error",
+} as const;
+
+export interface CampaignHealthCheck {
+  campaignId: number;
+  status: CampaignHealthCheckStatus;
+  findings: HealthFinding[];
+  generatedAt: string;
+  /** @nullable */
+  snapshotId?: number | null;
 }
 
 export type SeedGroupScope =

@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { StatusBadge } from "@/components/ui/status-badge";
+import { CampaignBadges } from "@/components/campaign-badges";
 import { PlusCircle, Search, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -88,7 +88,7 @@ export default function Campaigns() {
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
-              <TableHead>Status</TableHead>
+              <TableHead>Status & Badges</TableHead>
               <TableHead>Types</TableHead>
               <TableHead>Audience Size</TableHead>
               <TableHead>Touches</TableHead>
@@ -117,7 +117,7 @@ export default function Campaigns() {
                   onClick={() => setLocation(`/campaigns/${c.id}`)}
                 >
                   <TableCell className="font-medium text-primary hover:underline">{c.name}</TableCell>
-                  <TableCell><StatusBadge status={c.status} /></TableCell>
+                  <TableCell><CampaignBadges campaign={c} max={3} /></TableCell>
                   <TableCell>
                     <div className="flex gap-1 flex-wrap">
                       {(c as any).campaignTypes?.slice(0, 2).map((t: string) => (

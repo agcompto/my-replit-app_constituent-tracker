@@ -5,6 +5,7 @@
  * Constituent Touchpoint Planner API
  * OpenAPI spec version: 0.1.0
  */
+import type { CampaignSummaryLastHealthCheckStatus } from "./campaignSummaryLastHealthCheckStatus";
 
 export interface CampaignSummary {
   id: number;
@@ -21,5 +22,13 @@ export interface CampaignSummary {
   exportedAt?: Date | null;
   touchCount: number;
   audienceSize: number;
+  validIdCount: number;
+  rejectedIdCount: number;
+  duplicateIdCount: number;
+  extraColumnsIgnored: boolean;
+  suppressionCount: number;
+  seedCount: number;
+  /** @nullable */
+  lastHealthCheckStatus?: CampaignSummaryLastHealthCheckStatus;
   campaignTypes: string[];
 }

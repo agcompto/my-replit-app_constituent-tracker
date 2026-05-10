@@ -1,4 +1,4 @@
-import { useGetSettings, useUpdateSettings, useListCampaignTypes, useCreateCampaignType, useUpdateCampaignType, useListChannels, useCreateChannel, useUpdateChannel, useListOwningUnits, useCreateOwningUnit, useUpdateOwningUnit, useRunRetentionDelete, getListCampaignTypesQueryKey, getListChannelsQueryKey, getListOwningUnitsQueryKey, getGetSettingsQueryKey } from "@workspace/api-client-react";
+import { useGetSettings, useUpdateSettings, useListCampaignTypes, useCreateCampaignType, useUpdateCampaignType, useListChannels, useCreateChannel, useUpdateChannel, useListOwningUnits, useCreateOwningUnit, useUpdateOwningUnit, useRunRetentionDelete, useListSuppressionReasons, useCreateSuppressionReason, useUpdateSuppressionReason, getListCampaignTypesQueryKey, getListChannelsQueryKey, getListOwningUnitsQueryKey, getGetSettingsQueryKey, getListSuppressionReasonsQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +36,10 @@ export default function Settings() {
 
   const runRetention = useRunRetentionDelete();
 
+  const { data: reasonCodes, isLoading: reasonsLoading } = useListSuppressionReasons();
+  const createReason = useCreateSuppressionReason();
+  const updateReason = useUpdateSuppressionReason();
+
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -45,6 +49,49 @@ export default function Settings() {
 
   const [retentionDate, setRetentionDate] = useState("");
   const [retentionConfirmOpen, setRetentionConfirmOpen] = useState(false);
+
+  const [newReasonName, setNewReasonName] = useState("");
+  const [newReasonDescription, setNewReasonDescription] = useState("");
+
+  const handleAddReason = () => {
+    if (!newReasonName.trim()) return;
+    createReason.mutate(
+      { data: { name: newReasonName.trim(), description: newReasonDescription || undefined } },
+      {
+        onSuccess: () => {
+          setNewReasonName("");
+          setNewReasonDescription("");
+          toast({ title: "Reason code added" });
+          queryClient.invalidateQueries({ queryKey: getListSuppressionReasonsQueryKey() });
+        },
+        onError: (err: any) => {
+          toast({
+            title: "Could not add reason code",
+            description: err?.response?.data?.error || err?.message || "Unknown error",
+            variant: "destructive",
+          });
+        },
+      },
+    );
+  };
+
+  const handleToggleReason = (id: number, active: boolean) => {
+    updateReason.mutate(
+      { id, data: { active } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListSuppressionReasonsQueryKey() });
+        },
+        onError: (err: any) => {
+          toast({
+            title: "Could not update reason code",
+            description: err?.response?.data?.error || err?.message || "Unknown error",
+            variant: "destructive",
+          });
+        },
+      },
+    );
+  };
 
   if (!isAdmin) {
     return <div className="p-8 text-center text-muted-foreground">Access denied.</div>;
@@ -210,6 +257,80 @@ export default function Settings() {
                       </TableCell>
                     </TableRow>
                   ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Suppression Reason Codes</CardTitle>
+              <CardDescription>
+                Reason codes appear in the suppression dropdown when staff add a suppression to a campaign.
+                Deactivating a code hides it from new entries but preserves history.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col sm:flex-row gap-2 mb-4">
+                <Input
+                  placeholder="Reason name (e.g. Do Not Contact)"
+                  value={newReasonName}
+                  onChange={(e) => setNewReasonName(e.target.value)}
+                  className="max-w-xs"
+                />
+                <Input
+                  placeholder="Optional description"
+                  value={newReasonDescription}
+                  onChange={(e) => setNewReasonDescription(e.target.value)}
+                  className="flex-1 max-w-md"
+                />
+                <Button onClick={handleAddReason} disabled={!newReasonName.trim() || createReason.isPending}>
+                  <Plus className="h-4 w-4 mr-2" /> Add
+                </Button>
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead className="w-[120px]">Source</TableHead>
+                    <TableHead className="w-[100px] text-right">Active</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {reasonsLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center h-24">
+                        <Loader2 className="animate-spin h-5 w-5 mx-auto" />
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    reasonCodes?.map((r) => (
+                      <TableRow key={r.id}>
+                        <TableCell className="font-medium">{r.name}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{r.description || "—"}</TableCell>
+                        <TableCell>
+                          {r.systemDefault ? (
+                            <Badge variant="outline" className="text-xs">System default</Badge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">Custom</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Switch
+                            checked={r.active}
+                            onCheckedChange={(checked) => handleToggleReason(r.id, checked)}
+                            disabled={r.systemDefault && !isSuperAdmin}
+                            title={
+                              r.systemDefault && !isSuperAdmin
+                                ? "System default — only a super admin can deactivate this"
+                                : undefined
+                            }
+                          />
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </CardContent>

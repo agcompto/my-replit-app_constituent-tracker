@@ -26,6 +26,8 @@ tags:
   - name: audit
   - name: settings
   - name: retention
+  - name: suppressionReasons
+  - name: healthCheck
 
 paths:
   /healthz:
@@ -692,6 +694,76 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ExportResult" }
 
+  /campaigns/{id}/health-check:
+    get:
+      operationId: getCampaignHealthCheck
+      tags: [healthCheck]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CampaignHealthCheck" }
+  /campaigns/{id}/export-manifest.csv:
+    get:
+      operationId: getCampaignExportManifest
+      tags: [exports]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: CSV manifest of the most recent export batch
+          content:
+            text/csv:
+              schema: { type: string }
+
+  # ───────── Suppression reason codes (admin)
+  /suppression-reasons:
+    get:
+      operationId: listSuppressionReasons
+      tags: [suppressionReasons]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SuppressionReasonCode" }
+    post:
+      operationId: createSuppressionReason
+      tags: [suppressionReasons]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SuppressionReasonCodeInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuppressionReasonCode" }
+  /suppression-reasons/{id}:
+    patch:
+      operationId: updateSuppressionReason
+      tags: [suppressionReasons]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SuppressionReasonCodeUpdate" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuppressionReasonCode" }
+
   # ───────── Donor lookup
   /donors/{donorId}/touchpoints:
     get:
@@ -999,7 +1071,7 @@ components:
           items: { type: integer }
     CampaignSummary:
       type: object
-      required: [id, name, status, submittedByName, owningUnit, createdAt, touchCount, audienceSize, campaignTypes]
+      required: [id, name, status, submittedByName, owningUnit, createdAt, touchCount, audienceSize, campaignTypes, validIdCount, rejectedIdCount, duplicateIdCount, extraColumnsIgnored, suppressionCount, seedCount]
       properties:
         id: { type: integer }
         name: { type: string }
@@ -1012,6 +1084,15 @@ components:
         exportedAt: { type: ["string", "null"], format: date-time }
         touchCount: { type: integer }
         audienceSize: { type: integer }
+        validIdCount: { type: integer }
+        rejectedIdCount: { type: integer }
+        duplicateIdCount: { type: integer }
+        extraColumnsIgnored: { type: boolean }
+        suppressionCount: { type: integer }
+        seedCount: { type: integer }
+        lastHealthCheckStatus:
+          type: ["string", "null"]
+          enum: [pass, warning, error, null]
         campaignTypes:
           type: array
           items: { type: string }
@@ -1192,6 +1273,8 @@ components:
         channelId: { type: ["integer", "null"] }
         campaignTypeId: { type: ["integer", "null"] }
         touchId: { type: ["integer", "null"] }
+        reasonCodeId: { type: ["integer", "null"] }
+        reasonCodeName: { type: ["string", "null"] }
         reason: { type: ["string", "null"] }
         notes: { type: ["string", "null"] }
         donorIdCount: { type: integer }
@@ -1204,10 +1287,56 @@ components:
         channelId: { type: integer }
         campaignTypeId: { type: integer }
         touchId: { type: integer }
+        reasonCodeId: { type: integer }
         reason: { type: string }
         notes: { type: string }
         rawText: { type: string }
         googleSheetUrl: { type: string }
+
+    SuppressionReasonCode:
+      type: object
+      required: [id, name, active, systemDefault, createdAt]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        description: { type: ["string", "null"] }
+        active: { type: boolean }
+        systemDefault: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    SuppressionReasonCodeInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        description: { type: string }
+        active: { type: boolean }
+    SuppressionReasonCodeUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        description: { type: ["string", "null"] }
+        active: { type: boolean }
+
+    HealthFinding:
+      type: object
+      required: [code, severity, message]
+      properties:
+        code: { type: string }
+        severity: { type: string, enum: [info, warning, error] }
+        message: { type: string }
+        recommendation: { type: ["string", "null"] }
+        count: { type: ["integer", "null"] }
+    CampaignHealthCheck:
+      type: object
+      required: [campaignId, status, findings, generatedAt]
+      properties:
+        campaignId: { type: integer }
+        status: { type: string, enum: [pass, warning, error] }
+        findings:
+          type: array
+          items: { $ref: "#/components/schemas/HealthFinding" }
+        generatedAt: { type: string, format: date-time }
+        snapshotId: { type: ["integer", "null"] }
 
     SeedGroup:
       type: object

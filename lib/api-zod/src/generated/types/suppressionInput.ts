@@ -12,6 +12,7 @@ export interface SuppressionInput {
   channelId?: number;
   campaignTypeId?: number;
   touchId?: number;
+  reasonCodeId?: number;
   reason?: string;
   notes?: string;
   rawText?: string;

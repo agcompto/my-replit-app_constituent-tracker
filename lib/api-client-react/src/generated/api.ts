@@ -22,6 +22,7 @@ import type {
   AudienceUploadResult,
   AuditEntry,
   Campaign,
+  CampaignHealthCheck,
   CampaignInput,
   CampaignPreview,
   CampaignSummary,
@@ -58,6 +59,9 @@ import type {
   SettingsUpdate,
   Suppression,
   SuppressionInput,
+  SuppressionReasonCode,
+  SuppressionReasonCodeInput,
+  SuppressionReasonCodeUpdate,
   ThresholdCheck,
   ThresholdInput,
   ThresholdPreview,
@@ -3830,6 +3834,401 @@ export const useExportCampaign = <
   TContext
 > => {
   return useMutation(getExportCampaignMutationOptions(options));
+};
+
+export const getGetCampaignHealthCheckUrl = (id: number) => {
+  return `/api/campaigns/${id}/health-check`;
+};
+
+export const getCampaignHealthCheck = async (
+  id: number,
+  options?: RequestInit,
+): Promise<CampaignHealthCheck> => {
+  return customFetch<CampaignHealthCheck>(getGetCampaignHealthCheckUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetCampaignHealthCheckQueryKey = (id: number) => {
+  return [`/api/campaigns/${id}/health-check`] as const;
+};
+
+export const getGetCampaignHealthCheckQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCampaignHealthCheck>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCampaignHealthCheck>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetCampaignHealthCheckQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getCampaignHealthCheck>>
+  > = ({ signal }) => getCampaignHealthCheck(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCampaignHealthCheck>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCampaignHealthCheckQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCampaignHealthCheck>>
+>;
+export type GetCampaignHealthCheckQueryError = ErrorType<unknown>;
+
+export function useGetCampaignHealthCheck<
+  TData = Awaited<ReturnType<typeof getCampaignHealthCheck>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCampaignHealthCheck>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCampaignHealthCheckQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getGetCampaignExportManifestUrl = (id: number) => {
+  return `/api/campaigns/${id}/export-manifest.csv`;
+};
+
+export const getCampaignExportManifest = async (
+  id: number,
+  options?: RequestInit,
+): Promise<string> => {
+  return customFetch<string>(getGetCampaignExportManifestUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetCampaignExportManifestQueryKey = (id: number) => {
+  return [`/api/campaigns/${id}/export-manifest.csv`] as const;
+};
+
+export const getGetCampaignExportManifestQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCampaignExportManifest>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCampaignExportManifest>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetCampaignExportManifestQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getCampaignExportManifest>>
+  > = ({ signal }) =>
+    getCampaignExportManifest(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCampaignExportManifest>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCampaignExportManifestQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCampaignExportManifest>>
+>;
+export type GetCampaignExportManifestQueryError = ErrorType<unknown>;
+
+export function useGetCampaignExportManifest<
+  TData = Awaited<ReturnType<typeof getCampaignExportManifest>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCampaignExportManifest>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCampaignExportManifestQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getListSuppressionReasonsUrl = () => {
+  return `/api/suppression-reasons`;
+};
+
+export const listSuppressionReasons = async (
+  options?: RequestInit,
+): Promise<SuppressionReasonCode[]> => {
+  return customFetch<SuppressionReasonCode[]>(getListSuppressionReasonsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListSuppressionReasonsQueryKey = () => {
+  return [`/api/suppression-reasons`] as const;
+};
+
+export const getListSuppressionReasonsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listSuppressionReasons>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listSuppressionReasons>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListSuppressionReasonsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listSuppressionReasons>>
+  > = ({ signal }) => listSuppressionReasons({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listSuppressionReasons>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListSuppressionReasonsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listSuppressionReasons>>
+>;
+export type ListSuppressionReasonsQueryError = ErrorType<unknown>;
+
+export function useListSuppressionReasons<
+  TData = Awaited<ReturnType<typeof listSuppressionReasons>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listSuppressionReasons>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListSuppressionReasonsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getCreateSuppressionReasonUrl = () => {
+  return `/api/suppression-reasons`;
+};
+
+export const createSuppressionReason = async (
+  suppressionReasonCodeInput: SuppressionReasonCodeInput,
+  options?: RequestInit,
+): Promise<SuppressionReasonCode> => {
+  return customFetch<SuppressionReasonCode>(getCreateSuppressionReasonUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(suppressionReasonCodeInput),
+  });
+};
+
+export const getCreateSuppressionReasonMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createSuppressionReason>>,
+    TError,
+    { data: BodyType<SuppressionReasonCodeInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createSuppressionReason>>,
+  TError,
+  { data: BodyType<SuppressionReasonCodeInput> },
+  TContext
+> => {
+  const mutationKey = ["createSuppressionReason"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createSuppressionReason>>,
+    { data: BodyType<SuppressionReasonCodeInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createSuppressionReason(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateSuppressionReasonMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createSuppressionReason>>
+>;
+export type CreateSuppressionReasonMutationBody =
+  BodyType<SuppressionReasonCodeInput>;
+export type CreateSuppressionReasonMutationError = ErrorType<unknown>;
+
+export const useCreateSuppressionReason = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createSuppressionReason>>,
+    TError,
+    { data: BodyType<SuppressionReasonCodeInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createSuppressionReason>>,
+  TError,
+  { data: BodyType<SuppressionReasonCodeInput> },
+  TContext
+> => {
+  return useMutation(getCreateSuppressionReasonMutationOptions(options));
+};
+
+export const getUpdateSuppressionReasonUrl = (id: number) => {
+  return `/api/suppression-reasons/${id}`;
+};
+
+export const updateSuppressionReason = async (
+  id: number,
+  suppressionReasonCodeUpdate: SuppressionReasonCodeUpdate,
+  options?: RequestInit,
+): Promise<SuppressionReasonCode> => {
+  return customFetch<SuppressionReasonCode>(getUpdateSuppressionReasonUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(suppressionReasonCodeUpdate),
+  });
+};
+
+export const getUpdateSuppressionReasonMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSuppressionReason>>,
+    TError,
+    { id: number; data: BodyType<SuppressionReasonCodeUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateSuppressionReason>>,
+  TError,
+  { id: number; data: BodyType<SuppressionReasonCodeUpdate> },
+  TContext
+> => {
+  const mutationKey = ["updateSuppressionReason"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateSuppressionReason>>,
+    { id: number; data: BodyType<SuppressionReasonCodeUpdate> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateSuppressionReason(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateSuppressionReasonMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateSuppressionReason>>
+>;
+export type UpdateSuppressionReasonMutationBody =
+  BodyType<SuppressionReasonCodeUpdate>;
+export type UpdateSuppressionReasonMutationError = ErrorType<unknown>;
+
+export const useUpdateSuppressionReason = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSuppressionReason>>,
+    TError,
+    { id: number; data: BodyType<SuppressionReasonCodeUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateSuppressionReason>>,
+  TError,
+  { id: number; data: BodyType<SuppressionReasonCodeUpdate> },
+  TContext
+> => {
+  return useMutation(getUpdateSuppressionReasonMutationOptions(options));
 };
 
 export const getGetDonorTouchpointsUrl = (donorId: string) => {

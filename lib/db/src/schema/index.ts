@@ -203,6 +203,20 @@ export const thresholdOverridesTable = pgTable(
   (t) => ({ pk: primaryKey({ columns: [t.campaignId, t.donorId] }) }),
 );
 
+// ─────── Suppression reason codes (admin-managed taxonomy)
+export const suppressionReasonCodesTable = pgTable("suppression_reason_codes", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  active: boolean("active").notNull().default(true),
+  systemDefault: boolean("system_default").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});
+
 // ─────── Suppressions
 export const suppressionsTable = pgTable("suppressions", {
   id: serial("id").primaryKey(),
@@ -215,12 +229,44 @@ export const suppressionsTable = pgTable("suppressions", {
   touchId: integer("touch_id").references(() => touchesTable.id, {
     onDelete: "cascade",
   }),
+  reasonCodeId: integer("reason_code_id").references(() => suppressionReasonCodesTable.id),
   reason: text("reason"),
   notes: text("notes"),
   donorIds: jsonb("donor_ids").$type<string[]>().notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   createdByUserId: integer("created_by_user_id").references(() => usersTable.id),
 });
+
+// ─────── Campaign health-check snapshots
+// One row per health check execution (e.g. on export). The latest row per campaign
+// surfaces in summary badges; on-demand checks during preview can be ephemeral.
+export const campaignHealthChecksTable = pgTable(
+  "campaign_health_checks",
+  {
+    id: serial("id").primaryKey(),
+    campaignId: integer("campaign_id")
+      .notNull()
+      .references(() => campaignsTable.id, { onDelete: "cascade" }),
+    status: text("status").notNull(), // pass | warning | error
+    findings: jsonb("findings")
+      .$type<
+        Array<{
+          code: string;
+          severity: "info" | "warning" | "error";
+          message: string;
+          recommendation?: string | null;
+          count?: number | null;
+        }>
+      >()
+      .notNull()
+      .default([]),
+    createdByUserId: integer("created_by_user_id").references(() => usersTable.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    campaignIdx: index("campaign_health_checks_campaign_idx").on(t.campaignId, t.createdAt),
+  }),
+);
 
 // ─────── Seeds
 export const seedGroupsTable = pgTable("seed_groups", {

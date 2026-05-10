@@ -1,9 +1,9 @@
-import { useListChannels, useListOwningUnits } from "@workspace/api-client-react";
+import { useListChannels, useListOwningUnits, useGetSettings } from "@workspace/api-client-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
+import { DateRangePicker } from "./date-range-picker";
 
 export type ReportFilters = {
   owningUnit?: string;
@@ -31,6 +31,7 @@ export function ReportsFilterBar({
 }) {
   const { data: owningUnits } = useListOwningUnits();
   const { data: channels } = useListChannels();
+  const { data: settings } = useGetSettings();
   const activeUnits = (owningUnits || []).filter((u) => u.active);
   const activeChannels = (channels || []).filter((c) => c.active);
 
@@ -70,25 +71,13 @@ export function ReportsFilterBar({
         </Select>
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label className="text-xs text-muted-foreground">Start date</Label>
-        <Input
-          type="date"
-          value={value.startDate ?? ""}
-          max={value.endDate}
-          onChange={(e) => onChange({ ...value, startDate: e.target.value || undefined })}
-          className="w-[160px]"
-        />
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <Label className="text-xs text-muted-foreground">End date</Label>
-        <Input
-          type="date"
-          value={value.endDate ?? ""}
-          min={value.startDate}
-          onChange={(e) => onChange({ ...value, endDate: e.target.value || undefined })}
-          className="w-[160px]"
+      <div className="flex flex-col gap-1.5 min-w-[220px]">
+        <Label className="text-xs text-muted-foreground">Date Range</Label>
+        <DateRangePicker
+          value={{ startDate: value.startDate, endDate: value.endDate }}
+          onChange={(r) => onChange({ ...value, startDate: r.startDate, endDate: r.endDate })}
+          fiscalYearStartMonth={settings?.fiscalYearStartMonth}
+          fiscalYearStartDay={settings?.fiscalYearStartDay}
         />
       </div>
 

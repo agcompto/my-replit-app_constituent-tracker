@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useListSuppressions, useCreateSuppression, useDeleteSuppression, useListSeeds, useCreateSeedGroup, useDeleteSeedGroup, useListChannels, useListTouches, getListSuppressionsQueryKey, getListSeedsQueryKey } from "@workspace/api-client-react";
+import { useListSuppressions, useCreateSuppression, useDeleteSuppression, useListSeeds, useCreateSeedGroup, useDeleteSeedGroup, useListChannels, useListTouches, useListSuppressionReasons, getListSuppressionsQueryKey, getListSeedsQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,8 @@ export default function SuppressionsSeedsStep({ campaign }: { campaign: any }) {
   const { data: seeds, isLoading: seedsLoading } = useListSeeds(campaign.id);
   const { data: channels } = useListChannels();
   const { data: touches } = useListTouches(campaign.id);
+  const { data: reasonCodes } = useListSuppressionReasons();
+  const activeReasonCodes = (reasonCodes || []).filter((r) => r.active);
 
   const activeChannels = channels?.filter(c => c.active) || [];
   const activeCampaignTypes = campaign.campaignTypes || [];
@@ -35,7 +37,7 @@ export default function SuppressionsSeedsStep({ campaign }: { campaign: any }) {
     channelId: "",
     campaignTypeId: "",
     touchId: "",
-    reason: "",
+    reasonCodeId: "",
     notes: "",
     rawText: ""
   });
@@ -53,7 +55,7 @@ export default function SuppressionsSeedsStep({ campaign }: { campaign: any }) {
       channelId: suppForm.scope === "channel" ? Number(suppForm.channelId) : undefined,
       campaignTypeId: suppForm.scope === "campaign_type" ? Number(suppForm.campaignTypeId) : undefined,
       touchId: suppForm.scope === "touch" ? Number(suppForm.touchId) : undefined,
-      reason: suppForm.reason || undefined,
+      reasonCodeId: suppForm.reasonCodeId ? Number(suppForm.reasonCodeId) : undefined,
       notes: suppForm.notes || undefined,
       rawText: suppForm.rawText
     };
@@ -61,7 +63,7 @@ export default function SuppressionsSeedsStep({ campaign }: { campaign: any }) {
     createSupp.mutate({ id: campaign.id, data }, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListSuppressionsQueryKey(campaign.id) });
-        setSuppForm({ ...suppForm, rawText: "", notes: "", reason: "" });
+        setSuppForm({ ...suppForm, rawText: "", notes: "", reasonCodeId: "" });
       }
     });
   };
@@ -144,9 +146,27 @@ export default function SuppressionsSeedsStep({ campaign }: { campaign: any }) {
               </div>
 
               <div className="space-y-2">
-                <Label>Reason (Optional)</Label>
-                <Input value={suppForm.reason} onChange={e => setSuppForm({...suppForm, reason: e.target.value})} placeholder="e.g. Do Not Contact List" />
-                <PiiWarning text={suppForm.reason} />
+                <Label>Reason</Label>
+                <Select
+                  value={suppForm.reasonCodeId}
+                  onValueChange={(v) => setSuppForm({ ...suppForm, reasonCodeId: v })}
+                >
+                  <SelectTrigger><SelectValue placeholder="Select a reason code…" /></SelectTrigger>
+                  <SelectContent>
+                    {activeReasonCodes.map((r) => (
+                      <SelectItem key={r.id} value={r.id.toString()}>{r.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Reason codes are managed by an administrator under Settings → Suppression Reasons.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Notes (Optional)</Label>
+                <Input value={suppForm.notes} onChange={e => setSuppForm({...suppForm, notes: e.target.value})} placeholder="Free-text context (no PII)." />
+                <PiiWarning text={suppForm.notes} />
               </div>
 
               <Button onClick={handleAddSuppression} disabled={!suppForm.rawText.trim() || createSupp.isPending} className="w-full">
@@ -158,16 +178,22 @@ export default function SuppressionsSeedsStep({ campaign }: { campaign: any }) {
               <TableHeader>
                 <TableRow>
                   <TableHead>Scope</TableHead>
+                  <TableHead>Reason</TableHead>
                   <TableHead className="text-right">Count</TableHead>
                   <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {suppLoading ? <TableRow><TableCell colSpan={3} className="text-center"><Loader2 className="h-4 w-4 animate-spin mx-auto text-primary"/></TableCell></TableRow> :
-                  !suppressions?.length ? <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground text-sm">No suppressions.</TableCell></TableRow> :
-                  suppressions.map(s => (
+                {suppLoading ? <TableRow><TableCell colSpan={4} className="text-center"><Loader2 className="h-4 w-4 animate-spin mx-auto text-primary"/></TableCell></TableRow> :
+                  !suppressions?.length ? <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm">No suppressions.</TableCell></TableRow> :
+                  suppressions.map((s: any) => (
                     <TableRow key={s.id}>
                       <TableCell className="capitalize text-sm">{s.scope.replace('_', ' ')}</TableCell>
+                      <TableCell className="text-sm">
+                        {s.reasonCodeName || s.reason || (
+                          <span className="text-muted-foreground italic">Uncategorized</span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-right font-medium">{s.donorIdCount}</TableCell>
                       <TableCell className="text-right">
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => deleteSupp.mutate({ id: campaign.id, suppressionId: s.id }, { onSuccess: () => queryClient.invalidateQueries({ queryKey: getListSuppressionsQueryKey(campaign.id) })})}>

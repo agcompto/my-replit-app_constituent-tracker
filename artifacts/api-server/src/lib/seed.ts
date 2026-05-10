@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import { randomBytes } from "crypto";
-import { db, usersTable, campaignTypesTable, channelsTable, owningUnitsTable, appSettingsTable } from "@workspace/db";
+import { db, usersTable, campaignTypesTable, channelsTable, owningUnitsTable, appSettingsTable, suppressionReasonCodesTable } from "@workspace/db";
 import { logger } from "./logger";
 
 const DEFAULT_CHANNELS = [
@@ -19,6 +19,16 @@ const DEFAULT_CAMPAIGN_TYPES = [
   "Event",
   "Survey",
   "Engagement",
+];
+
+const DEFAULT_SUPPRESSION_REASONS: { name: string; description: string }[] = [
+  { name: "Do Not Contact", description: "Constituent has requested no further outreach." },
+  { name: "Deceased", description: "Constituent record marked deceased." },
+  { name: "Bad Address / Bounce", description: "Last known contact information is invalid." },
+  { name: "Recent Major Gift Ask", description: "Excluded to avoid stewardship conflicts after a recent solicitation." },
+  { name: "VIP / Hand-Curated List", description: "Reserved for personal outreach by a gift officer." },
+  { name: "Audience Mismatch", description: "Constituent does not match the campaign's intended segment." },
+  { name: "Other", description: "Use the notes field to describe the reason." },
 ];
 
 const DEFAULT_OWNING_UNITS = [
@@ -91,6 +101,21 @@ export async function seedDefaults(): Promise<void> {
   if (existingUnits.length === 0) {
     await db.insert(owningUnitsTable).values(
       DEFAULT_OWNING_UNITS.map((name) => ({ name, active: true, systemDefault: true })),
+    );
+  }
+
+  const existingReasons = await db
+    .select({ id: suppressionReasonCodesTable.id })
+    .from(suppressionReasonCodesTable)
+    .limit(1);
+  if (existingReasons.length === 0) {
+    await db.insert(suppressionReasonCodesTable).values(
+      DEFAULT_SUPPRESSION_REASONS.map((r) => ({
+        name: r.name,
+        description: r.description,
+        active: true,
+        systemDefault: true,
+      })),
     );
   }
 

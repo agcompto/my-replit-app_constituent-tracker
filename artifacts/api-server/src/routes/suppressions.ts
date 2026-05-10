@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { and, eq } from "drizzle-orm";
-import { db, suppressionsTable } from "@workspace/db";
+import { db, suppressionsTable, suppressionReasonCodesTable } from "@workspace/db";
 import {
   ListSuppressionsParams,
   CreateSuppressionParams,
@@ -19,8 +19,25 @@ router.get("/campaigns/:id/suppressions", requireAuth, async (req, res): Promise
     return;
   }
   const rows = await db
-    .select()
+    .select({
+      id: suppressionsTable.id,
+      campaignId: suppressionsTable.campaignId,
+      scope: suppressionsTable.scope,
+      channelId: suppressionsTable.channelId,
+      campaignTypeId: suppressionsTable.campaignTypeId,
+      touchId: suppressionsTable.touchId,
+      reasonCodeId: suppressionsTable.reasonCodeId,
+      reasonCodeName: suppressionReasonCodesTable.name,
+      reason: suppressionsTable.reason,
+      notes: suppressionsTable.notes,
+      donorIds: suppressionsTable.donorIds,
+      createdAt: suppressionsTable.createdAt,
+    })
     .from(suppressionsTable)
+    .leftJoin(
+      suppressionReasonCodesTable,
+      eq(suppressionReasonCodesTable.id, suppressionsTable.reasonCodeId),
+    )
     .where(eq(suppressionsTable.campaignId, params.data.id))
     .orderBy(suppressionsTable.createdAt);
   res.json(
@@ -31,6 +48,8 @@ router.get("/campaigns/:id/suppressions", requireAuth, async (req, res): Promise
       channelId: r.channelId,
       campaignTypeId: r.campaignTypeId,
       touchId: r.touchId,
+      reasonCodeId: r.reasonCodeId,
+      reasonCodeName: r.reasonCodeName,
       reason: r.reason,
       notes: r.notes,
       donorIdCount: (r.donorIds ?? []).length,
@@ -54,6 +73,26 @@ router.post("/campaigns/:id/suppressions", requireAuth, async (req, res): Promis
   if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
   if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
     if (access === "voided") { res.status(403).json({ error: "Cannot modify a voided campaign" }); return; }
+
+  let reasonCodeId: number | null = null;
+  let reasonCodeName: string | null = null;
+  if (body.data.reasonCodeId != null) {
+    const [rc] = await db
+      .select({ id: suppressionReasonCodesTable.id, name: suppressionReasonCodesTable.name, active: suppressionReasonCodesTable.active })
+      .from(suppressionReasonCodesTable)
+      .where(eq(suppressionReasonCodesTable.id, body.data.reasonCodeId));
+    if (!rc) {
+      res.status(400).json({ error: "Invalid reason code" });
+      return;
+    }
+    if (!rc.active) {
+      res.status(400).json({ error: "That reason code has been deactivated. Please pick another." });
+      return;
+    }
+    reasonCodeId = rc.id;
+    reasonCodeName = rc.name;
+  }
+
   const raw = body.data.rawText ?? "";
   const parsed = parseDonorIdInput(raw);
   const [row] = await db
@@ -64,6 +103,7 @@ router.post("/campaigns/:id/suppressions", requireAuth, async (req, res): Promis
       channelId: body.data.channelId ?? null,
       campaignTypeId: body.data.campaignTypeId ?? null,
       touchId: body.data.touchId ?? null,
+      reasonCodeId,
       reason: body.data.reason,
       notes: body.data.notes,
       donorIds: parsed.validIds,
@@ -75,7 +115,7 @@ router.post("/campaigns/:id/suppressions", requireAuth, async (req, res): Promis
     action: "create_suppression",
     entityType: "suppression",
     entityId: row.id,
-    details: `Campaign ${params.data.id} scope=${body.data.scope} count=${parsed.validIds.length}`,
+    details: `Campaign ${params.data.id} scope=${body.data.scope} count=${parsed.validIds.length}${reasonCodeName ? ` reason=${reasonCodeName}` : ""}`,
   });
   res.status(201).json({
     id: row.id,
@@ -84,6 +124,8 @@ router.post("/campaigns/:id/suppressions", requireAuth, async (req, res): Promis
     channelId: row.channelId,
     campaignTypeId: row.campaignTypeId,
     touchId: row.touchId,
+    reasonCodeId: row.reasonCodeId,
+    reasonCodeName,
     reason: row.reason,
     notes: row.notes,
     donorIdCount: parsed.validIds.length,

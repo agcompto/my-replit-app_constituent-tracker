@@ -1,10 +1,11 @@
 import { Router, type IRouter } from "express";
-import { and, eq } from "drizzle-orm";
-import { db, campaignsTable, touchpointsTable, exportJobsTable } from "@workspace/db";
+import { and, desc, eq } from "drizzle-orm";
+import { db, campaignsTable, touchpointsTable, exportJobsTable, usersTable } from "@workspace/db";
 import {
   GetCampaignPreviewParams,
   FinalizeCampaignParams,
   ExportCampaignParams,
+  GetCampaignExportManifestParams,
 } from "@workspace/api-zod";
 import { requireAuth, audit, canMutateCampaign } from "../lib/auth";
 import {
@@ -15,6 +16,7 @@ import {
 } from "../lib/threshold";
 import { loadCampaignFull } from "../lib/campaigns";
 import { buildCsv } from "../lib/donor";
+import { computeHealthCheck, snapshotHealthCheck } from "../lib/healthCheck";
 
 const router: IRouter = Router();
 
@@ -95,12 +97,24 @@ router.post("/campaigns/:id/export", requireAuth, async (req, res): Promise<void
   if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
   if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
     if (access === "voided") { res.status(403).json({ error: "Cannot modify a voided campaign" }); return; }
+  // Block export if the health check finds any errors; snapshot the result
+  // either way so the audit record can show what was true at export time.
+  const health = await computeHealthCheck(params.data.id);
+  if (health.status === "error") {
+    await snapshotHealthCheck(params.data.id, health, req.currentUser!.id);
+    res.status(422).json({
+      error: "Export blocked by campaign health check.",
+      healthCheck: health,
+    });
+    return;
+  }
   const perTouch = await buildPerTouchExports(params.data.id);
   if (perTouch.length === 0) {
     res.status(400).json({ error: "No touches to export" });
     return;
   }
   const exportedAt = new Date();
+  await snapshotHealthCheck(params.data.id, health, req.currentUser!.id);
   // Save touchpoints to history + record export jobs
   for (const p of perTouch) {
     // Clear any prior records for this touch (idempotent re-export)
@@ -232,6 +246,108 @@ router.get(
     const csv = "\uFEFF" + lines.join("\r\n") + "\r\n";
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+    res.send(csv);
+  },
+);
+
+// Export manifest CSV: one row per file in the most recent export batch.
+// Uses buildCsv (formula-injection safe) for all string cells. Numeric
+// donor IDs are not part of the manifest, so the Excel text-formula trick
+// is not needed here.
+router.get(
+  "/campaigns/:id/export-manifest.csv",
+  requireAuth,
+  async (req, res): Promise<void> => {
+    const params = GetCampaignExportManifestParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const access = await canMutateCampaign(params.data.id, req.currentUser!);
+    if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
+    if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
+    if (access === "voided") { res.status(403).json({ error: "Cannot read manifest for a voided campaign" }); return; }
+
+    const [campaign] = await db
+      .select()
+      .from(campaignsTable)
+      .where(eq(campaignsTable.id, params.data.id));
+    if (!campaign) { res.status(404).json({ error: "Not found" }); return; }
+    if (!campaign.exportedAt) {
+      res.status(409).json({ error: "Campaign has not been exported yet." });
+      return;
+    }
+
+    const { touchesTable, channelsTable, campaignTypesTable } = await import(
+      "@workspace/db"
+    );
+    const jobs = await db
+      .select({
+        fileName: exportJobsTable.fileName,
+        rowCount: exportJobsTable.rowCount,
+        seedCount: exportJobsTable.seedCount,
+        suppressedCount: exportJobsTable.suppressedCount,
+        exportedAt: exportJobsTable.exportedAt,
+        exportedByName: usersTable.name,
+        touchName: touchesTable.touchName,
+        sendDate: touchesTable.sendDate,
+        channelLabel: channelsTable.name,
+        campaignTypeLabel: campaignTypesTable.name,
+      })
+      .from(exportJobsTable)
+      .leftJoin(touchesTable, eq(touchesTable.id, exportJobsTable.touchId))
+      .leftJoin(channelsTable, eq(channelsTable.id, touchesTable.channelId))
+      .leftJoin(
+        campaignTypesTable,
+        eq(campaignTypesTable.id, touchesTable.campaignTypeId),
+      )
+      .leftJoin(usersTable, eq(usersTable.id, exportJobsTable.exportedByUserId))
+      .where(eq(exportJobsTable.campaignId, params.data.id))
+      .orderBy(desc(exportJobsTable.exportedAt));
+
+    // Filter to the most recent batch (same exportedAt as the campaign's exportedAt).
+    const batchTs = campaign.exportedAt.getTime();
+    const batch = jobs.filter(
+      (j) => Math.abs(j.exportedAt.getTime() - batchTs) < 60_000,
+    );
+
+    const headers = [
+      "file_name",
+      "campaign_id",
+      "campaign_name",
+      "owning_unit",
+      "touch_name",
+      "channel",
+      "campaign_type",
+      "send_date",
+      "row_count",
+      "seed_count",
+      "suppressed_count",
+      "exported_by",
+      "exported_at",
+    ];
+    const rows = batch.map((j) => [
+      j.fileName,
+      campaign.id,
+      campaign.name,
+      campaign.owningUnit,
+      j.touchName,
+      j.channelLabel,
+      j.campaignTypeLabel,
+      j.sendDate,
+      j.rowCount,
+      j.seedCount,
+      j.suppressedCount,
+      j.exportedByName ?? "",
+      j.exportedAt.toISOString(),
+    ]);
+    const csv = "\uFEFF" + buildCsv(headers, rows);
+    const safeName = campaign.name.replace(/[^A-Za-z0-9_-]+/g, "_").slice(0, 60) || `campaign_${campaign.id}`;
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${safeName}_export_manifest.csv"`,
+    );
     res.send(csv);
   },
 );

@@ -230,6 +230,20 @@ export const ListCampaignsResponseItem = zod.object({
   exportedAt: zod.coerce.date().nullish(),
   touchCount: zod.number(),
   audienceSize: zod.number(),
+  validIdCount: zod.number(),
+  rejectedIdCount: zod.number(),
+  duplicateIdCount: zod.number(),
+  extraColumnsIgnored: zod.boolean(),
+  suppressionCount: zod.number(),
+  seedCount: zod.number(),
+  lastHealthCheckStatus: zod
+    .union([
+      zod.literal("pass"),
+      zod.literal("warning"),
+      zod.literal("error"),
+      zod.literal(null),
+    ])
+    .nullish(),
   campaignTypes: zod.array(zod.string()),
 });
 export const ListCampaignsResponse = zod.array(ListCampaignsResponseItem);
@@ -674,6 +688,8 @@ export const ListSuppressionsResponseItem = zod.object({
   channelId: zod.number().nullish(),
   campaignTypeId: zod.number().nullish(),
   touchId: zod.number().nullish(),
+  reasonCodeId: zod.number().nullish(),
+  reasonCodeName: zod.string().nullish(),
   reason: zod.string().nullish(),
   notes: zod.string().nullish(),
   donorIdCount: zod.number(),
@@ -690,6 +706,7 @@ export const CreateSuppressionBody = zod.object({
   channelId: zod.number().optional(),
   campaignTypeId: zod.number().optional(),
   touchId: zod.number().optional(),
+  reasonCodeId: zod.number().optional(),
   reason: zod.string().optional(),
   notes: zod.string().optional(),
   rawText: zod.string().optional(),
@@ -819,6 +836,71 @@ export const ExportCampaignResponse = zod.object({
   ),
 });
 
+export const GetCampaignHealthCheckParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetCampaignHealthCheckResponse = zod.object({
+  campaignId: zod.number(),
+  status: zod.enum(["pass", "warning", "error"]),
+  findings: zod.array(
+    zod.object({
+      code: zod.string(),
+      severity: zod.enum(["info", "warning", "error"]),
+      message: zod.string(),
+      recommendation: zod.string().nullish(),
+      count: zod.number().nullish(),
+    }),
+  ),
+  generatedAt: zod.coerce.date(),
+  snapshotId: zod.number().nullish(),
+});
+
+export const GetCampaignExportManifestParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListSuppressionReasonsResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  description: zod.string().nullish(),
+  active: zod.boolean(),
+  systemDefault: zod.boolean(),
+  createdAt: zod.coerce.date(),
+});
+export const ListSuppressionReasonsResponse = zod.array(
+  ListSuppressionReasonsResponseItem,
+);
+
+export const createSuppressionReasonBodyNameMax = 80;
+
+export const CreateSuppressionReasonBody = zod.object({
+  name: zod.string().min(1).max(createSuppressionReasonBodyNameMax),
+  description: zod.string().optional(),
+  active: zod.boolean().optional(),
+});
+
+export const UpdateSuppressionReasonParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const updateSuppressionReasonBodyNameMax = 80;
+
+export const UpdateSuppressionReasonBody = zod.object({
+  name: zod.string().min(1).max(updateSuppressionReasonBodyNameMax).optional(),
+  description: zod.string().nullish(),
+  active: zod.boolean().optional(),
+});
+
+export const UpdateSuppressionReasonResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  description: zod.string().nullish(),
+  active: zod.boolean(),
+  systemDefault: zod.boolean(),
+  createdAt: zod.coerce.date(),
+});
+
 export const GetDonorTouchpointsParams = zod.object({
   donorId: zod.coerce.string(),
 });
@@ -875,6 +957,20 @@ export const GetDashboardResponse = zod.object({
       exportedAt: zod.coerce.date().nullish(),
       touchCount: zod.number(),
       audienceSize: zod.number(),
+      validIdCount: zod.number(),
+      rejectedIdCount: zod.number(),
+      duplicateIdCount: zod.number(),
+      extraColumnsIgnored: zod.boolean(),
+      suppressionCount: zod.number(),
+      seedCount: zod.number(),
+      lastHealthCheckStatus: zod
+        .union([
+          zod.literal("pass"),
+          zod.literal("warning"),
+          zod.literal("error"),
+          zod.literal(null),
+        ])
+        .nullish(),
       campaignTypes: zod.array(zod.string()),
     }),
   ),

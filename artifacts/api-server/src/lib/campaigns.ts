@@ -1,5 +1,17 @@
-import { db, campaignsTable, campaignTypeLinksTable, campaignTypesTable, usersTable, audienceDonorsTable, touchesTable, touchAudienceDonorsTable } from "@workspace/db";
+import {
+  db,
+  campaignsTable,
+  campaignTypeLinksTable,
+  campaignTypesTable,
+  usersTable,
+  audienceDonorsTable,
+  touchesTable,
+  touchAudienceDonorsTable,
+  suppressionsTable,
+  seedGroupsTable,
+} from "@workspace/db";
 import { eq, inArray, sql } from "drizzle-orm";
+import { loadLatestHealthCheckStatus } from "./healthCheck";
 
 function dateOnly(d: Date | null): string | null {
   if (!d) return null;
@@ -87,6 +99,16 @@ export async function loadCampaignSummary(id: number) {
          AND ${touchesTable.audienceMode} = 'custom'
     ) x
   `).then((r: any) => r.rows ?? r);
+  const [{ supCount }] = await db
+    .select({ supCount: sql<number>`count(*)::int` })
+    .from(suppressionsTable)
+    .where(eq(suppressionsTable.campaignId, id));
+  const [{ seedCount }] = await db
+    .select({ seedCount: sql<number>`count(*)::int` })
+    .from(seedGroupsTable)
+    .where(eq(seedGroupsTable.campaignId, id));
+  const lastHealthCheckStatus = await loadLatestHealthCheckStatus(id);
+
   return {
     id: c.id,
     name: c.name,
@@ -102,6 +124,13 @@ export async function loadCampaignSummary(id: number) {
     exportedAt: c.exportedAt ? c.exportedAt.toISOString() : null,
     touchCount: ct,
     audienceSize: aud,
+    validIdCount: c.validIdCount,
+    rejectedIdCount: c.rejectedIdCount,
+    duplicateIdCount: c.duplicateIdCount,
+    extraColumnsIgnored: c.extraColumnsIgnored,
+    suppressionCount: supCount,
+    seedCount,
+    lastHealthCheckStatus,
     campaignTypes: types.map((t) => t.name),
   };
 }
