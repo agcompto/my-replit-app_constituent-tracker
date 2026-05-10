@@ -90,7 +90,23 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
   const [audColumnIndex, setAudColumnIndex] = useState(0);
   const [audError, setAudError] = useState<string | null>(null);
   const [audLastResult, setAudLastResult] = useState<AudienceUploadResult | null>(null);
+  const [audDragOver, setAudDragOver] = useState(false);
   const audFileRef = useRef<HTMLInputElement>(null);
+
+  const acceptDroppedFile = (f: File | undefined) => {
+    if (!f) return;
+    const lower = f.name.toLowerCase();
+    if (!ACCEPTED_EXT.some(ext => lower.endsWith(ext))) {
+      setAudError(`Unsupported file type. Accepted: ${ACCEPTED_EXT.join(", ")}`);
+      return;
+    }
+    if (f.size > MAX_FILE_BYTES) {
+      setAudError("File is too large (max 10 MB).");
+      return;
+    }
+    setAudFile(f);
+    setAudError(null);
+  };
 
   const activeChannels = channels?.filter(c => c.active) || [];
   const activeCampaignTypes = campaign.campaignTypes || [];
@@ -412,7 +428,17 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
               </TabsContent>
 
               <TabsContent value="file" className="space-y-3">
-                <div className="border-2 border-dashed border-gray-300 rounded-md p-6 text-center">
+                <div
+                  className={`border-2 border-dashed rounded-md p-6 text-center transition-colors ${audDragOver ? "border-primary bg-primary/5" : "border-gray-300 hover:border-primary/60"}`}
+                  onDragOver={(e) => { e.preventDefault(); setAudDragOver(true); }}
+                  onDragEnter={(e) => { e.preventDefault(); setAudDragOver(true); }}
+                  onDragLeave={(e) => { e.preventDefault(); setAudDragOver(false); }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setAudDragOver(false);
+                    acceptDroppedFile(e.dataTransfer.files?.[0]);
+                  }}
+                >
                   <input
                     ref={audFileRef}
                     type="file"
@@ -430,6 +456,7 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
                   ) : (
                     <div className="space-y-2">
                       <Upload className="h-8 w-8 mx-auto text-muted-foreground" />
+                      <p className="text-sm">Drop a CSV file here or click to browse</p>
                       <p className="text-xs text-muted-foreground">.csv, .tsv, .txt — up to 10 MB</p>
                       <Button variant="outline" size="sm" onClick={() => audFileRef.current?.click()}>Choose File</Button>
                     </div>

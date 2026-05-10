@@ -42,6 +42,7 @@ export default function AudienceStep({ campaign }: { campaign: any }) {
   const [hasHeader, setHasHeader] = useState(true);
   const [columnIndex, setColumnIndex] = useState(0);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -194,7 +195,29 @@ export default function AudienceStep({ campaign }: { campaign: any }) {
               </TabsContent>
 
               <TabsContent value="file" className="space-y-4">
-                <div className="border-2 border-dashed border-gray-300 rounded-md p-8 text-center hover:border-primary transition-colors">
+                <div
+                  className={`border-2 border-dashed rounded-md p-8 text-center transition-colors ${dragOver ? "border-primary bg-primary/5" : "border-gray-300 hover:border-primary"}`}
+                  onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                  onDragEnter={(e) => { e.preventDefault(); setDragOver(true); }}
+                  onDragLeave={(e) => { e.preventDefault(); setDragOver(false); }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragOver(false);
+                    const f = e.dataTransfer.files?.[0];
+                    if (!f) return;
+                    const lower = f.name.toLowerCase();
+                    if (!ACCEPTED_EXT.some(ext => lower.endsWith(ext))) {
+                      setUploadError(`Unsupported file type. Accepted: ${ACCEPTED_EXT.join(", ")}`);
+                      return;
+                    }
+                    if (f.size > MAX_FILE_BYTES) {
+                      setUploadError("File is too large (max 10 MB).");
+                      return;
+                    }
+                    setSelectedFile(f);
+                    setUploadError(null);
+                  }}
+                >
                   <input
                     ref={fileInputRef}
                     type="file"
