@@ -222,7 +222,14 @@ router.get(
       .where(and(eq(exportJobsTable.campaignId, id), eq(exportJobsTable.touchId, touchId)))
       .orderBy(exportJobsTable.exportedAt);
     const fileName = job?.fileName ?? `campaign_${id}_touch_${touchId}.csv`;
-    const csv = buildCsv(["donor_id"], rows.map((r) => [r.donorId]));
+    // Wrap donor IDs as Excel text-formula `="00012345"` so spreadsheet apps
+    // preserve the 8-character zero-padding instead of coercing to a number
+    // and stripping leading zeros. Safe to bypass the formula-injection guard
+    // because donorId is server-validated to match /^[0-9]{1,8}$/.
+    const lines = ["donor_id"];
+    for (const r of rows) lines.push(`="${r.donorId}"`);
+    // UTF-8 BOM so Excel auto-detects encoding
+    const csv = "\uFEFF" + lines.join("\r\n") + "\r\n";
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
     res.send(csv);
