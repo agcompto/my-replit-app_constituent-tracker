@@ -14,6 +14,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 
+const ACTION_MODES = [
+  { value: "track", label: "Track Only", description: "Record the touchpoint count but take no action — useful for monitoring without interrupting sends." },
+  { value: "flag", label: "Flag", description: "Mark constituents over the limit as conflicts in the preview, but keep them in the send list unless overridden." },
+  { value: "remove", label: "Remove Flagged", description: "Automatically exclude any constituent over the limit from the export. Use for hard caps." },
+  { value: "manual", label: "Manual Review", description: "Pause flagged constituents for an explicit reviewer decision before they can be exported." },
+] as const;
+
 export default function ThresholdsStep({ campaign }: { campaign: any }) {
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
@@ -297,11 +304,16 @@ export default function ThresholdsStep({ campaign }: { campaign: any }) {
 
             <div className="space-y-3 pt-2">
               <Label>Action Mode</Label>
-              <RadioGroup value={form.actionMode} onValueChange={v => setForm({...form, actionMode: v as any})} className="flex gap-4">
-                <div className="flex items-center space-x-2"><RadioGroupItem value="track" id="action-track" /><Label htmlFor="action-track">Track Only</Label></div>
-                <div className="flex items-center space-x-2"><RadioGroupItem value="flag" id="action-flag" /><Label htmlFor="action-flag">Flag</Label></div>
-                <div className="flex items-center space-x-2"><RadioGroupItem value="remove" id="action-remove" /><Label htmlFor="action-remove">Remove Flagged</Label></div>
-                <div className="flex items-center space-x-2"><RadioGroupItem value="manual" id="action-manual" /><Label htmlFor="action-manual">Manual Review</Label></div>
+              <RadioGroup value={form.actionMode} onValueChange={v => setForm({...form, actionMode: v as any})} className="grid sm:grid-cols-2 gap-3">
+                {ACTION_MODES.map(m => (
+                  <div key={m.value} className="flex items-start space-x-2">
+                    <RadioGroupItem value={m.value} id={`action-${m.value}`} className="mt-1" />
+                    <div className="space-y-0.5">
+                      <Label htmlFor={`action-${m.value}`}>{m.label}</Label>
+                      <p className="text-xs text-muted-foreground">{m.description}</p>
+                    </div>
+                  </div>
+                ))}
               </RadioGroup>
             </div>
 
@@ -410,11 +422,16 @@ export default function ThresholdsStep({ campaign }: { campaign: any }) {
                 </div>
                 <div className="space-y-3 pt-2">
                   <Label>Action Mode</Label>
-                  <RadioGroup value={editForm.actionMode} onValueChange={v => setEditForm({ ...editForm, actionMode: v as any })} className="flex flex-wrap gap-4">
-                    <div className="flex items-center space-x-2"><RadioGroupItem value="track" id="edit-action-track" /><Label htmlFor="edit-action-track">Track Only</Label></div>
-                    <div className="flex items-center space-x-2"><RadioGroupItem value="flag" id="edit-action-flag" /><Label htmlFor="edit-action-flag">Flag</Label></div>
-                    <div className="flex items-center space-x-2"><RadioGroupItem value="remove" id="edit-action-remove" /><Label htmlFor="edit-action-remove">Remove Flagged</Label></div>
-                    <div className="flex items-center space-x-2"><RadioGroupItem value="manual" id="edit-action-manual" /><Label htmlFor="edit-action-manual">Manual Review</Label></div>
+                  <RadioGroup value={editForm.actionMode} onValueChange={v => setEditForm({ ...editForm, actionMode: v as any })} className="grid sm:grid-cols-2 gap-3">
+                    {ACTION_MODES.map(m => (
+                      <div key={m.value} className="flex items-start space-x-2">
+                        <RadioGroupItem value={m.value} id={`edit-action-${m.value}`} className="mt-1" />
+                        <div className="space-y-0.5">
+                          <Label htmlFor={`edit-action-${m.value}`}>{m.label}</Label>
+                          <p className="text-xs text-muted-foreground">{m.description}</p>
+                        </div>
+                      </div>
+                    ))}
                   </RadioGroup>
                 </div>
               </div>
