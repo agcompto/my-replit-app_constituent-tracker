@@ -1,4 +1,4 @@
-import { db, campaignsTable, campaignTypeLinksTable, campaignTypesTable, usersTable, audienceDonorsTable, touchesTable } from "@workspace/db";
+import { db, campaignsTable, campaignTypeLinksTable, campaignTypesTable, usersTable, audienceDonorsTable, touchesTable, touchAudienceDonorsTable } from "@workspace/db";
 import { eq, inArray, sql } from "drizzle-orm";
 
 function dateOnly(d: Date | null): string | null {
@@ -64,10 +64,29 @@ export async function loadCampaignSummary(id: number) {
     .select({ ct: sql<number>`count(*)::int` })
     .from(touchesTable)
     .where(eq(touchesTable.campaignId, id));
-  const [{ aud }] = await db
-    .select({ aud: sql<number>`count(*)::int` })
-    .from(audienceDonorsTable)
-    .where(eq(audienceDonorsTable.campaignId, id));
+  // Deduped audience size across all touches in the campaign:
+  // - touches with audienceMode = "campaign" pull from the campaign-wide audience
+  // - touches with audienceMode = "custom" pull from their own per-touch list
+  // Union the donor IDs from whichever sources are actually used by this campaign's touches,
+  // then count distinct donor IDs.
+  const [{ aud }] = await db.execute<{ aud: number }>(sql`
+    SELECT COUNT(DISTINCT donor_id)::int AS aud FROM (
+      SELECT ${audienceDonorsTable.donorId} AS donor_id
+        FROM ${audienceDonorsTable}
+       WHERE ${audienceDonorsTable.campaignId} = ${id}
+         AND EXISTS (
+           SELECT 1 FROM ${touchesTable}
+            WHERE ${touchesTable.campaignId} = ${id}
+              AND ${touchesTable.audienceMode} = 'campaign'
+         )
+      UNION
+      SELECT ${touchAudienceDonorsTable.donorId} AS donor_id
+        FROM ${touchAudienceDonorsTable}
+        JOIN ${touchesTable} ON ${touchesTable.id} = ${touchAudienceDonorsTable.touchId}
+       WHERE ${touchesTable.campaignId} = ${id}
+         AND ${touchesTable.audienceMode} = 'custom'
+    ) x
+  `).then((r: any) => r.rows ?? r);
   return {
     id: c.id,
     name: c.name,
