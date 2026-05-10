@@ -89,7 +89,7 @@ export default function SuppressionsSeedsStep({ campaign }: { campaign: any }) {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><ShieldAlert className="h-5 w-5 text-destructive" /> Suppressions</CardTitle>
-            <CardDescription>Remove specific donors from exports.</CardDescription>
+            <CardDescription>Remove specific constituents from exports.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-4 border p-4 rounded-md">
@@ -139,7 +139,7 @@ export default function SuppressionsSeedsStep({ campaign }: { campaign: any }) {
               )}
 
               <div className="space-y-2">
-                <Label>Donor IDs (Paste)</Label>
+                <Label>Constituent IDs (Paste)</Label>
                 <Textarea className="font-mono text-sm h-24" value={suppForm.rawText} onChange={e => setSuppForm({...suppForm, rawText: e.target.value})} placeholder="Paste IDs here..." />
               </div>
 

@@ -141,13 +141,13 @@ export default function Dashboard() {
 
             <Card>
               <CardHeader>
-                <CardTitle>High Volume Donors</CardTitle>
+                <CardTitle>High Volume Constituents</CardTitle>
               </CardHeader>
               <CardContent className="p-0">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="pl-6">Donor ID</TableHead>
+                      <TableHead className="pl-6">Constituent ID</TableHead>
                       <TableHead className="pr-6 text-right">Total Touchpoints</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -159,7 +159,7 @@ export default function Dashboard() {
                       </TableRow>
                     ))}
                     {!highVolume?.length && (
-                      <TableRow><TableCell colSpan={2} className="text-center py-6 text-muted-foreground">No high volume donors</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={2} className="text-center py-6 text-muted-foreground">No high volume constituents</TableCell></TableRow>
                     )}
                   </TableBody>
                 </Table>

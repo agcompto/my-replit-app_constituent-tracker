@@ -39,7 +39,7 @@ export default function PreviewStep({ campaign }: { campaign: any }) {
       "",
       `• ${fileCount} touch file(s)`,
       `• ${totalRows.toLocaleString()} total rows in export`,
-      `• ${audienceUnique.toLocaleString()} unique donor(s) in audience`,
+      `• ${audienceUnique.toLocaleString()} unique constituent(s) in audience`,
       `• ${flagged.toLocaleString()} flagged · ${suppressed.toLocaleString()} suppressed · ${seeds.toLocaleString()} seed(s)`,
       "",
       consequence,

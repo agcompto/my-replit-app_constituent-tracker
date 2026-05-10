@@ -33,8 +33,8 @@ export default function Donors() {
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Donor ID Lookup</h1>
-        <p className="text-muted-foreground text-sm">View planned and sent communication volume for a specific donor.</p>
+        <h1 className="text-2xl font-bold tracking-tight">Constituent ID Lookup</h1>
+        <p className="text-muted-foreground text-sm">View planned and sent communication volume for a specific constituent.</p>
       </div>
 
       <Card>
@@ -44,7 +44,7 @@ export default function Donors() {
               <div className="relative">
                 <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input 
-                  placeholder="Enter 8-digit Donor ID (e.g. 00258155)" 
+                  placeholder="Enter 8-digit Constituent ID (e.g. 00258155)" 
                   className="pl-9 font-mono"
                   value={inputVal}
                   onChange={(e) => setInputVal(e.target.value)}
@@ -57,7 +57,7 @@ export default function Donors() {
           </form>
           <div className="mt-2 text-xs flex items-center gap-1.5 text-muted-foreground">
             <AlertCircle className="h-3 w-3" />
-            <span>Use Donor ID only. Do not enter names, phone numbers, email addresses, or other unnecessary PII.</span>
+            <span>Use Constituent ID only. Do not enter names, phone numbers, email addresses, or other unnecessary PII.</span>
           </div>
         </CardContent>
       </Card>
@@ -89,14 +89,14 @@ export default function Donors() {
               {error && (
                 <TableRow>
                   <TableCell colSpan={6} className="h-32 text-center text-destructive">
-                    Failed to load donor data.
+                    Failed to load constituent data.
                   </TableCell>
                 </TableRow>
               )}
               {!isLoading && !error && data?.touchpoints?.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">
-                    No touchpoints found for this Donor ID.
+                    No touchpoints found for this Constituent ID.
                   </TableCell>
                 </TableRow>
               )}

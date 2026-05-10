@@ -212,7 +212,7 @@ export default function ThresholdsStep({ campaign }: { campaign: any }) {
           </Table>
 
           <div className="pt-6 border-t flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">Run a preview check to see which donors will trigger thresholds.</p>
+            <p className="text-sm text-muted-foreground">Run a preview check to see which constituents will trigger thresholds.</p>
             <Button onClick={handlePreview} disabled={previewMutation.isPending} variant="secondary">
               <RefreshCw className={`h-4 w-4 mr-2 ${previewMutation.isPending ? 'animate-spin' : ''}`} />
               Recalculate Preview
@@ -226,7 +226,7 @@ export default function ThresholdsStep({ campaign }: { campaign: any }) {
           <CardHeader className="bg-amber-50/50">
             <CardTitle className="text-amber-800">Threshold Preview Results</CardTitle>
             <div className="flex gap-4 mt-2">
-              <div className="text-sm"><span className="text-muted-foreground">Flagged Donors:</span> <strong className="text-amber-700">{previewData.totalFlaggedDonors}</strong></div>
+              <div className="text-sm"><span className="text-muted-foreground">Flagged Constituents:</span> <strong className="text-amber-700">{previewData.totalFlaggedDonors}</strong></div>
               <div className="text-sm"><span className="text-muted-foreground">Total Touchpoints:</span> <strong>{previewData.totalProjectedTouchpoints}</strong></div>
             </div>
           </CardHeader>
@@ -235,7 +235,7 @@ export default function ThresholdsStep({ campaign }: { campaign: any }) {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-12"><Checkbox onCheckedChange={(checked) => setSelectedOverrides(checked ? previewData.conflicts.map((c: any) => c.donorId) : [])} checked={selectedOverrides.length === previewData.conflicts.length && previewData.conflicts.length > 0} /></TableHead>
-                  <TableHead>Donor ID</TableHead>
+                  <TableHead>Constituent ID</TableHead>
                   <TableHead>Threshold</TableHead>
                   <TableHead>Explanation</TableHead>
                   <TableHead>Status</TableHead>

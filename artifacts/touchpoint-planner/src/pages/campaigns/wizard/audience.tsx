@@ -88,7 +88,7 @@ export default function AudienceStep({ campaign }: { campaign: any }) {
       <div className="bg-amber-50 border border-amber-200 p-4 rounded-md flex gap-3 text-amber-800 text-sm">
         <AlertTriangle className="h-5 w-5 shrink-0" />
         <div>
-          <strong className="font-semibold">PII Policy Reminder:</strong> Use Donor ID only. Do not enter names, phone numbers, email addresses, mailing addresses, or other unnecessary PII.
+          <strong className="font-semibold">PII Policy Reminder:</strong> Use Constituent ID only. Do not enter names, phone numbers, email addresses, mailing addresses, or other unnecessary PII.
         </div>
       </div>
 
@@ -138,7 +138,7 @@ export default function AudienceStep({ campaign }: { campaign: any }) {
 
             <div className="flex flex-wrap gap-2">
               {result.duplicateCount > 0 && (
-                <Button variant="outline" onClick={() => downloadCSV("duplicate-ids", result.duplicateSamples.map(id => ({ DonorID: id })))}>
+                <Button variant="outline" onClick={() => downloadCSV("duplicate-ids", result.duplicateSamples.map(id => ({ ConstituentID: id })))}>
                   <Download className="h-4 w-4 mr-2" /> Download Duplicates
                 </Button>
               )}
@@ -158,7 +158,7 @@ export default function AudienceStep({ campaign }: { campaign: any }) {
         <Card>
           <CardHeader>
             <CardTitle>Upload Campaign-Wide Audience</CardTitle>
-            <CardDescription>Provide a list of Donor IDs for this campaign. You can skip this if every touch will use its own list.</CardDescription>
+            <CardDescription>Provide a list of Constituent IDs for this campaign. You can skip this if every touch will use its own list.</CardDescription>
           </CardHeader>
           <CardContent>
             <Tabs defaultValue="paste">
@@ -173,7 +173,7 @@ export default function AudienceStep({ campaign }: { campaign: any }) {
               <TabsContent value="paste" className="space-y-4">
                 <Textarea
                   className="font-mono text-sm h-64"
-                  placeholder="Paste Donor IDs here... (one per line or comma separated)"
+                  placeholder="Paste Constituent IDs here... (one per line or comma separated)"
                   value={rawText}
                   onChange={(e) => setRawText(e.target.value)}
                 />
@@ -183,7 +183,7 @@ export default function AudienceStep({ campaign }: { campaign: any }) {
                     <Label htmlFor="hasHeaderPaste">First row is header</Label>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <Label htmlFor="colIndexPaste">Donor ID Column Index (0-based)</Label>
+                    <Label htmlFor="colIndexPaste">Constituent ID Column Index (0-based)</Label>
                     <Input id="colIndexPaste" type="number" min="0" value={columnIndex} onChange={(e) => setColumnIndex(Number(e.target.value))} className="w-20" />
                   </div>
                 </div>
@@ -253,7 +253,7 @@ export default function AudienceStep({ campaign }: { campaign: any }) {
                     <Label htmlFor="hasHeaderFile">First row is header</Label>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <Label htmlFor="colIndexFile">Donor ID Column Index (0-based)</Label>
+                    <Label htmlFor="colIndexFile">Constituent ID Column Index (0-based)</Label>
                     <Input id="colIndexFile" type="number" min="0" value={columnIndex} onChange={(e) => setColumnIndex(Number(e.target.value))} className="w-20" />
                   </div>
                 </div>
@@ -283,7 +283,7 @@ export default function AudienceStep({ campaign }: { campaign: any }) {
                     <Label htmlFor="hasHeaderSheet">First row is header</Label>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <Label htmlFor="colIndexSheet">Donor ID Column Index (0-based)</Label>
+                    <Label htmlFor="colIndexSheet">Constituent ID Column Index (0-based)</Label>
                     <Input id="colIndexSheet" type="number" min="0" value={columnIndex} onChange={(e) => setColumnIndex(Number(e.target.value))} className="w-20" />
                   </div>
                 </div>

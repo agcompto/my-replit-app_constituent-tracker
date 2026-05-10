@@ -390,7 +390,7 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
           <DialogHeader>
             <DialogTitle>Per-Touch Audience{audienceTouch ? `: ${audienceTouch.touchName}` : ""}</DialogTitle>
             <DialogDescription>
-              Provide a list of Donor IDs for just this touch. It will <strong>replace</strong> the campaign-wide list for this touch only — other touches are unaffected.
+              Provide a list of Constituent IDs for just this touch. It will <strong>replace</strong> the campaign-wide list for this touch only — other touches are unaffected.
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
@@ -406,7 +406,7 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
               <TabsContent value="paste" className="space-y-3">
                 <Textarea
                   className="font-mono text-sm h-48"
-                  placeholder="Paste Donor IDs here..."
+                  placeholder="Paste Constituent IDs here..."
                   value={audRawText}
                   onChange={(e) => setAudRawText(e.target.value)}
                 />
@@ -533,7 +533,7 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
                       onClick={() =>
                         downloadCSV(
                           "touch-duplicate-ids",
-                          audLastResult.duplicateSamples.map((id) => ({ DonorID: id })),
+                          audLastResult.duplicateSamples.map((id) => ({ ConstituentID: id })),
                         )
                       }
                     >

@@ -62,7 +62,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               Data Privacy Policy
             </DialogTitle>
             <DialogDescription className="pt-3 pb-4 text-base">
-              This system is strictly for planning touches using Donor IDs only. 
+              This system is strictly for planning touches using Constituent IDs only. 
               <br/><br/>
               <strong>Do NOT enter names, phone numbers, email addresses, mailing addresses, giving amounts, or any other personally identifiable information (PII).</strong>
             </DialogDescription>
@@ -78,7 +78,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="flex-1 flex flex-col min-w-0">
         {showPiiBanner && (
           <div className="bg-muted px-4 py-2 text-sm font-medium text-muted-foreground flex justify-between items-center border-b">
-            <span><strong>Reminder:</strong> Use Donor ID only. Do not upload or enter unnecessary PII.</span>
+            <span><strong>Reminder:</strong> Use Constituent ID only. Do not upload or enter unnecessary PII.</span>
             <Button variant="ghost" size="sm" className="h-6 w-6 p-0 hover:bg-black/5" onClick={() => setShowPiiBanner(false)}>
               <X className="h-4 w-4" />
             </Button>
@@ -136,7 +136,7 @@ function Sidebar({ userRole }: { userRole?: string }) {
     { href: "/", label: "Dashboard", icon: LayoutDashboard },
     { href: "/campaigns", label: "Campaigns", icon: Megaphone },
     { href: "/campaigns/new", label: "New Campaign", icon: PlusCircle },
-    { href: "/donors", label: "Donor ID Lookup", icon: Search },
+    { href: "/donors", label: "Constituent Lookup", icon: Search },
     { href: "/reports", label: "Reports", icon: BarChart3 },
     { href: "/exports", label: "Exports & Uploads", icon: Download },
     { href: "/audit", label: "Audit Log", icon: History },

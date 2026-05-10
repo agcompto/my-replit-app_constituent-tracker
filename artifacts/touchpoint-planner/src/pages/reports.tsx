@@ -25,11 +25,11 @@ export default function Reports() {
   const handleDownloadHighVolume = () => {
     if (!highVolume) return;
     const rows = highVolume.map(d => ({
-      DonorID: d.donorId,
+      ConstituentID: d.donorId,
       TotalTouchpoints: d.totalTouchpoints,
       ...d.byChannel.reduce((acc, c) => ({ ...acc, [c.label]: c.count }), {})
     }));
-    downloadCSV("high-volume-donors", rows);
+    downloadCSV("high-volume-constituents", rows);
   };
 
   return (
@@ -46,7 +46,7 @@ export default function Reports() {
           <TabsTrigger value="channels">By Channel</TabsTrigger>
           <TabsTrigger value="types">By Campaign Type</TabsTrigger>
           <TabsTrigger value="upcoming">Upcoming Volume</TabsTrigger>
-          <TabsTrigger value="high-volume">High-Volume Donors</TabsTrigger>
+          <TabsTrigger value="high-volume">High-Volume Constituents</TabsTrigger>
         </TabsList>
 
         <TabsContent value="channels" className="space-y-4">
@@ -164,7 +164,7 @@ export default function Reports() {
         <TabsContent value="high-volume" className="space-y-4">
           <Card>
             <CardHeader className="flex flex-row justify-between items-center">
-              <CardTitle>High-Volume Donors</CardTitle>
+              <CardTitle>High-Volume Constituents</CardTitle>
               <Button variant="outline" size="sm" onClick={handleDownloadHighVolume}>
                 <Download className="h-4 w-4 mr-2" /> Download CSV
               </Button>
@@ -174,7 +174,7 @@ export default function Reports() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Donor ID</TableHead>
+                      <TableHead>Constituent ID</TableHead>
                       <TableHead className="text-right">Total Touchpoints</TableHead>
                       <TableHead>Breakdown</TableHead>
                     </TableRow>
@@ -195,7 +195,7 @@ export default function Reports() {
                         </TableCell>
                       </TableRow>
                     ))}
-                    {!highVolume?.length && <TableRow><TableCell colSpan={3} className="text-center py-8 text-muted-foreground">No high volume donors found.</TableCell></TableRow>}
+                    {!highVolume?.length && <TableRow><TableCell colSpan={3} className="text-center py-8 text-muted-foreground">No high volume constituents found.</TableCell></TableRow>}
                   </TableBody>
                 </Table>
               )}

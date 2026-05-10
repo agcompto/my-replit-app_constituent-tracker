@@ -10,7 +10,7 @@ router.get("/donors/:donorId/touchpoints", requireAuth, async (req, res): Promis
   const raw = Array.isArray(req.params.donorId) ? req.params.donorId[0] : req.params.donorId;
   const donorId = normalizeDonorId(raw);
   if (!donorId) {
-    res.status(400).json({ error: "Donor ID must be 1-8 digits" });
+    res.status(400).json({ error: "Constituent ID must be 1-8 digits" });
     return;
   }
   const rows = await db
