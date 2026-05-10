@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useListThresholds, useCreateThreshold, useDeleteThreshold, usePreviewThresholds, useSetThresholdOverrides, useListChannels, getListThresholdsQueryKey } from "@workspace/api-client-react";
+import { useMemo, useState } from "react";
+import { useListThresholds, useCreateThreshold, useDeleteThreshold, usePreviewThresholds, useSetThresholdOverrides, useListChannels, useCreateSuppression, getListThresholdsQueryKey, getListSuppressionsQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Plus, Trash2, RefreshCw, Info } from "lucide-react";
+import { Loader2, Plus, Trash2, RefreshCw, Info, Search, ArrowUpDown, ArrowUp, ArrowDown, ShieldOff } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
@@ -27,6 +27,7 @@ export default function ThresholdsStep({ campaign }: { campaign: any }) {
   const deleteMutation = useDeleteThreshold();
   const previewMutation = usePreviewThresholds();
   const overrideMutation = useSetThresholdOverrides();
+  const suppressMutation = useCreateSuppression();
 
   const [form, setForm] = useState({
     name: "",
@@ -40,6 +41,76 @@ export default function ThresholdsStep({ campaign }: { campaign: any }) {
 
   const [previewData, setPreviewData] = useState<any>(null);
   const [selectedOverrides, setSelectedOverrides] = useState<string[]>([]);
+
+  const [filterSearch, setFilterSearch] = useState("");
+  const [filterThreshold, setFilterThreshold] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<"all" | "flagged" | "overridden">("all");
+  const [sortKey, setSortKey] = useState<"donorId" | "thresholdName" | "status">("donorId");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  const handleSort = (key: typeof sortKey) => {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(key); setSortDir("asc"); }
+  };
+
+  const uniqueThresholdNames = useMemo<string[]>(() => {
+    const s = new Set<string>();
+    for (const c of (previewData?.conflicts ?? []) as any[]) s.add(c.thresholdName);
+    return Array.from(s).sort();
+  }, [previewData]);
+
+  const visibleConflicts = useMemo<any[]>(() => {
+    if (!previewData?.conflicts) return [];
+    let arr = [...(previewData.conflicts as any[])];
+    const q = filterSearch.trim();
+    if (q) arr = arr.filter((c) => c.donorId.includes(q));
+    if (filterThreshold !== "all") arr = arr.filter((c) => c.thresholdName === filterThreshold);
+    if (filterStatus !== "all") arr = arr.filter((c) => (filterStatus === "overridden" ? c.overridden : !c.overridden));
+    arr.sort((a, b) => {
+      let av: string; let bv: string;
+      if (sortKey === "status") { av = a.overridden ? "1" : "0"; bv = b.overridden ? "1" : "0"; }
+      else { av = String(a[sortKey] ?? ""); bv = String(b[sortKey] ?? ""); }
+      const cmp = av.localeCompare(bv, undefined, { numeric: true });
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+    return arr;
+  }, [previewData, filterSearch, filterThreshold, filterStatus, sortKey, sortDir]);
+
+  const visibleSelectableIds = visibleConflicts.filter((c) => !c.overridden).map((c) => c.donorId as string);
+  const allVisibleSelected = visibleSelectableIds.length > 0 && visibleSelectableIds.every((id) => selectedOverrides.includes(id));
+
+  const sortIcon = (key: typeof sortKey) => {
+    if (sortKey !== key) return <ArrowUpDown className="h-3 w-3 ml-1 inline opacity-50" />;
+    return sortDir === "asc" ? <ArrowUp className="h-3 w-3 ml-1 inline" /> : <ArrowDown className="h-3 w-3 ml-1 inline" />;
+  };
+
+  const handleSuppress = (donorIds: string[]) => {
+    const unique = Array.from(new Set(donorIds));
+    if (unique.length === 0) return;
+    suppressMutation.mutate(
+      { id: campaign.id, data: { scope: "all", reason: "Removed from threshold review", rawText: unique.join("\n") } as any },
+      {
+        onSuccess: () => {
+          toast({ title: `Removed ${unique.length} constituent(s) from campaign` });
+          queryClient.invalidateQueries({ queryKey: getListSuppressionsQueryKey(campaign.id) });
+          setSelectedOverrides((prev) => prev.filter((id) => !unique.includes(id)));
+          handlePreview();
+        },
+        onError: (err: any) => {
+          toast({ title: "Failed to remove", description: String(err?.message ?? err), variant: "destructive" });
+        },
+      },
+    );
+  };
+
+  const toggleSelectId = (donorId: string, checked: boolean) => {
+    setSelectedOverrides((prev) => {
+      if (checked) return prev.includes(donorId) ? prev : [...prev, donorId];
+      return prev.filter((id) => id !== donorId);
+    });
+  };
+
+  const uniqueSelectedCount = useMemo(() => new Set(selectedOverrides).size, [selectedOverrides]);
 
   const handleAdd = () => {
     const data = {
@@ -76,7 +147,8 @@ export default function ThresholdsStep({ campaign }: { campaign: any }) {
   };
 
   const handleSaveOverrides = () => {
-    overrideMutation.mutate({ id: campaign.id, data: { donorIds: selectedOverrides } }, {
+    const unique = Array.from(new Set(selectedOverrides));
+    overrideMutation.mutate({ id: campaign.id, data: { donorIds: unique } }, {
       onSuccess: () => {
         toast({ title: "Overrides saved" });
         handlePreview(); // Refresh preview
@@ -230,31 +302,118 @@ export default function ThresholdsStep({ campaign }: { campaign: any }) {
               <div className="text-sm"><span className="text-muted-foreground">Total Touchpoints:</span> <strong>{previewData.totalProjectedTouchpoints}</strong></div>
             </div>
           </CardHeader>
-          <CardContent className="pt-6">
+          <CardContent className="pt-6 space-y-4">
+            {previewData.conflicts.length > 0 && (
+              <div className="flex flex-wrap gap-3 items-end">
+                <div className="space-y-1 flex-1 min-w-[180px]">
+                  <Label className="text-xs text-muted-foreground">Search Constituent ID</Label>
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      value={filterSearch}
+                      onChange={(e) => setFilterSearch(e.target.value)}
+                      placeholder="e.g. 00040921"
+                      className="pl-8 font-mono text-sm h-9"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1 min-w-[180px]">
+                  <Label className="text-xs text-muted-foreground">Threshold</Label>
+                  <Select value={filterThreshold} onValueChange={setFilterThreshold}>
+                    <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All thresholds</SelectItem>
+                      {uniqueThresholdNames.map((n) => (
+                        <SelectItem key={n} value={n}>{n}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1 min-w-[140px]">
+                  <Label className="text-xs text-muted-foreground">Status</Label>
+                  <Select value={filterStatus} onValueChange={(v) => setFilterStatus(v as any)}>
+                    <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All statuses</SelectItem>
+                      <SelectItem value="flagged">Flagged</SelectItem>
+                      <SelectItem value="overridden">Overridden</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {(filterSearch || filterThreshold !== "all" || filterStatus !== "all") && (
+                  <Button variant="ghost" size="sm" onClick={() => { setFilterSearch(""); setFilterThreshold("all"); setFilterStatus("all"); }}>
+                    Clear
+                  </Button>
+                )}
+              </div>
+            )}
+
+            <div className="text-xs text-muted-foreground">
+              Showing {visibleConflicts.length} of {previewData.conflicts.length}
+            </div>
+
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-12"><Checkbox onCheckedChange={(checked) => setSelectedOverrides(checked ? previewData.conflicts.map((c: any) => c.donorId) : [])} checked={selectedOverrides.length === previewData.conflicts.length && previewData.conflicts.length > 0} /></TableHead>
-                  <TableHead>Constituent ID</TableHead>
-                  <TableHead>Threshold</TableHead>
+                  <TableHead className="w-12">
+                    <Checkbox
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          const merged = Array.from(new Set([...selectedOverrides, ...visibleSelectableIds]));
+                          setSelectedOverrides(merged);
+                        } else {
+                          setSelectedOverrides(selectedOverrides.filter((id) => !visibleSelectableIds.includes(id)));
+                        }
+                      }}
+                      checked={allVisibleSelected}
+                      disabled={visibleSelectableIds.length === 0}
+                    />
+                  </TableHead>
+                  <TableHead aria-sort={sortKey === "donorId" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
+                    <button
+                      type="button"
+                      onClick={() => handleSort("donorId")}
+                      className="inline-flex items-center font-medium hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+                    >
+                      Constituent ID{sortIcon("donorId")}
+                    </button>
+                  </TableHead>
+                  <TableHead aria-sort={sortKey === "thresholdName" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
+                    <button
+                      type="button"
+                      onClick={() => handleSort("thresholdName")}
+                      className="inline-flex items-center font-medium hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+                    >
+                      Threshold{sortIcon("thresholdName")}
+                    </button>
+                  </TableHead>
                   <TableHead>Explanation</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead aria-sort={sortKey === "status" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
+                    <button
+                      type="button"
+                      onClick={() => handleSort("status")}
+                      className="inline-flex items-center font-medium hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+                    >
+                      Status{sortIcon("status")}
+                    </button>
+                  </TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {previewData.conflicts.length === 0 ? (
-                  <TableRow><TableCell colSpan={5} className="text-center h-20 text-muted-foreground">No conflicts detected.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6} className="text-center h-20 text-muted-foreground">No conflicts detected.</TableCell></TableRow>
+                ) : visibleConflicts.length === 0 ? (
+                  <TableRow><TableCell colSpan={6} className="text-center h-20 text-muted-foreground">No constituents match the current filters.</TableCell></TableRow>
                 ) : (
-                  previewData.conflicts.map((c: any, i: number) => (
-                    <TableRow key={i}>
+                  visibleConflicts.map((c: any, i: number) => (
+                    <TableRow key={`${c.donorId}-${i}`}>
                       <TableCell>
-                        <Checkbox 
-                          checked={selectedOverrides.includes(c.donorId)} 
-                          onCheckedChange={(checked) => {
-                            if (checked) setSelectedOverrides([...selectedOverrides, c.donorId]);
-                            else setSelectedOverrides(selectedOverrides.filter(id => id !== c.donorId));
-                          }}
+                        <Checkbox
+                          checked={selectedOverrides.includes(c.donorId)}
+                          onCheckedChange={(checked) => toggleSelectId(c.donorId, !!checked)}
                           disabled={c.overridden}
+                          aria-label={`Select constituent ${c.donorId}`}
                         />
                       </TableCell>
                       <TableCell className="font-mono text-sm">{c.donorId}</TableCell>
@@ -263,17 +422,43 @@ export default function ThresholdsStep({ campaign }: { campaign: any }) {
                       <TableCell>
                         {c.overridden ? <span className="text-xs bg-emerald-100 text-emerald-800 px-2 py-1 rounded">Overridden</span> : <span className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">Flagged</span>}
                       </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-destructive hover:text-destructive h-8 w-8"
+                          title="Remove from campaign (add to suppressions)"
+                          disabled={suppressMutation.isPending}
+                          onClick={() => handleSuppress([c.donorId])}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   ))
                 )}
               </TableBody>
             </Table>
-            
-            {selectedOverrides.length > 0 && (
-              <div className="flex justify-end pt-4">
+
+            {uniqueSelectedCount > 0 && (
+              <div className="flex flex-wrap gap-2 justify-end pt-4 border-t">
+                <span className="text-sm text-muted-foreground self-center mr-auto">
+                  {uniqueSelectedCount} constituent(s) selected
+                </span>
+                <Button variant="outline" onClick={() => setSelectedOverrides([])}>
+                  Clear selection
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => handleSuppress(selectedOverrides)}
+                  disabled={suppressMutation.isPending}
+                >
+                  {suppressMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ShieldOff className="h-4 w-4 mr-2" />}
+                  Remove Selected
+                </Button>
                 <Button onClick={handleSaveOverrides} disabled={overrideMutation.isPending}>
                   {overrideMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  Save {selectedOverrides.length} Override(s)
+                  Override Selected ({uniqueSelectedCount})
                 </Button>
               </div>
             )}
