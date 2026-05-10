@@ -81,8 +81,6 @@ export const campaignsTable = pgTable("campaigns", {
   duplicateIdCount: integer("duplicate_id_count").notNull().default(0),
   rejectedIdCount: integer("rejected_id_count").notNull().default(0),
   extraColumnsIgnored: boolean("extra_columns_ignored").notNull().default(false),
-  rejectedSamples: jsonb("rejected_samples").$type<string[]>().default([]),
-  duplicateSamples: jsonb("duplicate_samples").$type<string[]>().default([]),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
@@ -146,8 +144,6 @@ export const touchesTable = pgTable(
     customDuplicateIdCount: integer("custom_duplicate_id_count").notNull().default(0),
     customRejectedIdCount: integer("custom_rejected_id_count").notNull().default(0),
     customExtraColumnsIgnored: boolean("custom_extra_columns_ignored").notNull().default(false),
-    customRejectedSamples: jsonb("custom_rejected_samples").$type<string[]>().notNull().default([]),
-    customDuplicateSamples: jsonb("custom_duplicate_samples").$type<string[]>().notNull().default([]),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({

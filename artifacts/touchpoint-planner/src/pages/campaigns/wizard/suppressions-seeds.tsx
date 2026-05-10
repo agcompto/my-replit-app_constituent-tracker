@@ -58,7 +58,7 @@ export default function SuppressionsSeedsStep({ campaign }: { campaign: any }) {
       rawText: suppForm.rawText
     };
 
-    createSupp.mutate({ campaignId: campaign.id, data }, {
+    createSupp.mutate({ id: campaign.id, data }, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListSuppressionsQueryKey(campaign.id) });
         setSuppForm({ ...suppForm, rawText: "", notes: "", reason: "" });
@@ -74,7 +74,7 @@ export default function SuppressionsSeedsStep({ campaign }: { campaign: any }) {
       rawText: seedForm.rawText
     };
 
-    createSeed.mutate({ campaignId: campaign.id, data }, {
+    createSeed.mutate({ id: campaign.id, data }, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListSeedsQueryKey(campaign.id) });
         setSeedForm({ ...seedForm, rawText: "" });
@@ -170,7 +170,7 @@ export default function SuppressionsSeedsStep({ campaign }: { campaign: any }) {
                       <TableCell className="capitalize text-sm">{s.scope.replace('_', ' ')}</TableCell>
                       <TableCell className="text-right font-medium">{s.donorIdCount}</TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => deleteSupp.mutate({ campaignId: campaign.id, id: s.id }, { onSuccess: () => queryClient.invalidateQueries({ queryKey: getListSuppressionsQueryKey(campaign.id) })})}>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => deleteSupp.mutate({ id: campaign.id, suppressionId: s.id }, { onSuccess: () => queryClient.invalidateQueries({ queryKey: getListSuppressionsQueryKey(campaign.id) })})}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </TableCell>
@@ -250,7 +250,7 @@ export default function SuppressionsSeedsStep({ campaign }: { campaign: any }) {
                       <TableCell className="capitalize text-sm">{s.scope.replace('_', ' ')}</TableCell>
                       <TableCell className="text-right font-medium">{s.seedCount}</TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => deleteSeed.mutate({ campaignId: campaign.id, id: s.id }, { onSuccess: () => queryClient.invalidateQueries({ queryKey: getListSeedsQueryKey(campaign.id) })})}>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => deleteSeed.mutate({ id: campaign.id, seedId: s.id }, { onSuccess: () => queryClient.invalidateQueries({ queryKey: getListSeedsQueryKey(campaign.id) })})}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </TableCell>

@@ -22,11 +22,20 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { PiiWarning } from "@/components/ui/PiiWarning";
-import { Loader2, Plus, Edit2, Trash2, AlertTriangle, Users, Upload, FileText, X } from "lucide-react";
+import { Loader2, Plus, Edit2, Trash2, AlertTriangle, Users, Upload, FileText, X, Download } from "lucide-react";
 import { format, isBefore, startOfDay } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
+import { downloadCSV } from "@/lib/utils";
+
+interface AudienceUploadResult {
+  uniqueCount: number;
+  duplicateCount: number;
+  rejectedCount: number;
+  duplicateSamples: string[];
+  rejectedSamples: string[];
+}
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const ACCEPTED_EXT = [".csv", ".tsv", ".txt"];
@@ -80,6 +89,7 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
   const [audHasHeader, setAudHasHeader] = useState(true);
   const [audColumnIndex, setAudColumnIndex] = useState(0);
   const [audError, setAudError] = useState<string | null>(null);
+  const [audLastResult, setAudLastResult] = useState<AudienceUploadResult | null>(null);
   const audFileRef = useRef<HTMLInputElement>(null);
 
   const activeChannels = channels?.filter(c => c.active) || [];
@@ -145,12 +155,14 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
     setAudHasHeader(true);
     setAudColumnIndex(0);
     setAudError(null);
+    setAudLastResult(null);
     setAudienceDialogOpen(true);
   };
 
   const submitTouchAudience = async (type: "text" | "sheet" | "file") => {
     if (!audienceTouch) return;
     setAudError(null);
+    setAudLastResult(null);
     try {
       let payload: any = { hasHeader: audHasHeader, columnIndex: audColumnIndex };
       if (type === "text") payload.rawText = audRawText;
@@ -166,7 +178,13 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
         {
           onSuccess: (res) => {
             toast({ title: `Per-touch audience saved (${res.uniqueCount.toLocaleString()} unique IDs)` });
-            setAudienceDialogOpen(false);
+            setAudLastResult({
+              uniqueCount: res.uniqueCount,
+              duplicateCount: res.duplicateCount,
+              rejectedCount: res.rejectedCount,
+              duplicateSamples: res.duplicateSamples ?? [],
+              rejectedSamples: res.rejectedSamples ?? [],
+            });
             invalidate();
           },
           onError: (e: any) => {
@@ -463,6 +481,54 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
 
             {audError && (
               <div className="mt-3 text-sm text-destructive bg-red-50 border border-red-200 rounded p-3">{audError}</div>
+            )}
+
+            {audLastResult && (
+              <div className="mt-4 border border-emerald-200 bg-emerald-50 rounded p-3 space-y-3">
+                <div className="text-sm text-emerald-800">
+                  <strong>Saved.</strong> {audLastResult.uniqueCount.toLocaleString()} unique IDs ·{" "}
+                  {audLastResult.duplicateCount.toLocaleString()} duplicate(s) ·{" "}
+                  {audLastResult.rejectedCount.toLocaleString()} rejected.
+                  {(audLastResult.duplicateSamples.length > 0 || audLastResult.rejectedSamples.length > 0) && (
+                    <span className="block text-xs text-emerald-700/80 mt-1">
+                      Download cleanup lists below — they are only available right now and are not stored on the server.
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {audLastResult.duplicateSamples.length > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        downloadCSV(
+                          "touch-duplicate-ids",
+                          audLastResult.duplicateSamples.map((id) => ({ DonorID: id })),
+                        )
+                      }
+                    >
+                      <Download className="h-4 w-4 mr-2" /> Download Duplicates ({audLastResult.duplicateSamples.length})
+                    </Button>
+                  )}
+                  {audLastResult.rejectedSamples.length > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        downloadCSV(
+                          "touch-rejected-ids",
+                          audLastResult.rejectedSamples.map((id) => ({ RawInput: id })),
+                        )
+                      }
+                    >
+                      <Download className="h-4 w-4 mr-2" /> Download Rejected ({audLastResult.rejectedSamples.length})
+                    </Button>
+                  )}
+                  <div className="ml-auto">
+                    <Button size="sm" onClick={() => setAudienceDialogOpen(false)}>Done</Button>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         </DialogContent>

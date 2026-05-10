@@ -54,8 +54,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen flex w-full bg-background flex-col md:flex-row">
       {/* PII Modal */}
-      <Dialog open={user && !user.piiAcknowledged}>
-        <DialogContent className="sm:max-w-[425px]" hideCloseButton>
+      <Dialog open={!!user && !user.piiAcknowledged}>
+        <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-destructive" />

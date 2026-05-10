@@ -40,10 +40,10 @@ async function shapeTouch(t: typeof touchesTable.$inferSelect) {
     customRejectedIdCount: t.customRejectedIdCount,
     customOriginalRowCount: t.customOriginalRowCount,
     customExtraColumnsIgnored: t.customExtraColumnsIgnored,
-    // Raw rejected/duplicate samples may contain PII (names/emails) from
-    // CSV/Sheet uploads. They are never persisted or returned via this list.
-    customRejectedSamples: [],
-    customDuplicateSamples: [],
+    // Raw rejected/duplicate samples are never persisted (PII risk) — they're
+    // only returned by the immediate upload response, not by this list/shape.
+    customRejectedSamples: [] as string[],
+    customDuplicateSamples: [] as string[],
   };
 }
 
@@ -249,9 +249,8 @@ router.post(
         customDuplicateIdCount: result.duplicateIds.length,
         customRejectedIdCount: result.rejectedSamples.length,
         customExtraColumnsIgnored: result.extraColumnsIgnored,
-        // Do not persist raw rejected/duplicate samples (PII risk).
-        customRejectedSamples: [],
-        customDuplicateSamples: [],
+        // Raw rejected/duplicate samples are intentionally NOT persisted (PII risk);
+        // they are returned in this POST response only for one-time cleanup download.
       })
       .where(eq(touchesTable.id, touch.id));
 
@@ -309,8 +308,6 @@ router.delete(
         customDuplicateIdCount: 0,
         customRejectedIdCount: 0,
         customExtraColumnsIgnored: false,
-        customRejectedSamples: [],
-        customDuplicateSamples: [],
       })
       .where(eq(touchesTable.id, touch.id));
     await audit({

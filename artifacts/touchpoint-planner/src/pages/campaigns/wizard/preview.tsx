@@ -1,4 +1,4 @@
-import { useGetCampaignPreview, useFinalizeCampaign, useExportCampaign, getGetCampaignQueryKey } from "@workspace/api-client-react";
+import { useGetCampaignPreview, useFinalizeCampaign, useExportCampaign, getGetCampaignQueryKey, getGetCampaignPreviewQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -15,7 +15,7 @@ export default function PreviewStep({ campaign }: { campaign: any }) {
   const { toast } = useToast();
   
   const { data: preview, isLoading } = useGetCampaignPreview(campaign.id, {
-    query: { enabled: !!campaign.id }
+    query: { queryKey: getGetCampaignPreviewQueryKey(campaign.id), enabled: !!campaign.id }
   });
 
   const finalizeMutation = useFinalizeCampaign();

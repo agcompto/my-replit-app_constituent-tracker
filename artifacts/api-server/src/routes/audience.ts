@@ -68,12 +68,10 @@ router.post("/campaigns/:id/audience", requireAuth, async (req, res): Promise<vo
       duplicateIdCount: result.duplicateIds.length,
       rejectedIdCount: result.rejectedSamples.length,
       extraColumnsIgnored: result.extraColumnsIgnored,
-      // Do NOT persist raw rejected/duplicate samples — they may contain PII
-      // from CSV/Sheet uploads (names, emails, phones). Counts are stored above
-      // and the immediate POST response below returns the samples just for
-      // the uploader's one-time cleanup download.
-      rejectedSamples: [],
-      duplicateSamples: [],
+      // Note: raw rejected/duplicate samples are intentionally NOT persisted —
+      // they may contain PII (names/emails/phones) from CSV/Sheet uploads.
+      // Only counts are stored; samples are returned in this POST response only
+      // so the uploader can download them once for cleanup.
     })
     .where(eq(campaignsTable.id, params.data.id));
 

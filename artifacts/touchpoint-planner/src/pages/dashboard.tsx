@@ -11,15 +11,8 @@ import { format } from "date-fns";
 export default function Dashboard() {
   const [range, setRange] = useState("Current FY");
   
-  const { data: dashboard, isLoading: isLoadingDashboard } = useGetDashboard({
-    query: { queryKey: ["dashboard", range] }, // Orval handles params natively but let's pass it anyway
-    request: { /* Ideally handled by orval if it supported params directly in the hook sig */ } as any
-  });
-  
-  // Note: the provided hook signatures only take options, so we rely on backend default or query param manipulation if supported by Orval 
-  // For now, we will just use the hook and pass it to customFetch via request options if needed, but since we can't easily, we'll assume it works or just fetch.
-  // Actually, we can use useGetDashboard() directly. The hook doesn't seem to take params in the Orval definition snippet we saw, but we'll try to pass it in query.
-  
+  const { data: dashboard, isLoading: isLoadingDashboard } = useGetDashboard();
+
   const { data: upcoming } = useGetUpcomingVolume();
   const { data: highVolume } = useGetHighVolumeDonors();
 

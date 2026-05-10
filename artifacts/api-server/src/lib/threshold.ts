@@ -68,6 +68,30 @@ export async function getTouchAudience(touchId: number): Promise<string[]> {
 }
 
 /**
+ * Pure resolver: given the campaign-wide audience and per-touch custom lists,
+ * return the effective audience set for each planned touch. Touches with
+ * audienceMode === "custom" use their own list (or empty if none uploaded yet);
+ * all other touches share the campaign-wide audience.
+ *
+ * Extracted as a pure function so it can be unit-tested without a database.
+ */
+export function resolveEffectiveAudienceByTouch(
+  campaignAudience: Set<string>,
+  customByTouch: Map<number, Set<string>>,
+  planned: PlannedTouch[],
+): Map<number, Set<string>> {
+  const out = new Map<number, Set<string>>();
+  for (const p of planned) {
+    if (p.audienceMode === "custom") {
+      out.set(p.id, customByTouch.get(p.id) ?? new Set());
+    } else {
+      out.set(p.id, campaignAudience);
+    }
+  }
+  return out;
+}
+
+/**
  * Returns a Map<touchId, Set<donorId>> giving the effective audience for each touch:
  * - touch.audienceMode === "custom" → use the touch's own list
  * - otherwise → use the campaign-wide audience
@@ -89,15 +113,7 @@ export async function getEffectiveAudienceByTouch(
     if (!customByTouch.has(r.touchId)) customByTouch.set(r.touchId, new Set());
     customByTouch.get(r.touchId)!.add(r.donorId);
   }
-  const out = new Map<number, Set<string>>();
-  for (const p of planned) {
-    if (p.audienceMode === "custom") {
-      out.set(p.id, customByTouch.get(p.id) ?? new Set());
-    } else {
-      out.set(p.id, campaignAudience);
-    }
-  }
-  return out;
+  return resolveEffectiveAudienceByTouch(campaignAudience, customByTouch, planned);
 }
 
 export async function getHistoricalTouchpoints(

@@ -52,7 +52,7 @@ export default function ThresholdsStep({ campaign }: { campaign: any }) {
       actionMode: form.actionMode
     };
 
-    createMutation.mutate({ campaignId: campaign.id, data }, {
+    createMutation.mutate({ id: campaign.id, data }, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListThresholdsQueryKey(campaign.id) });
         setForm({ ...form, name: "" }); // Reset name at least
@@ -60,14 +60,14 @@ export default function ThresholdsStep({ campaign }: { campaign: any }) {
     });
   };
 
-  const handleDelete = (id: number) => {
-    deleteMutation.mutate({ campaignId: campaign.id, id }, {
+  const handleDelete = (thresholdId: number) => {
+    deleteMutation.mutate({ id: campaign.id, thresholdId }, {
       onSuccess: () => queryClient.invalidateQueries({ queryKey: getListThresholdsQueryKey(campaign.id) })
     });
   };
 
   const handlePreview = () => {
-    previewMutation.mutate({ campaignId: campaign.id }, {
+    previewMutation.mutate({ id: campaign.id }, {
       onSuccess: (data) => {
         setPreviewData(data);
         setSelectedOverrides([]);
@@ -76,7 +76,7 @@ export default function ThresholdsStep({ campaign }: { campaign: any }) {
   };
 
   const handleSaveOverrides = () => {
-    overrideMutation.mutate({ campaignId: campaign.id, data: { donorIds: selectedOverrides } }, {
+    overrideMutation.mutate({ id: campaign.id, data: { donorIds: selectedOverrides } }, {
       onSuccess: () => {
         toast({ title: "Overrides saved" });
         handlePreview(); // Refresh preview

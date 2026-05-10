@@ -7,6 +7,19 @@ import { Download, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { Link } from "wouter";
 
+const SOURCE_LABELS: Record<string, string> = {
+  paste: "Pasted text",
+  text: "Pasted text",
+  file: "File upload",
+  csv: "File upload",
+  sheet: "Google Sheet",
+  google_sheet: "Google Sheet",
+};
+
+function formatSource(source: string): string {
+  return SOURCE_LABELS[source] ?? source;
+}
+
 export default function Exports() {
   const { data: exports, isLoading: exportsLoading } = useGetExportHistory();
   const { data: uploads, isLoading: uploadsLoading } = useGetUploadHistory();
@@ -103,7 +116,7 @@ export default function Exports() {
                         </Link>
                       </TableCell>
                       <TableCell>
-                        <span className="bg-muted px-2 py-1 rounded text-xs font-mono">{job.source}</span>
+                        <span className="bg-muted px-2 py-1 rounded text-xs" title={job.source}>{formatSource(job.source)}</span>
                       </TableCell>
                       <TableCell className="text-sm">{job.uploadedByName}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{format(new Date(job.uploadedAt), "MMM d, yyyy HH:mm")}</TableCell>
