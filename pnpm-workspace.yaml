@@ -75,6 +75,23 @@ onlyBuiltDependencies:
   - unrs-resolver
 
 overrides:
+  # Security: fix vulnerable transitive dependencies
+  # picomatch 2.x (used by fast-glob > micromatch) — ReDoS + method injection
+  "micromatch>picomatch": "^2.3.2"
+  # picomatch 4.x (used by vite) — ReDoS + method injection
+  "vite>picomatch": "^4.0.4"
+  # path-to-regexp 8.x (used by express > router) — ReDoS + DoS
+  path-to-regexp: "^8.4.0"
+  # fast-uri (used by orval > ajv) — path traversal + host confusion
+  fast-uri: "^3.1.2"
+  # lodash (used by recharts) — code injection + prototype pollution
+  lodash: "^4.18.1"
+  # yaml (used by vite) — stack overflow via deeply nested YAML
+  yaml: "^2.8.3"
+  # brace-expansion 2.x (used by minimatch) — ReDoS / memory exhaustion
+  brace-expansion: "^2.0.3"
+  # postcss (used by vite) — XSS via unescaped </style>
+  postcss: "^8.5.10"
   # replit uses linux-x64 only, we can exclude all other platforms
   "esbuild>@esbuild/darwin-arm64": "-"
   "esbuild>@esbuild/darwin-x64": "-"
