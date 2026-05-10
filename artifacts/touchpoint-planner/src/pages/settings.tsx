@@ -141,7 +141,12 @@ export default function Settings() {
                     <TableRow key={t.id}>
                       <TableCell className="font-medium">{t.name}</TableCell>
                       <TableCell className="text-right">
-                        <Switch checked={t.active} onCheckedChange={(checked) => handleToggleType(t.id, checked)} disabled={t.systemDefault} />
+                        <Switch
+                          checked={t.active}
+                          onCheckedChange={(checked) => handleToggleType(t.id, checked)}
+                          disabled={t.systemDefault && !isSuperAdmin}
+                          title={t.systemDefault && !isSuperAdmin ? "System default — only a super admin can change this" : undefined}
+                        />
                       </TableCell>
                     </TableRow>
                   ))}
@@ -172,7 +177,12 @@ export default function Settings() {
                     <TableRow key={c.id}>
                       <TableCell className="font-medium">{c.name}</TableCell>
                       <TableCell className="text-right">
-                        <Switch checked={c.active} onCheckedChange={(checked) => handleToggleChannel(c.id, checked)} disabled={c.systemDefault} />
+                        <Switch
+                          checked={c.active}
+                          onCheckedChange={(checked) => handleToggleChannel(c.id, checked)}
+                          disabled={c.systemDefault && !isSuperAdmin}
+                          title={c.systemDefault && !isSuperAdmin ? "System default — only a super admin can change this" : undefined}
+                        />
                       </TableCell>
                     </TableRow>
                   ))}
