@@ -656,8 +656,23 @@ export type ListCampaignsParams = {
 
 export type GetDashboardParams = {
   range?: string;
+  owningUnit?: string;
+  channelId?: number;
+  startDate?: string;
+  endDate?: string;
+};
+
+export type GetUpcomingVolumeParams = {
+  owningUnit?: string;
+  channelId?: number;
+  startDate?: string;
+  endDate?: string;
 };
 
 export type GetHighVolumeDonorsParams = {
   minTouchpoints?: number;
+  owningUnit?: string;
+  channelId?: number;
+  startDate?: string;
+  endDate?: string;
 };

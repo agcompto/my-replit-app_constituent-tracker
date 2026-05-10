@@ -813,6 +813,10 @@ export const GetDonorTouchpointsResponse = zod.object({
 
 export const GetDashboardQueryParams = zod.object({
   range: zod.coerce.string().optional(),
+  owningUnit: zod.coerce.string().optional(),
+  channelId: zod.coerce.number().optional(),
+  startDate: zod.date().optional(),
+  endDate: zod.date().optional(),
 });
 
 export const GetDashboardResponse = zod.object({
@@ -849,6 +853,13 @@ export const GetDashboardResponse = zod.object({
   ),
 });
 
+export const GetUpcomingVolumeQueryParams = zod.object({
+  owningUnit: zod.coerce.string().optional(),
+  channelId: zod.coerce.number().optional(),
+  startDate: zod.date().optional(),
+  endDate: zod.date().optional(),
+});
+
 export const GetUpcomingVolumeResponseItem = zod.object({
   sendDate: zod.coerce.date(),
   channelLabel: zod.string(),
@@ -861,6 +872,10 @@ export const GetUpcomingVolumeResponse = zod.array(
 
 export const GetHighVolumeDonorsQueryParams = zod.object({
   minTouchpoints: zod.coerce.number().optional(),
+  owningUnit: zod.coerce.string().optional(),
+  channelId: zod.coerce.number().optional(),
+  startDate: zod.date().optional(),
+  endDate: zod.date().optional(),
 });
 
 export const GetHighVolumeDonorsResponseItem = zod.object({

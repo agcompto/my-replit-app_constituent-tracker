@@ -696,6 +696,10 @@ paths:
       tags: [reports]
       parameters:
         - { name: range, in: query, schema: { type: string } }
+        - { name: owningUnit, in: query, schema: { type: string } }
+        - { name: channelId, in: query, schema: { type: integer } }
+        - { name: startDate, in: query, schema: { type: string, format: date } }
+        - { name: endDate, in: query, schema: { type: string, format: date } }
       responses:
         "200":
           description: OK
@@ -706,6 +710,11 @@ paths:
     get:
       operationId: getUpcomingVolume
       tags: [reports]
+      parameters:
+        - { name: owningUnit, in: query, schema: { type: string } }
+        - { name: channelId, in: query, schema: { type: integer } }
+        - { name: startDate, in: query, schema: { type: string, format: date } }
+        - { name: endDate, in: query, schema: { type: string, format: date } }
       responses:
         "200":
           description: OK
@@ -720,6 +729,10 @@ paths:
       tags: [reports]
       parameters:
         - { name: minTouchpoints, in: query, schema: { type: integer } }
+        - { name: owningUnit, in: query, schema: { type: string } }
+        - { name: channelId, in: query, schema: { type: integer } }
+        - { name: startDate, in: query, schema: { type: string, format: date } }
+        - { name: endDate, in: query, schema: { type: string, format: date } }
       responses:
         "200":
           description: OK

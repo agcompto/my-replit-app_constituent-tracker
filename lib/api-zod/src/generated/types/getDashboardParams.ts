@@ -8,4 +8,8 @@
 
 export type GetDashboardParams = {
   range?: string;
+  owningUnit?: string;
+  channelId?: number;
+  startDate?: Date;
+  endDate?: Date;
 };

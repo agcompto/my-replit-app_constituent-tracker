@@ -6,8 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type GetHighVolumeDonorsParams = {
-  minTouchpoints?: number;
+export type GetUpcomingVolumeParams = {
   owningUnit?: string;
   channelId?: number;
   startDate?: Date;

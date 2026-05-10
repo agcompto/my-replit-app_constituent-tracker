@@ -1,4 +1,5 @@
 import { useGetDashboard, useGetUpcomingVolume, useGetHighVolumeDonors } from "@workspace/api-client-react";
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -7,11 +8,14 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { Download, Loader2 } from "lucide-react";
 import { downloadCSV } from "@/lib/utils";
 import { format } from "date-fns";
+import { ReportsFilterBar, type ReportFilters } from "@/components/reports-filter-bar";
 
 export default function Reports() {
-  const { data: dashboard, isLoading: dashLoading } = useGetDashboard();
-  const { data: upcoming, isLoading: upcomingLoading } = useGetUpcomingVolume();
-  const { data: highVolume, isLoading: highVolumeLoading } = useGetHighVolumeDonors();
+  const [filters, setFilters] = useState<ReportFilters>({});
+
+  const { data: dashboard, isLoading: dashLoading } = useGetDashboard(filters);
+  const { data: upcoming, isLoading: upcomingLoading } = useGetUpcomingVolume(filters);
+  const { data: highVolume, isLoading: highVolumeLoading } = useGetHighVolumeDonors(filters);
 
   const handleDownloadUpcoming = () => {
     if (!upcoming) return;
@@ -34,6 +38,8 @@ export default function Reports() {
         <h1 className="text-2xl font-bold tracking-tight">Reports</h1>
         <p className="text-muted-foreground text-sm">Detailed analysis of communication volume and trends.</p>
       </div>
+
+      <ReportsFilterBar value={filters} onChange={setFilters} />
 
       <Tabs defaultValue="channels">
         <TabsList className="mb-4">
@@ -122,7 +128,7 @@ export default function Reports() {
         <TabsContent value="upcoming" className="space-y-4">
           <Card>
             <CardHeader className="flex flex-row justify-between items-center">
-              <CardTitle>Upcoming Volume (Next 8 Weeks)</CardTitle>
+              <CardTitle>{filters.startDate || filters.endDate ? "Volume in Date Range" : "Upcoming Volume"}</CardTitle>
               <Button variant="outline" size="sm" onClick={handleDownloadUpcoming}>
                 <Download className="h-4 w-4 mr-2" /> Download CSV
               </Button>
@@ -147,7 +153,7 @@ export default function Reports() {
                         <TableCell className="text-right">{row.touchpointCount.toLocaleString()}</TableCell>
                       </TableRow>
                     ))}
-                    {!upcoming?.length && <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">No upcoming touches scheduled.</TableCell></TableRow>}
+                    {!upcoming?.length && <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">No touches match the current filters.</TableCell></TableRow>}
                   </TableBody>
                 </Table>
               )}

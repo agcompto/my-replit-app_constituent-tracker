@@ -1,5 +1,5 @@
-import { Router, type IRouter } from "express";
-import { desc, sql } from "drizzle-orm";
+import { Router, type IRouter, type Request } from "express";
+import { desc, sql, type SQL } from "drizzle-orm";
 import {
   db,
   touchpointsTable,
@@ -15,14 +15,97 @@ import { loadCampaignSummary } from "../lib/campaigns";
 
 const router: IRouter = Router();
 
-router.get("/reports/dashboard", requireRole("admin", "super_admin"), async (_req, res): Promise<void> => {
-  const [totals] = await db
+const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+type ReportFilters = {
+  owningUnit?: string;
+  channelId?: number;
+  startDate?: string;
+  endDate?: string;
+};
+
+function parseIsoDate(s: string): string | null {
+  const m = ISO_DATE.exec(s);
+  if (!m) return null;
+  const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  if (
+    dt.getUTCFullYear() !== y ||
+    dt.getUTCMonth() !== mo - 1 ||
+    dt.getUTCDate() !== d
+  ) {
+    return null;
+  }
+  return s;
+}
+
+function parseFilters(req: Request): ReportFilters | { error: string } {
+  const f: ReportFilters = {};
+  const ou = req.query.owningUnit;
+  if (typeof ou === "string" && ou.trim()) f.owningUnit = ou.trim();
+  const ch = req.query.channelId;
+  if (typeof ch === "string" && ch.trim()) {
+    const n = parseInt(ch, 10);
+    if (!Number.isFinite(n)) return { error: "Invalid channelId" };
+    f.channelId = n;
+  }
+  const sd = req.query.startDate;
+  if (typeof sd === "string" && sd.trim()) {
+    const parsed = parseIsoDate(sd.trim());
+    if (!parsed) return { error: "Invalid startDate (expected YYYY-MM-DD)" };
+    f.startDate = parsed;
+  }
+  const ed = req.query.endDate;
+  if (typeof ed === "string" && ed.trim()) {
+    const parsed = parseIsoDate(ed.trim());
+    if (!parsed) return { error: "Invalid endDate (expected YYYY-MM-DD)" };
+    f.endDate = parsed;
+  }
+  if (f.startDate && f.endDate && f.startDate > f.endDate) {
+    return { error: "startDate must be on or before endDate" };
+  }
+  return f;
+}
+
+function whereClauses(f: ReportFilters, opts: { upcomingOnly?: boolean } = {}): SQL {
+  const parts: SQL[] = [
+    sql`${touchpointsTable.isSeed} = false`,
+    sql`${campaignsTable.status} <> 'voided'`,
+  ];
+  if (opts.upcomingOnly) parts.push(sql`${touchpointsTable.sendDate} >= CURRENT_DATE`);
+  if (f.owningUnit) parts.push(sql`${campaignsTable.owningUnit} = ${f.owningUnit}`);
+  if (f.channelId !== undefined) parts.push(sql`${touchpointsTable.channelId} = ${f.channelId}`);
+  if (f.startDate) parts.push(sql`${touchpointsTable.sendDate} >= ${f.startDate}::date`);
+  if (f.endDate) parts.push(sql`${touchpointsTable.sendDate} <= ${f.endDate}::date`);
+  return sql.join(parts, sql` AND `);
+}
+
+router.get("/reports/dashboard", requireRole("admin", "super_admin"), async (req, res): Promise<void> => {
+  const parsed = parseFilters(req);
+  if ("error" in parsed) { res.status(400).json({ message: parsed.error }); return; }
+  const f = parsed;
+  const whereTp = whereClauses(f);
+
+  const [tpTotals] = await db
     .select({
-      totalCampaigns: sql<number>`(select count(*)::int from ${campaignsTable} where status <> 'voided')`,
-      totalDonors: sql<number>`(select count(distinct t.donor_id)::int from ${touchpointsTable} t join ${campaignsTable} c on c.id = t.campaign_id where t.is_seed = false and c.status <> 'voided')`,
-      totalTouchpoints: sql<number>`(select count(*)::int from ${touchpointsTable} t join ${campaignsTable} c on c.id = t.campaign_id where t.is_seed = false and c.status <> 'voided')`,
+      totalDonors: sql<number>`count(distinct ${touchpointsTable.donorId})::int`,
+      totalTouchpoints: sql<number>`count(*)::int`,
     })
-    .from(sql`(select 1) t`);
+    .from(touchpointsTable)
+    .innerJoin(campaignsTable, sql`${touchpointsTable.campaignId} = ${campaignsTable.id}`)
+    .where(whereTp);
+
+  // Total campaigns: respect owningUnit filter; date/channel filters don't restrict campaign count
+  const campaignWhere = sql.join(
+    [sql`${campaignsTable.status} <> 'voided'`, ...(f.owningUnit ? [sql`${campaignsTable.owningUnit} = ${f.owningUnit}`] : [])],
+    sql` AND `,
+  );
+  const [campTotals] = await db
+    .select({ totalCampaigns: sql<number>`count(*)::int` })
+    .from(campaignsTable)
+    .where(campaignWhere);
+
   const byChannel = await db
     .select({
       label: channelsTable.name,
@@ -31,7 +114,7 @@ router.get("/reports/dashboard", requireRole("admin", "super_admin"), async (_re
     .from(touchpointsTable)
     .innerJoin(channelsTable, sql`${touchpointsTable.channelId} = ${channelsTable.id}`)
     .innerJoin(campaignsTable, sql`${touchpointsTable.campaignId} = ${campaignsTable.id}`)
-    .where(sql`${touchpointsTable.isSeed} = false AND ${campaignsTable.status} <> 'voided'`)
+    .where(whereTp)
     .groupBy(channelsTable.name);
   const byType = await db
     .select({
@@ -44,27 +127,32 @@ router.get("/reports/dashboard", requireRole("admin", "super_admin"), async (_re
       sql`${touchpointsTable.campaignTypeId} = ${campaignTypesTable.id}`,
     )
     .innerJoin(campaignsTable, sql`${touchpointsTable.campaignId} = ${campaignsTable.id}`)
-    .where(sql`${touchpointsTable.isSeed} = false AND ${campaignsTable.status} <> 'voided'`)
+    .where(whereTp)
     .groupBy(campaignTypesTable.name);
+
   const recent = await db
     .select({ id: campaignsTable.id })
     .from(campaignsTable)
+    .where(campaignWhere)
     .orderBy(desc(campaignsTable.createdAt))
     .limit(8);
   const recentSummaries = (await Promise.all(recent.map((r) => loadCampaignSummary(r.id)))).filter(
     Boolean,
   );
   res.json({
-    totalCampaigns: totals?.totalCampaigns ?? 0,
-    totalDonorsProcessed: totals?.totalDonors ?? 0,
-    totalTouchpoints: totals?.totalTouchpoints ?? 0,
+    totalCampaigns: campTotals?.totalCampaigns ?? 0,
+    totalDonorsProcessed: tpTotals?.totalDonors ?? 0,
+    totalTouchpoints: tpTotals?.totalTouchpoints ?? 0,
     byChannel,
     byType,
     recentCampaigns: recentSummaries,
   });
 });
 
-router.get("/reports/upcoming-volume", requireRole("admin", "super_admin"), async (_req, res): Promise<void> => {
+router.get("/reports/upcoming-volume", requireRole("admin", "super_admin"), async (req, res): Promise<void> => {
+  const parsed = parseFilters(req);
+  if ("error" in parsed) { res.status(400).json({ message: parsed.error }); return; }
+  const f = parsed;
   const rows = await db
     .select({
       sendDate: touchpointsTable.sendDate,
@@ -75,7 +163,7 @@ router.get("/reports/upcoming-volume", requireRole("admin", "super_admin"), asyn
     .from(touchpointsTable)
     .innerJoin(channelsTable, sql`${touchpointsTable.channelId} = ${channelsTable.id}`)
     .innerJoin(campaignsTable, sql`${touchpointsTable.campaignId} = ${campaignsTable.id}`)
-    .where(sql`${touchpointsTable.sendDate} >= CURRENT_DATE AND ${touchpointsTable.isSeed} = false AND ${campaignsTable.status} <> 'voided'`)
+    .where(whereClauses(f, { upcomingOnly: !f.startDate }))
     .groupBy(touchpointsTable.sendDate, channelsTable.name)
     .orderBy(touchpointsTable.sendDate);
   res.json(
@@ -90,9 +178,14 @@ router.get("/reports/upcoming-volume", requireRole("admin", "super_admin"), asyn
 });
 
 router.get("/reports/high-volume-donors", requireRole("admin", "super_admin"), async (req, res): Promise<void> => {
+  const parsed = parseFilters(req);
+  if ("error" in parsed) { res.status(400).json({ message: parsed.error }); return; }
+  const f = parsed;
   const minRaw = req.query.minTouchpoints;
   const min = typeof minRaw === "string" ? parseInt(minRaw, 10) : 5;
   const minVal = Number.isFinite(min) ? min : 5;
+  const whereTp = whereClauses(f);
+
   const totals = await db
     .select({
       donorId: touchpointsTable.donorId,
@@ -100,7 +193,7 @@ router.get("/reports/high-volume-donors", requireRole("admin", "super_admin"), a
     })
     .from(touchpointsTable)
     .innerJoin(campaignsTable, sql`${touchpointsTable.campaignId} = ${campaignsTable.id}`)
-    .where(sql`${touchpointsTable.isSeed} = false AND ${campaignsTable.status} <> 'voided'`)
+    .where(whereTp)
     .groupBy(touchpointsTable.donorId)
     .having(sql`count(*) >= ${minVal}`)
     .orderBy(sql`count(*) desc`)
@@ -114,7 +207,7 @@ router.get("/reports/high-volume-donors", requireRole("admin", "super_admin"), a
     .from(touchpointsTable)
     .innerJoin(channelsTable, sql`${touchpointsTable.channelId} = ${channelsTable.id}`)
     .innerJoin(campaignsTable, sql`${touchpointsTable.campaignId} = ${campaignsTable.id}`)
-    .where(sql`${touchpointsTable.isSeed} = false AND ${campaignsTable.status} <> 'voided'`)
+    .where(whereTp)
     .groupBy(touchpointsTable.donorId, channelsTable.name);
   const map = new Map<string, { label: string; count: number }[]>();
   for (const r of channelBreakdown) {

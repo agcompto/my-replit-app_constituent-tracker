@@ -5,8 +5,8 @@ import TouchesStep from "./touches";
 import ThresholdsStep from "./thresholds";
 import SuppressionsSeedsStep from "./suppressions-seeds";
 import PreviewStep from "./preview";
-import { useGetCampaign } from "@workspace/api-client-react";
-import { Loader2, ArrowLeft } from "lucide-react";
+import { useGetCampaign, useListTouches, getListTouchesQueryKey } from "@workspace/api-client-react";
+import { Loader2, ArrowLeft, Check } from "lucide-react";
 import { getGetCampaignQueryKey } from "@workspace/api-client-react";
 
 export default function CampaignWizard() {
@@ -27,13 +27,21 @@ export default function CampaignWizard() {
     }
   });
 
+  const { data: touches } = useListTouches(id as number, {
+    query: { enabled: !!id, queryKey: id ? getListTouchesQueryKey(id) : ["touches", "new"] }
+  });
+
+  const touchCount = touches?.length ?? 0;
+  const audienceUploaded = (campaign?.validIdCount ?? 0) > 0;
+  const isFinalized = campaign?.status === "finalized" || campaign?.status === "exported";
+
   const steps = [
-    { id: "setup", label: "Setup" },
-    { id: "touches", label: "Touches", disabled: isNew },
-    { id: "audience", label: "Audience", disabled: isNew },
-    { id: "thresholds", label: "Thresholds", disabled: isNew },
-    { id: "suppressions", label: "Suppressions & Seeds", disabled: isNew },
-    { id: "preview", label: "Preview & Export", disabled: isNew },
+    { id: "setup", label: "Setup", complete: !isNew },
+    { id: "touches", label: "Touches", disabled: isNew, complete: touchCount > 0 },
+    { id: "audience", label: "Audience", disabled: isNew, complete: audienceUploaded },
+    { id: "thresholds", label: "Thresholds", disabled: isNew, complete: false },
+    { id: "suppressions", label: "Suppressions & Seeds", disabled: isNew, complete: false },
+    { id: "preview", label: "Preview & Export", disabled: isNew, complete: isFinalized },
   ];
 
   if (!isNew && isLoading) {
@@ -71,10 +79,17 @@ export default function CampaignWizard() {
                   : "text-muted-foreground hover:bg-muted"
             }`}
           >
-            <span className={`flex items-center justify-center w-5 h-5 mr-2 rounded-full text-[10px] ${
-              stepMatch === step.id ? "bg-primary-foreground/20" : "bg-muted-foreground/20"
-            }`}>
-              {i + 1}
+            <span
+              className={`flex items-center justify-center w-5 h-5 mr-2 rounded-full text-[10px] ${
+                stepMatch === step.id
+                  ? "bg-primary-foreground/20"
+                  : step.complete
+                    ? "bg-emerald-600 text-white"
+                    : "bg-muted-foreground/20"
+              }`}
+              aria-label={step.complete ? "completed" : undefined}
+            >
+              {step.complete && stepMatch !== step.id ? <Check className="h-3 w-3" strokeWidth={3} /> : i + 1}
             </span>
             {step.label}
           </button>

@@ -39,6 +39,7 @@ import type {
   ExportResult,
   GetDashboardParams,
   GetHighVolumeDonorsParams,
+  GetUpcomingVolumeParams,
   HealthStatus,
   HighVolumeDonor,
   ListCampaignsParams,
@@ -3917,41 +3918,60 @@ export function useGetDashboard<
   return { ...query, queryKey: queryOptions.queryKey };
 }
 
-export const getGetUpcomingVolumeUrl = () => {
-  return `/api/reports/upcoming-volume`;
+export const getGetUpcomingVolumeUrl = (params?: GetUpcomingVolumeParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/reports/upcoming-volume?${stringifiedParams}`
+    : `/api/reports/upcoming-volume`;
 };
 
 export const getUpcomingVolume = async (
+  params?: GetUpcomingVolumeParams,
   options?: RequestInit,
 ): Promise<UpcomingVolumeRow[]> => {
-  return customFetch<UpcomingVolumeRow[]>(getGetUpcomingVolumeUrl(), {
+  return customFetch<UpcomingVolumeRow[]>(getGetUpcomingVolumeUrl(params), {
     ...options,
     method: "GET",
   });
 };
 
-export const getGetUpcomingVolumeQueryKey = () => {
-  return [`/api/reports/upcoming-volume`] as const;
+export const getGetUpcomingVolumeQueryKey = (
+  params?: GetUpcomingVolumeParams,
+) => {
+  return [`/api/reports/upcoming-volume`, ...(params ? [params] : [])] as const;
 };
 
 export const getGetUpcomingVolumeQueryOptions = <
   TData = Awaited<ReturnType<typeof getUpcomingVolume>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getUpcomingVolume>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
+>(
+  params?: GetUpcomingVolumeParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getUpcomingVolume>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getGetUpcomingVolumeQueryKey();
+  const queryKey =
+    queryOptions?.queryKey ?? getGetUpcomingVolumeQueryKey(params);
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof getUpcomingVolume>>
-  > = ({ signal }) => getUpcomingVolume({ signal, ...requestOptions });
+  > = ({ signal }) => getUpcomingVolume(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof getUpcomingVolume>>,
@@ -3968,15 +3988,18 @@ export type GetUpcomingVolumeQueryError = ErrorType<unknown>;
 export function useGetUpcomingVolume<
   TData = Awaited<ReturnType<typeof getUpcomingVolume>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getUpcomingVolume>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetUpcomingVolumeQueryOptions(options);
+>(
+  params?: GetUpcomingVolumeParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getUpcomingVolume>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetUpcomingVolumeQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

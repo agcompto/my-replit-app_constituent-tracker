@@ -22,7 +22,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { PiiWarning } from "@/components/ui/PiiWarning";
-import { Loader2, Plus, Edit2, Trash2, AlertTriangle, Users, Upload, FileText, X, Download } from "lucide-react";
+import { Loader2, Plus, Edit2, Trash2, AlertTriangle, Info, Users, Upload, FileText, X, Download } from "lucide-react";
 import { format, isBefore, startOfDay } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
@@ -293,10 +293,10 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
       </Card>
 
       {touchesMissingAudience && (
-        <div className="bg-amber-50 border border-amber-200 p-3 rounded-md flex gap-3 text-amber-800 text-sm">
-          <AlertTriangle className="h-5 w-5 shrink-0" />
+        <div className="bg-blue-50 border border-blue-200 p-3 rounded-md flex gap-3 text-blue-900 text-sm">
+          <Info className="h-5 w-5 shrink-0" />
           <div>
-            <strong>Missing audience.</strong> {touchesUsingCampaign.length} touch(es) are set to use the campaign-wide audience, but no campaign-wide list has been uploaded. Either upload a campaign-wide list or give every touch its own list.
+            {touchesUsingCampaign.length} of your touch(es) are set to use the campaign-wide audience. You'll upload that list on the next step (Audience), or you can give each touch its own list here.
           </div>
         </div>
       )}

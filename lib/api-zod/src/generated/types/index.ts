@@ -32,6 +32,7 @@ export * from "./exportResult";
 export * from "./exportResultFilesItem";
 export * from "./getDashboardParams";
 export * from "./getHighVolumeDonorsParams";
+export * from "./getUpcomingVolumeParams";
 export * from "./healthStatus";
 export * from "./highVolumeDonor";
 export * from "./highVolumeDonorByChannelItem";
