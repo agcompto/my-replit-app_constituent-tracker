@@ -1,14 +1,20 @@
 import express, { type Express } from "express";
 import cors from "cors";
+import helmet from "helmet";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
-import { sessionMiddleware } from "./lib/session";
+import { sessionMiddleware, applyRoleSessionTtl } from "./lib/session";
 import { attachUser } from "./lib/auth";
 
 const app: Express = express();
 
+// `trust proxy: 1` is correct for Replit's single-hop proxy. Do not set to
+// `true` — that would let clients spoof X-Forwarded-For and bypass per-IP
+// rate limiting / lockout.
 app.set("trust proxy", 1);
+// Don't advertise the framework — small but standard practice.
+app.disable("x-powered-by");
 
 const allowedOrigins = (process.env.REPLIT_DOMAINS ?? "")
   .split(",")
@@ -58,10 +64,41 @@ app.use((_req, res, next) => {
   );
   next();
 });
-app.use(express.json({ limit: "20mb" }));
-app.use(express.urlencoded({ extended: true, limit: "20mb" }));
+// helmet baseline. CSP for the API itself is intentionally strict — the API
+// returns JSON, never inline scripts/styles. The static frontend ships its
+// own CSP via index.html if/when it needs one.
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        "default-src": ["'none'"],
+        "frame-ancestors": ["'none'"],
+        "base-uri": ["'none'"],
+        "form-action": ["'none'"],
+      },
+    },
+    crossOriginResourcePolicy: { policy: "same-site" },
+    referrerPolicy: { policy: "same-origin" },
+    strictTransportSecurity: {
+      maxAge: 31536000, // 1 year
+      includeSubDomains: true,
+      preload: false,
+    },
+    // We already set X-Robots-Tag explicitly above; helmet doesn't.
+  }),
+);
+// Tight global body limit. Routes that legitimately accept large payloads
+// (audience uploads) override this with a per-route express.json({limit}).
+app.use(express.json({ limit: "256kb" }));
+app.use(express.urlencoded({ extended: true, limit: "256kb" }));
 app.use(sessionMiddleware);
 app.use(attachUser);
+// Re-apply the per-role session TTL on every request. With rolling sessions,
+// express-session resets cookie.maxAge to the middleware default on every
+// response, which would otherwise silently re-extend super_admin sessions
+// from 4h back to 12h. Must run AFTER attachUser.
+app.use(applyRoleSessionTtl);
 
 // Block all API access (except a small allowlist) for users who must change their password.
 const passwordChangeAllowlist = new Set([

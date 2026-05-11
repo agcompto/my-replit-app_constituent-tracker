@@ -15,7 +15,9 @@ import {
   checkChangePasswordRate,
   recordChangePasswordFailure,
   recordChangePasswordSuccess,
+  checkForgotPasswordPerIp,
 } from "../lib/rateLimit";
+import { SESSION_TTL_MS } from "../lib/session";
 import {
   getLockoutState,
   recordLoginFailureForUser,
@@ -108,19 +110,36 @@ router.post("/auth/login", async (req, res): Promise<void> => {
 
   recordLoginSuccess(rateKey);
   await clearLoginFailures(u.id);
-  req.session.userId = u.id;
-  const session = await loadUser(u.id);
-  if (!session) {
+  const sessionUser = await loadUser(u.id);
+  if (!sessionUser) {
     res.status(401).json({ error: "Invalid credentials" });
     return;
   }
+
+  // Regenerate the session ID across the unauth → auth boundary to defeat
+  // session fixation. Then write the new userId/lastAuthAt and apply the
+  // per-role TTL.
+  await new Promise<void>((resolve, reject) => {
+    req.session.regenerate((err) => (err ? reject(err) : resolve()));
+  });
+  req.session.userId = u.id;
+  req.session.lastAuthAt = Date.now();
+  const ttl =
+    sessionUser.role === "super_admin"
+      ? SESSION_TTL_MS.super_admin
+      : SESSION_TTL_MS.default;
+  req.session.cookie.maxAge = ttl;
+  await new Promise<void>((resolve, reject) => {
+    req.session.save((err) => (err ? reject(err) : resolve()));
+  });
+
   await audit({
-    actor: session,
+    actor: sessionUser,
     action: "login",
     entityType: "user",
     entityId: u.id,
   });
-  res.json(session);
+  res.json(sessionUser);
 });
 
 router.post("/auth/logout", (req, res): void => {
@@ -218,6 +237,10 @@ router.post(
       .set({ passwordHash, mustChangePassword: false })
       .where(eq(usersTable.id, userId));
     await clearLoginFailures(userId);
+    // Successful password change re-authenticates the user — bump the
+    // freshness timestamp so they don't get re-prompted immediately when
+    // performing a sensitive operation right after.
+    req.session.lastAuthAt = Date.now();
     await audit({
       actor: req.currentUser!,
       action: "change_own_password",
@@ -243,6 +266,17 @@ router.post("/auth/forgot-password", async (req, res): Promise<void> => {
   }
   const email = parsed.data.email.toLowerCase().trim();
   const ip = req.ip ?? "unknown";
+
+  // Per-IP cap layered on top of the per-(email,ip) bucket. Stops one IP
+  // from fanning out across many emails to enumerate accounts or run up
+  // the email-provider bill. We still respond 204 either way — never
+  // reveal whether a request was throttled vs accepted.
+  const ipRate = checkForgotPasswordPerIp(ip);
+  if (!ipRate.allowed) {
+    res.status(204).end();
+    return;
+  }
+
   const rateKey = `forgot|${email}|${ip}`;
   const rate = checkLoginRate(rateKey);
   if (!rate.allowed) {

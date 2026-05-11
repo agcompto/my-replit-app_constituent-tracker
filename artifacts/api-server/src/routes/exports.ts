@@ -8,6 +8,7 @@ import {
   GetCampaignExportManifestParams,
 } from "@workspace/api-zod";
 import { requireAuth, audit, canMutateCampaign } from "../lib/auth";
+import { checkExportQuota } from "../lib/rateLimit";
 import {
   buildPerTouchExports,
   computeThresholdPreview,
@@ -93,10 +94,25 @@ router.post("/campaigns/:id/export", requireAuth, async (req, res): Promise<void
     res.status(400).json({ error: params.error.message });
     return;
   }
+  // Authorize first so the rate-limit response can never act as an
+  // existence/permission oracle for campaigns the caller can't see.
   const access = await canMutateCampaign(params.data.id, req.currentUser!);
   if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
   if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
     if (access === "voided") { res.status(403).json({ error: "Cannot modify a voided campaign" }); return; }
+  // Per-user export quota: 20/hour. Defends against an account-takeover
+  // dump-and-run on the audience CSVs.
+  const quota = checkExportQuota(req.currentUser!.id);
+  if (!quota.allowed) {
+    res
+      .status(429)
+      .setHeader("Retry-After", String(quota.retryAfterSec))
+      .json({
+        error: `Export quota reached. Try again in ${Math.ceil(quota.retryAfterSec / 60)} minutes.`,
+        code: "export_quota_exceeded",
+      });
+    return;
+  }
   // Block export if the health check finds any errors; snapshot the result
   // either way so the audit record can show what was true at export time.
   const health = await computeHealthCheck(params.data.id);

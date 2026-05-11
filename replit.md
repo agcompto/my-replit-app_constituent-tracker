@@ -59,6 +59,16 @@ Responses to `POST /users` and `POST /users/:id/reset-password` return `{ invite
 - Email + URL building: `artifacts/api-server/src/lib/email.ts`, `lib/appUrl.ts`
 - Web app: `artifacts/touchpoint-planner/src/` (setup-link pages: `pages/forgot-password.tsx`, `pages/setup-password.tsx`)
 
+## Hardening (May 2026 bundle)
+
+- **HTTP headers** — `helmet` is enabled with a strict API CSP (`default-src 'none'`, `frame-ancestors 'none'`), HSTS 1y/includeSubDomains, `Referrer-Policy: same-origin`, `nosniff`, `Cross-Origin-Resource-Policy: same-site`, plus the existing `X-Robots-Tag`. `X-Powered-By` is disabled.
+- **Body limits** — global `express.json({ limit: "256kb" })`. Only `POST /campaigns/:id/audience` opts into 20mb via a per-route `express.json({ limit: "20mb" })` parser.
+- **Session hardening** — `sameSite: "strict"`, `path: "/api"` on the cookie. Per-role TTL: super_admin 4h, others 12h. `req.session.regenerate()` is called on successful login and on `POST /password-setup/:token/complete` to defeat session fixation.
+- **Re-auth gate** — `lib/recentAuth.ts` exports `requireRecentAuth` (5-minute window, tracked via `req.session.lastAuthAt`). Wired into `DELETE /users/:id`, `DELETE /campaigns/:id`, and `PATCH /users/:id` when granting `super_admin`. Blocked requests return HTTP 403 with `code: "reauth_required"`.
+- **Pre-auth rate limits** — `POST /auth/forgot-password` adds a per-IP cap (10 / 15min) on top of the per-(email,ip) bucket; `GET /password-setup/:token` adds a per-IP cap (30 / 15min). Both still respond 204/404 either way to avoid leaking throttle state.
+- **Export quota** — `POST /campaigns/:id/export` is capped at 20 / hour / user via `checkExportQuota`. Returns 429 with `code: "export_quota_exceeded"` when exceeded.
+- **Audit-log integrity** — Postgres triggers `audit_log_no_update` and `audit_log_no_delete` block `UPDATE`/`DELETE` on `audit_log` even at the DB layer. Installed by `installAuditLogAppendOnlyTrigger()` on every boot (idempotent).
+
 ## Architecture decisions
 
 - Donor IDs are stored and rendered as 8-character zero-padded strings (text column).

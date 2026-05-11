@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import { sql } from "drizzle-orm";
 import { db, usersTable, campaignTypesTable, channelsTable, owningUnitsTable, appSettingsTable, suppressionReasonCodesTable, thresholdTemplatesTable } from "@workspace/db";
 import { logger } from "./logger";
 import { generateTempPassword } from "./password";
@@ -53,7 +54,39 @@ const DEFAULT_OWNING_UNITS = [
   "Wilson College of Textiles",
 ];
 
+/** Install (or reinstall) a Postgres trigger that blocks UPDATE and DELETE on
+ *  the audit_log table. Idempotent — safe to run on every boot. Even an
+ *  attacker with full app DB privileges cannot tamper with audit history
+ *  without first dropping the trigger, which would itself be visible. */
+async function installAuditLogAppendOnlyTrigger(): Promise<void> {
+  await db.execute(sql`
+    CREATE OR REPLACE FUNCTION audit_log_append_only()
+    RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      RAISE EXCEPTION 'audit_log is append-only (% not allowed)', TG_OP;
+    END;
+    $$;
+  `);
+  await db.execute(sql`
+    DROP TRIGGER IF EXISTS audit_log_no_update ON audit_log;
+  `);
+  await db.execute(sql`
+    CREATE TRIGGER audit_log_no_update
+      BEFORE UPDATE ON audit_log
+      FOR EACH ROW EXECUTE FUNCTION audit_log_append_only();
+  `);
+  await db.execute(sql`
+    DROP TRIGGER IF EXISTS audit_log_no_delete ON audit_log;
+  `);
+  await db.execute(sql`
+    CREATE TRIGGER audit_log_no_delete
+      BEFORE DELETE ON audit_log
+      FOR EACH ROW EXECUTE FUNCTION audit_log_append_only();
+  `);
+}
+
 export async function seedDefaults(): Promise<void> {
+  await installAuditLogAppendOnlyTrigger();
   // Default super admin. The account is created with a random unguessable
   // password the operator never sees — they MUST complete the setup link to
   // sign in. The link is emailed when BOOTSTRAP_ADMIN_EMAIL + Resend are

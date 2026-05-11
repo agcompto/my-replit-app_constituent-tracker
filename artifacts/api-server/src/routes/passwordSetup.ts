@@ -5,12 +5,23 @@ import { db, usersTable, auditLogTable, passwordSetupTokensTable } from "@worksp
 import { ValidatePasswordSetupTokenParams, CompletePasswordSetupParams, CompletePasswordSetupBody } from "@workspace/api-zod";
 import { validateSetupToken } from "../lib/passwordSetupTokens";
 import { validatePasswordPolicy } from "../lib/passwordPolicy";
+import { checkPasswordSetupGetPerIp } from "../lib/rateLimit";
 
 const router: IRouter = Router();
 
 router.get(
   "/password-setup/:token",
   async (req, res): Promise<void> => {
+    // Per-IP rate limit. Tokens are 256-bit so brute-force is infeasible
+    // regardless, but this stops scanning noise and keeps the lookup
+    // cheap. Always respond as if the token is missing — never reveal
+    // throttling state.
+    const ip = req.ip ?? "unknown";
+    const ipRate = checkPasswordSetupGetPerIp(ip);
+    if (!ipRate.allowed) {
+      res.status(404).json({ error: "This link is invalid or has expired." });
+      return;
+    }
     const params = ValidatePasswordSetupTokenParams.safeParse(req.params);
     if (!params.success) {
       res.status(400).json({ error: "Invalid request" });
@@ -105,6 +116,21 @@ router.post(
     if (!ok) {
       res.status(404).json({ error: "This link is invalid or has expired." });
       return;
+    }
+
+    // Regenerate any in-flight session to defeat fixation, then mark the
+    // user as freshly password-authenticated for the re-auth gate. We
+    // intentionally do NOT log them in — they still need to sign in via
+    // the login route — but if they were logged in already (rare), the
+    // session ID is rotated.
+    if (req.session) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          req.session.regenerate((err) => (err ? reject(err) : resolve()));
+        });
+      } catch {
+        // Non-fatal — the password change itself succeeded.
+      }
     }
 
     res.status(204).end();

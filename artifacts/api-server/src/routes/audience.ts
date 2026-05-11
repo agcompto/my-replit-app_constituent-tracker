@@ -1,4 +1,4 @@
-import { Router, type IRouter } from "express";
+import express, { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db, audienceDonorsTable, campaignsTable, uploadJobsTable, appSettingsTable } from "@workspace/db";
 import { UploadAudienceParams, UploadAudienceBody, GetAudienceSummaryParams } from "@workspace/api-zod";
@@ -12,7 +12,11 @@ async function googleSheetImportAllowed(): Promise<boolean> {
 
 const router: IRouter = Router();
 
-router.post("/campaigns/:id/audience", requireAuth, async (req, res): Promise<void> => {
+// Audience uploads accept large pasted CSVs / Google Sheet exports — allow
+// up to 20 MB on this route only. The global app-wide JSON limit is 256 kb.
+const audienceUploadParser = express.json({ limit: "20mb" });
+
+router.post("/campaigns/:id/audience", requireAuth, audienceUploadParser, async (req, res): Promise<void> => {
   const params = UploadAudienceParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

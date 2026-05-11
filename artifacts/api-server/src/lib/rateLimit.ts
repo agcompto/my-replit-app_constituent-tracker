@@ -122,6 +122,26 @@ export function checkAiPerMinute(userId: number): RateLimitResult {
   return checkSlidingRate(`ai|user|${userId}`, 10, 60_000);
 }
 
+// Forgot-password per-IP cap: 10 requests / 15 minutes. Layered on top of
+// the per-(email,ip) login bucket so an attacker can't fan out across many
+// emails from one IP to enumerate / spam Resend.
+export function checkForgotPasswordPerIp(ip: string): RateLimitResult {
+  return checkSlidingRate(`forgot|ip|${ip}`, 10, 15 * 60_000);
+}
+
+// Password-setup link validation per-IP cap: 30 GETs / 15 minutes. Tokens
+// are 256-bit so brute force is infeasible regardless, but this stops noisy
+// scanning and keeps the DB lookup cheap.
+export function checkPasswordSetupGetPerIp(ip: string): RateLimitResult {
+  return checkSlidingRate(`pwsetup-get|ip|${ip}`, 30, 15 * 60_000);
+}
+
+// Per-user export quota: 20 exports / hour. Defends against an
+// account-takeover dump-and-run on the audience CSVs.
+export function checkExportQuota(userId: number): RateLimitResult {
+  return checkSlidingRate(`export|user|${userId}`, 20, 60 * 60_000);
+}
+
 // Periodic cleanup
 setInterval(() => {
   const now = Date.now();

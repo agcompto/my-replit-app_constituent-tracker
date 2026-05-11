@@ -11,6 +11,7 @@ import {
   DeleteCampaignParams,
 } from "@workspace/api-zod";
 import { requireAuth, requireRole, audit, canMutateCampaign } from "../lib/auth";
+import { requireRecentAuth } from "../lib/recentAuth";
 import { loadCampaignFull, loadCampaignSummary, setCampaignTypes } from "../lib/campaigns";
 
 const router: IRouter = Router();
@@ -262,6 +263,7 @@ router.post(
 router.delete(
   "/campaigns/:id",
   requireRole("super_admin"),
+  requireRecentAuth,
   async (req, res): Promise<void> => {
     const params = DeleteCampaignParams.safeParse(req.params);
     if (!params.success) {

@@ -49,7 +49,11 @@ The system stores and returns donor IDs, campaign metadata, touchpoint history, 
 
 ### Denial of Service
 
-Audience upload and export flows can process large donor lists and write many database rows. The application must keep request sizes bounded, avoid unauthenticated expensive operations, and ensure login abuse is rate-limited enough for production deployment.
+Audience upload and export flows can process large donor lists and write many database rows. The application must keep request sizes bounded, avoid unauthenticated expensive operations, and ensure login abuse is rate-limited enough for production deployment. Concrete defenses: the global request body is capped at 256 kb (only audience uploads opt into 20 MB); `POST /auth/forgot-password` is per-IP rate-limited (10 / 15 min) on top of the per-(email,ip) bucket; `GET /password-setup/:token` is per-IP rate-limited (30 / 15 min); `POST /campaigns/:id/export` is capped at 20 exports / hour / user to defend against an account-takeover dump-and-run on the audience CSVs.
+
+### Audit Integrity
+
+`audit_log` is enforced as append-only **at the database layer** by Postgres triggers `audit_log_no_update` and `audit_log_no_delete`, installed by `installAuditLogAppendOnlyTrigger()` on every boot. Even an attacker with full app DB privileges cannot tamper with audit history without first dropping the trigger, which would itself be a visible schema change.
 
 ### AI Provider Boundary
 
@@ -74,6 +78,14 @@ defense-in-depth at three layers:
 AI usage is rate-limited per user per minute and recorded in the `ai_usage`
 table for auditability and budget review. AI routes also write `audit_log`
 entries (`ai_audience_summary`, `ai_suggest_cadence`, `ai_classify_reason`).
+
+### Transport & Browser Hardening
+
+The API ships strict HTTP security headers via `helmet`: `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`, `Strict-Transport-Security` (1 year, `includeSubDomains`), `Referrer-Policy: same-origin`, `X-Content-Type-Options: nosniff`, `Cross-Origin-Resource-Policy: same-site`, and an explicit `X-Robots-Tag` on every response. `X-Powered-By` is disabled. Session cookies are `httpOnly`, `secure` (in production), `sameSite=strict`, scoped to `path=/api`. The global JSON body limit is 256 kb; the audience-upload route opts into 20 MB via a per-route parser so a forgotten body-size check on a new endpoint cannot accidentally accept a 20 MB payload. Session IDs are regenerated on the unauth → auth boundary at login and on password-setup completion to defeat session fixation. Per-role session TTLs (4h for `super_admin`, 12h otherwise) shrink the window of a stolen session for the most privileged accounts.
+
+### Re-Authentication for Destructive Actions
+
+Hard deletes (`DELETE /users/:id`, `DELETE /campaigns/:id`) and grants of `super_admin` (via `PATCH /users/:id`) require a fresh password authentication within the last 5 minutes (`requireRecentAuth`, tracked via `req.session.lastAuthAt`). Blocked requests return HTTP 403 with `code: "reauth_required"` so the frontend can prompt the user to re-enter their password. This raises the bar for an attacker with a stolen session cookie or unattended workstation: even with a valid session, they cannot escalate or destroy data without also producing the user's password.
 
 ### Elevation of Privilege
 

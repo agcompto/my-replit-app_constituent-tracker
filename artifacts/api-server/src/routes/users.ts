@@ -11,6 +11,7 @@ import {
   ResendInviteParams,
 } from "@workspace/api-zod";
 import { requireRole, audit } from "../lib/auth";
+import { requireRecentAuth, RECENT_AUTH_WINDOW_MS } from "../lib/recentAuth";
 import { generateTempPassword } from "../lib/password";
 import { sendPasswordSetupLink, isEmailConfigured } from "../lib/email";
 import { issueSetupToken } from "../lib/passwordSetupTokens";
@@ -163,6 +164,20 @@ router.patch(
     if (body.data.role === "super_admin" && req.currentUser!.role !== "super_admin") {
       res.status(403).json({ error: "Only super admins can grant super_admin" });
       return;
+    }
+    // Granting super_admin requires a fresh password authentication
+    // (re-auth within the last 5 minutes). Other edits — name, active
+    // flag, downgrades — go through unguarded. Email is not editable
+    // via this route.
+    if (body.data.role === "super_admin") {
+      const last = req.session?.lastAuthAt;
+      if (!last || Date.now() - last > RECENT_AUTH_WINDOW_MS) {
+        res.status(403).json({
+          error: "Please re-enter your password to confirm this action.",
+          code: "reauth_required",
+        });
+        return;
+      }
     }
     if (req.currentUser!.role !== "super_admin") {
       const [target] = await db
@@ -320,6 +335,7 @@ router.post(
 router.delete(
   "/users/:id",
   requireRole("super_admin"),
+  requireRecentAuth,
   async (req, res): Promise<void> => {
     const params = DeleteUserParams.safeParse(req.params);
     if (!params.success) {
