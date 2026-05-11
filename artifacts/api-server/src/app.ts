@@ -47,6 +47,17 @@ app.use(
     },
   }),
 );
+// Defense-in-depth: this app holds non-public constituent data and must never
+// appear in search engines or AI training corpora. Send a strong X-Robots-Tag
+// header on every API response in addition to the meta tag and robots.txt on
+// the static frontend.
+app.use((_req, res, next) => {
+  res.setHeader(
+    "X-Robots-Tag",
+    "noindex, nofollow, noarchive, nosnippet, noimageindex",
+  );
+  next();
+});
 app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ extended: true, limit: "20mb" }));
 app.use(sessionMiddleware);
