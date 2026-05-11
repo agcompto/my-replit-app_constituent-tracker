@@ -1,151 +1,205 @@
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
-import { eq } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { db, usersTable } from "@workspace/db";
 import {
   CreateUserBody,
   UpdateUserParams,
   UpdateUserBody,
   ResetUserPasswordParams,
+  DeleteUserParams,
+  ResendInviteParams,
 } from "@workspace/api-zod";
 import { requireRole, audit } from "../lib/auth";
 import { generateTempPassword } from "../lib/password";
-import { sendPasswordCredentials, isEmailConfigured } from "../lib/email";
+import { sendPasswordSetupLink, isEmailConfigured } from "../lib/email";
+import { issueSetupToken } from "../lib/passwordSetupTokens";
+import { buildSetupPasswordUrl } from "../lib/appUrl";
 
 const router: IRouter = Router();
 
-function publicAppUrl(): string | undefined {
-  const domains = process.env.REPLIT_DOMAINS;
-  if (!domains) return undefined;
-  return `https://${domains.split(",")[0].trim()}`;
+// Admin-issued invite/resend links are valid for 48h (onboarding flow).
+// Password resets — whether self-service or admin-triggered — are valid for
+// only 2h to keep the account-takeover window tight.
+const INVITE_TTL_HOURS = 48;
+const RESET_TTL_HOURS = 2;
+
+router.get(
+  "/users",
+  requireRole("admin", "super_admin"),
+  async (_req, res): Promise<void> => {
+    const rows = await db.select().from(usersTable).orderBy(usersTable.createdAt);
+    res.json(
+      rows.map((r) => ({
+        id: r.id,
+        email: r.email,
+        name: r.name,
+        role: r.role,
+        active: r.active,
+        createdAt: r.createdAt.toISOString(),
+      })),
+    );
+  },
+);
+
+/**
+ * Build the standard "invite/reset" response envelope. The setup URL is only
+ * surfaced when email delivery failed so the admin can hand-deliver the link;
+ * otherwise it stays out of the API response so it can't be intercepted from
+ * the admin's network logs.
+ */
+function inviteResponse(opts: {
+  inviteSent: boolean;
+  emailError?: string | null;
+  setupUrl: string;
+  expiresAt: Date;
+}) {
+  return {
+    inviteSent: opts.inviteSent,
+    emailError: opts.inviteSent ? null : opts.emailError ?? null,
+    setupUrl: opts.inviteSent ? null : opts.setupUrl,
+    expiresAt: opts.expiresAt.toISOString(),
+  };
 }
 
-router.get("/users", requireRole("admin", "super_admin"), async (_req, res): Promise<void> => {
-  const rows = await db.select().from(usersTable).orderBy(usersTable.createdAt);
-  res.json(
-    rows.map((r) => ({
-      id: r.id,
-      email: r.email,
-      name: r.name,
-      role: r.role,
-      active: r.active,
-      createdAt: r.createdAt.toISOString(),
-    })),
-  );
-});
-
-router.post("/users", requireRole("admin", "super_admin"), async (req, res): Promise<void> => {
-  const parsed = CreateUserBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
-    return;
-  }
-  const { email, name, role } = parsed.data;
-  if (role === "super_admin" && req.currentUser!.role !== "super_admin") {
-    res.status(403).json({ error: "Only super admins can create super admins" });
-    return;
-  }
-  const tempPassword = generateTempPassword();
-  const passwordHash = await bcrypt.hash(tempPassword, 10);
-  let createdUser;
-  try {
-    const [u] = await db
-      .insert(usersTable)
-      .values({
-        email: email.toLowerCase().trim(),
-        name,
-        role,
-        passwordHash,
-        mustChangePassword: true,
-      })
-      .returning();
-    createdUser = u;
-  } catch {
-    res.status(409).json({ error: "Email already exists" });
-    return;
-  }
-
-  const emailResult = isEmailConfigured()
-    ? await sendPasswordCredentials({
-        to: createdUser.email,
-        recipientName: createdUser.name,
-        tempPassword,
-        kind: "new_account",
-        triggeredBy: req.currentUser!.name,
-        appUrl: publicAppUrl(),
-      })
-    : { sent: false, error: "Email not configured" };
-
-  await audit({
-    actor: req.currentUser!,
-    action: "create_user",
-    entityType: "user",
-    entityId: createdUser.id,
-    details: `Created ${createdUser.email} as ${createdUser.role}; email_sent=${emailResult.sent}`,
-  });
-
-  res.status(201).json({
-    user: {
-      id: createdUser.id,
-      email: createdUser.email,
-      name: createdUser.name,
-      role: createdUser.role,
-      active: createdUser.active,
-      createdAt: createdUser.createdAt.toISOString(),
-    },
-    tempPassword,
-    emailSent: emailResult.sent,
-    emailError: emailResult.sent ? null : emailResult.error ?? null,
-  });
-});
-
-router.patch("/users/:id", requireRole("admin", "super_admin"), async (req, res): Promise<void> => {
-  const params = UpdateUserParams.safeParse(req.params);
-  if (!params.success) {
-    res.status(400).json({ error: params.error.message });
-    return;
-  }
-  const body = UpdateUserBody.safeParse(req.body);
-  if (!body.success) {
-    res.status(400).json({ error: body.error.message });
-    return;
-  }
-  if (body.data.role === "super_admin" && req.currentUser!.role !== "super_admin") {
-    res.status(403).json({ error: "Only super admins can grant super_admin" });
-    return;
-  }
-  if (req.currentUser!.role !== "super_admin") {
-    const [target] = await db.select({ role: usersTable.role }).from(usersTable).where(eq(usersTable.id, params.data.id));
-    if (target?.role === "super_admin") {
-      res.status(403).json({ error: "Admins cannot modify super_admin accounts" });
+router.post(
+  "/users",
+  requireRole("admin", "super_admin"),
+  async (req, res): Promise<void> => {
+    const parsed = CreateUserBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.message });
       return;
     }
-  }
-  const [u] = await db
-    .update(usersTable)
-    .set(body.data)
-    .where(eq(usersTable.id, params.data.id))
-    .returning();
-  if (!u) {
-    res.status(404).json({ error: "User not found" });
-    return;
-  }
-  await audit({
-    actor: req.currentUser!,
-    action: "update_user",
-    entityType: "user",
-    entityId: u.id,
-    details: JSON.stringify(body.data),
-  });
-  res.json({
-    id: u.id,
-    email: u.email,
-    name: u.name,
-    role: u.role,
-    active: u.active,
-    createdAt: u.createdAt.toISOString(),
-  });
-});
+    const { email, name, role } = parsed.data;
+    if (role === "super_admin" && req.currentUser!.role !== "super_admin") {
+      res.status(403).json({ error: "Only super admins can create super admins" });
+      return;
+    }
+
+    // Set a random unguessable password so the account can never be logged
+    // into until the user completes the setup-link flow. The password is not
+    // returned anywhere.
+    const placeholderHash = await bcrypt.hash(generateTempPassword(32), 10);
+
+    let createdUser;
+    try {
+      const [u] = await db
+        .insert(usersTable)
+        .values({
+          email: email.toLowerCase().trim(),
+          name,
+          role,
+          passwordHash: placeholderHash,
+          mustChangePassword: true,
+        })
+        .returning();
+      createdUser = u;
+    } catch {
+      res.status(409).json({ error: "Email already exists" });
+      return;
+    }
+
+    const { rawToken, expiresAt } = await issueSetupToken({
+      userId: createdUser.id,
+      kind: "invite",
+      createdByUserId: req.currentUser!.id,
+      ttlHours: INVITE_TTL_HOURS,
+    });
+    const setupUrl = buildSetupPasswordUrl(rawToken);
+
+    const emailResult = isEmailConfigured()
+      ? await sendPasswordSetupLink({
+          to: createdUser.email,
+          recipientName: createdUser.name,
+          url: setupUrl,
+          kind: "invite",
+          triggeredBy: req.currentUser!.name,
+          expiresInHours: INVITE_TTL_HOURS,
+        })
+      : { sent: false, error: "Email not configured" };
+
+    await audit({
+      actor: req.currentUser!,
+      action: "create_user",
+      entityType: "user",
+      entityId: createdUser.id,
+      details: `Created ${createdUser.email} as ${createdUser.role}; invite_sent=${emailResult.sent}`,
+    });
+
+    res.status(201).json({
+      user: {
+        id: createdUser.id,
+        email: createdUser.email,
+        name: createdUser.name,
+        role: createdUser.role,
+        active: createdUser.active,
+        createdAt: createdUser.createdAt.toISOString(),
+      },
+      ...inviteResponse({
+        inviteSent: emailResult.sent,
+        emailError: emailResult.error,
+        setupUrl,
+        expiresAt,
+      }),
+    });
+  },
+);
+
+router.patch(
+  "/users/:id",
+  requireRole("admin", "super_admin"),
+  async (req, res): Promise<void> => {
+    const params = UpdateUserParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const body = UpdateUserBody.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: body.error.message });
+      return;
+    }
+    if (body.data.role === "super_admin" && req.currentUser!.role !== "super_admin") {
+      res.status(403).json({ error: "Only super admins can grant super_admin" });
+      return;
+    }
+    if (req.currentUser!.role !== "super_admin") {
+      const [target] = await db
+        .select({ role: usersTable.role })
+        .from(usersTable)
+        .where(eq(usersTable.id, params.data.id));
+      if (target?.role === "super_admin") {
+        res.status(403).json({ error: "Admins cannot modify super_admin accounts" });
+        return;
+      }
+    }
+    const [u] = await db
+      .update(usersTable)
+      .set(body.data)
+      .where(eq(usersTable.id, params.data.id))
+      .returning();
+    if (!u) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+    await audit({
+      actor: req.currentUser!,
+      action: "update_user",
+      entityType: "user",
+      entityId: u.id,
+      details: JSON.stringify(body.data),
+    });
+    res.json({
+      id: u.id,
+      email: u.email,
+      name: u.name,
+      role: u.role,
+      active: u.active,
+      createdAt: u.createdAt.toISOString(),
+    });
+  },
+);
 
 router.post(
   "/users/:id/reset-password",
@@ -156,36 +210,32 @@ router.post(
       res.status(400).json({ error: params.error.message });
       return;
     }
-    if (req.currentUser!.role !== "super_admin") {
-      const [target] = await db
-        .select({ role: usersTable.role })
-        .from(usersTable)
-        .where(eq(usersTable.id, params.data.id));
-      if (target?.role === "super_admin") {
-        res.status(403).json({ error: "Admins cannot reset passwords for super_admin accounts" });
-        return;
-      }
-    }
-    const tempPassword = generateTempPassword();
-    const passwordHash = await bcrypt.hash(tempPassword, 10);
-    const [u] = await db
-      .update(usersTable)
-      .set({ passwordHash, mustChangePassword: true })
-      .where(eq(usersTable.id, params.data.id))
-      .returning();
+    const [u] = await db.select().from(usersTable).where(eq(usersTable.id, params.data.id));
     if (!u) {
       res.status(404).json({ error: "User not found" });
       return;
     }
+    if (req.currentUser!.role !== "super_admin" && u.role === "super_admin") {
+      res.status(403).json({ error: "Admins cannot reset passwords for super_admin accounts" });
+      return;
+    }
+
+    const { rawToken, expiresAt } = await issueSetupToken({
+      userId: u.id,
+      kind: "reset",
+      createdByUserId: req.currentUser!.id,
+      ttlHours: RESET_TTL_HOURS,
+    });
+    const setupUrl = buildSetupPasswordUrl(rawToken);
 
     const emailResult = isEmailConfigured()
-      ? await sendPasswordCredentials({
+      ? await sendPasswordSetupLink({
           to: u.email,
           recipientName: u.name,
-          tempPassword,
+          url: setupUrl,
           kind: "reset",
           triggeredBy: req.currentUser!.name,
-          appUrl: publicAppUrl(),
+          expiresInHours: RESET_TTL_HOURS,
         })
       : { sent: false, error: "Email not configured" };
 
@@ -194,14 +244,175 @@ router.post(
       action: "reset_password",
       entityType: "user",
       entityId: u.id,
-      details: `email_sent=${emailResult.sent}`,
+      details: `invite_sent=${emailResult.sent}`,
     });
 
-    res.json({
-      tempPassword,
-      emailSent: emailResult.sent,
-      emailError: emailResult.sent ? null : emailResult.error ?? null,
+    res.json(
+      inviteResponse({
+        inviteSent: emailResult.sent,
+        emailError: emailResult.error,
+        setupUrl,
+        expiresAt,
+      }),
+    );
+  },
+);
+
+router.post(
+  "/users/:id/resend-invite",
+  requireRole("admin", "super_admin"),
+  async (req, res): Promise<void> => {
+    const params = ResendInviteParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const [u] = await db.select().from(usersTable).where(eq(usersTable.id, params.data.id));
+    if (!u) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+    if (req.currentUser!.role !== "super_admin" && u.role === "super_admin") {
+      res.status(403).json({ error: "Admins cannot resend invites for super_admin accounts" });
+      return;
+    }
+    // Resending always issues an invite-kind token. If the user has already
+    // completed setup we still allow it — admins use this to re-onboard a
+    // user who lost access.
+    const { rawToken, expiresAt } = await issueSetupToken({
+      userId: u.id,
+      kind: "invite",
+      createdByUserId: req.currentUser!.id,
+      ttlHours: INVITE_TTL_HOURS,
     });
+    const setupUrl = buildSetupPasswordUrl(rawToken);
+
+    const emailResult = isEmailConfigured()
+      ? await sendPasswordSetupLink({
+          to: u.email,
+          recipientName: u.name,
+          url: setupUrl,
+          kind: "invite",
+          triggeredBy: req.currentUser!.name,
+          expiresInHours: INVITE_TTL_HOURS,
+        })
+      : { sent: false, error: "Email not configured" };
+
+    await audit({
+      actor: req.currentUser!,
+      action: "resend_invite",
+      entityType: "user",
+      entityId: u.id,
+      details: `invite_sent=${emailResult.sent}`,
+    });
+
+    res.json(
+      inviteResponse({
+        inviteSent: emailResult.sent,
+        emailError: emailResult.error,
+        setupUrl,
+        expiresAt,
+      }),
+    );
+  },
+);
+
+router.delete(
+  "/users/:id",
+  requireRole("super_admin"),
+  async (req, res): Promise<void> => {
+    const params = DeleteUserParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const targetId = params.data.id;
+    if (targetId === req.currentUser!.id) {
+      res.status(400).json({ error: "You cannot delete your own account." });
+      return;
+    }
+    const [target] = await db.select().from(usersTable).where(eq(usersTable.id, targetId));
+    if (!target) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+    // Refuse to delete the last remaining active super_admin.
+    if (target.role === "super_admin") {
+      const [{ count }] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(usersTable)
+        .where(
+          and(
+            eq(usersTable.role, "super_admin"),
+            eq(usersTable.active, true),
+            ne(usersTable.id, targetId),
+          ),
+        );
+      if ((count ?? 0) === 0) {
+        res
+          .status(400)
+          .json({ error: "Cannot delete the last active super_admin." });
+        return;
+      }
+    }
+
+    // Audit BEFORE deletion so the FK to users (audit_log.actor_user_id) is
+    // still satisfied for the actor; the entity row is being deleted, but the
+    // actor is the current admin (different user).
+    await audit({
+      actor: req.currentUser!,
+      action: "delete_user",
+      entityType: "user",
+      entityId: target.id,
+      details: `Deleted ${target.email} (${target.role})`,
+    });
+
+    // Some FKs from other tables to users.id are nullable without ON DELETE
+    // CASCADE (e.g. campaigns.submitted_by_user_id is NOT NULL). Detach those
+    // by reassigning to the deleting super_admin so the historical record is
+    // preserved without breaking integrity. Wrap the entire delete in a
+    // transaction so a mid-flight failure can't leave dangling rows or
+    // half-detached references.
+    const actorId = req.currentUser!.id;
+    await db.transaction(async (tx) => {
+      // Reassign owned records to the acting super_admin (NOT NULL FKs).
+      await tx.execute(sql`
+        UPDATE campaigns SET submitted_by_user_id = ${actorId}
+        WHERE submitted_by_user_id = ${targetId}
+      `);
+      await tx.execute(sql`
+        UPDATE export_jobs SET exported_by_user_id = ${actorId}
+        WHERE exported_by_user_id = ${targetId}
+      `);
+      await tx.execute(sql`
+        UPDATE upload_jobs SET uploaded_by_user_id = ${actorId}
+        WHERE uploaded_by_user_id = ${targetId}
+      `);
+      // Null out non-essential creator FKs.
+      await tx.execute(sql`
+        UPDATE audit_log SET actor_user_id = NULL WHERE actor_user_id = ${targetId}
+      `);
+      await tx.execute(sql`
+        UPDATE seed_groups SET created_by_user_id = NULL WHERE created_by_user_id = ${targetId}
+      `);
+      await tx.execute(sql`
+        UPDATE suppressions SET created_by_user_id = NULL WHERE created_by_user_id = ${targetId}
+      `);
+      await tx.execute(sql`
+        UPDATE campaign_health_checks SET created_by_user_id = NULL
+        WHERE created_by_user_id = ${targetId}
+      `);
+      // password_setup_tokens.user_id has ON DELETE CASCADE so the user's own
+      // tokens go away with them, but tokens *issued by* this admin against
+      // other users (created_by_user_id) have no cascade — null them.
+      await tx.execute(sql`
+        UPDATE password_setup_tokens SET created_by_user_id = NULL
+        WHERE created_by_user_id = ${targetId}
+      `);
+
+      await tx.delete(usersTable).where(eq(usersTable.id, targetId));
+    });
+    res.status(204).end();
   },
 );
 

@@ -8,6 +8,7 @@ import {
   UpdateCampaignBody,
   ArchiveCampaignParams,
   VoidCampaignParams,
+  DeleteCampaignParams,
 } from "@workspace/api-zod";
 import { requireAuth, requireRole, audit, canMutateCampaign } from "../lib/auth";
 import { loadCampaignFull, loadCampaignSummary, setCampaignTypes } from "../lib/campaigns";
@@ -255,6 +256,38 @@ router.post(
       return;
     }
     res.json(c);
+  },
+);
+
+router.delete(
+  "/campaigns/:id",
+  requireRole("super_admin"),
+  async (req, res): Promise<void> => {
+    const params = DeleteCampaignParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const [existing] = await db
+      .select({ id: campaignsTable.id, name: campaignsTable.name, status: campaignsTable.status })
+      .from(campaignsTable)
+      .where(eq(campaignsTable.id, params.data.id));
+    if (!existing) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    // Audit BEFORE delete (FK to campaign is nullable on audit_log via
+    // entity_id; row stays even after the campaign is gone).
+    await audit({
+      actor: req.currentUser!,
+      action: "delete_campaign",
+      entityType: "campaign",
+      entityId: existing.id,
+      details: `Permanently deleted "${existing.name}" (status=${existing.status})`,
+    });
+    // FKs from touches/audience/thresholds/etc. all cascade on delete.
+    await db.delete(campaignsTable).where(eq(campaignsTable.id, params.data.id));
+    res.status(204).end();
   },
 );
 

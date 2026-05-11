@@ -1,10 +1,20 @@
-import { useGetCampaign, useArchiveCampaign, useVoidCampaign, useAiAudienceSummary, useGetSettings, getGetCampaignQueryKey } from "@workspace/api-client-react";
+import { useGetCampaign, useArchiveCampaign, useVoidCampaign, useDeleteCampaign, useAiAudienceSummary, useGetSettings, getGetCampaignQueryKey } from "@workspace/api-client-react";
 import { useRoute, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { Loader2, ArrowLeft, Edit, Archive, Ban, Sparkles, RefreshCw } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Loader2, ArrowLeft, Edit, Archive, Ban, Sparkles, RefreshCw, Trash2, AlertTriangle } from "lucide-react";
 import { format } from "date-fns";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -24,6 +34,9 @@ export default function CampaignDetail() {
 
   const archiveMutation = useArchiveCampaign();
   const voidMutation = useVoidCampaign();
+  const deleteMutation = useDeleteCampaign();
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState("");
   const { data: settings } = useGetSettings();
   const aiSummaryMutation = useAiAudienceSummary();
   const { toast } = useToast();
@@ -41,6 +54,7 @@ export default function CampaignDetail() {
   };
 
   const isAdmin = me?.role === "admin" || me?.role === "super_admin";
+  const isSuperAdmin = me?.role === "super_admin";
   const isVoided = campaign?.status === "voided";
   const canEdit = campaign && !isVoided && (campaign.status !== "exported" || isAdmin);
 
@@ -95,8 +109,61 @@ export default function CampaignDetail() {
               <Button variant="destructive" onClick={handleVoid}><Ban className="h-4 w-4 mr-2" /> Void</Button>
             </>
           )}
+          {isSuperAdmin && (
+            <Button variant="outline" className="text-destructive border-destructive/40 hover:bg-destructive/10" onClick={() => setDeleteOpen(true)} data-testid="button-delete-campaign">
+              <Trash2 className="h-4 w-4 mr-2" /> Delete
+            </Button>
+          )}
         </div>
       </div>
+
+      <Dialog open={deleteOpen} onOpenChange={(v) => { if (!v) { setDeleteOpen(false); setDeleteConfirm(""); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete campaign permanently?</DialogTitle>
+            <DialogDescription>
+              This permanently removes <strong>{campaign.name}</strong> and all
+              of its audience uploads, touches, thresholds, suppressions,
+              seeds, and export history. The audit log entries are preserved.
+              This cannot be undone — most cases should use <em>Void</em>{" "}
+              instead.
+            </DialogDescription>
+          </DialogHeader>
+          {deleteMutation.error ? (
+            <div className="bg-destructive/10 text-destructive p-3 rounded-md text-sm flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>{(deleteMutation.error as any)?.data?.error || "Failed to delete campaign."}</span>
+            </div>
+          ) : null}
+          <div className="space-y-2">
+            <Label>Type the campaign name to confirm</Label>
+            <Input
+              value={deleteConfirm}
+              onChange={(e) => setDeleteConfirm(e.target.value)}
+              placeholder={campaign.name}
+              data-testid="input-delete-campaign-confirm"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => { setDeleteOpen(false); setDeleteConfirm(""); }} disabled={deleteMutation.isPending}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={deleteMutation.isPending || deleteConfirm !== campaign.name}
+              onClick={() => deleteMutation.mutate({ id }, {
+                onSuccess: () => {
+                  toast({ title: "Campaign deleted", description: `"${campaign.name}" has been permanently removed.` });
+                  setDeleteOpen(false);
+                  setDeleteConfirm("");
+                  setLocation("/campaigns");
+                },
+              })}
+              data-testid="button-confirm-delete-campaign"
+            >
+              {deleteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Delete Permanently"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {settings?.aiAssistEnabled && (
         <Card className="border-primary/30">

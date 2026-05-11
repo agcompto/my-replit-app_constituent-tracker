@@ -10,11 +10,12 @@ import { Form, FormControl, FormField, FormItem, FormMessage } from "@/component
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { PasswordStrengthMeter, evaluatePasswordStrength } from "@/components/password-strength";
 
 const schema = z
   .object({
     currentPassword: z.string().min(1, "Current password is required"),
-    newPassword: z.string().min(8, "Must be at least 8 characters"),
+    newPassword: z.string().min(12, "Must be at least 12 characters"),
     confirmPassword: z.string().min(1, "Please confirm your new password"),
   })
   .refine((d) => d.newPassword === d.confirmPassword, {
@@ -108,6 +109,11 @@ export default function ChangePassword() {
                     <Input type="password" autoComplete="new-password" {...field} />
                   </FormControl>
                   <FormMessage />
+                  <PasswordStrengthMeter
+                    password={field.value}
+                    email={user?.email}
+                    name={user?.name}
+                  />
                 </FormItem>
               )}
             />
@@ -124,7 +130,19 @@ export default function ChangePassword() {
                 </FormItem>
               )}
             />
-            <Button type="submit" className="w-full" size="lg" disabled={mutation.isPending}>
+            <Button
+              type="submit"
+              className="w-full"
+              size="lg"
+              disabled={
+                mutation.isPending ||
+                !evaluatePasswordStrength({
+                  password: form.watch("newPassword"),
+                  email: user?.email,
+                  name: user?.name,
+                }).meetsPolicy
+              }
+            >
               {mutation.isPending ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
               ) : (

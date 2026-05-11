@@ -147,6 +147,13 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/User" }
+    delete:
+      operationId: deleteUser
+      tags: [users]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: Deleted }
   /users/{id}/reset-password:
     post:
       operationId: resetUserPassword
@@ -164,6 +171,57 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PasswordResetResponse" }
+  /users/{id}/resend-invite:
+    post:
+      operationId: resendInvite
+      tags: [users]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InviteResponse" }
+  /auth/forgot-password:
+    post:
+      operationId: forgotPassword
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ForgotPasswordInput" }
+      responses:
+        "204": { description: "Always returned, regardless of whether the email exists." }
+  /password-setup/{token}:
+    get:
+      operationId: validatePasswordSetupToken
+      tags: [auth]
+      parameters:
+        - { name: token, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PasswordSetupTokenInfo" }
+        "404": { description: Invalid or expired }
+  /password-setup/{token}/complete:
+    post:
+      operationId: completePasswordSetup
+      tags: [auth]
+      parameters:
+        - { name: token, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CompletePasswordSetupInput" }
+      responses:
+        "204": { description: Password set; user can now sign in }
+        "400": { description: Password did not satisfy policy }
+        "404": { description: Invalid or expired }
 
   # ───────── Campaign types
   /campaign-types:
@@ -359,6 +417,13 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Campaign" }
+    delete:
+      operationId: deleteCampaign
+      tags: [campaigns]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: Deleted }
   /campaigns/{id}/archive:
     post:
       operationId: archiveCampaign
@@ -1184,21 +1249,49 @@ components:
     PasswordResetInput:
       type: object
       properties: {}
+    InviteResponse:
+      type: object
+      required: [inviteSent, expiresAt]
+      properties:
+        inviteSent:
+          type: boolean
+          description: True when the setup-link email was successfully delivered.
+        emailError:
+          type: ["string", "null"]
+          description: Reason email delivery failed; null on success.
+        setupUrl:
+          type: ["string", "null"]
+          description: One-time setup URL. Only returned when email delivery failed so the admin can hand-deliver the link.
+        expiresAt: { type: string, format: date-time }
     UserCreatedResponse:
       type: object
-      required: [user, tempPassword, emailSent]
+      required: [user, inviteSent, expiresAt]
       properties:
         user: { $ref: "#/components/schemas/User" }
-        tempPassword: { type: string, description: "Auto-generated temporary password. Show to admin once and rely on email delivery thereafter." }
-        emailSent: { type: boolean }
+        inviteSent: { type: boolean }
         emailError: { type: ["string", "null"] }
+        setupUrl: { type: ["string", "null"] }
+        expiresAt: { type: string, format: date-time }
     PasswordResetResponse:
+      $ref: "#/components/schemas/InviteResponse"
+    ForgotPasswordInput:
       type: object
-      required: [tempPassword, emailSent]
+      required: [email]
       properties:
-        tempPassword: { type: string }
-        emailSent: { type: boolean }
-        emailError: { type: ["string", "null"] }
+        email: { type: string, format: email }
+    PasswordSetupTokenInfo:
+      type: object
+      required: [email, name, kind, expiresAt]
+      properties:
+        email: { type: string }
+        name: { type: string }
+        kind: { type: string, enum: [invite, reset] }
+        expiresAt: { type: string, format: date-time }
+    CompletePasswordSetupInput:
+      type: object
+      required: [newPassword]
+      properties:
+        newPassword: { type: string, minLength: 12 }
 
     CampaignType:
       type: object

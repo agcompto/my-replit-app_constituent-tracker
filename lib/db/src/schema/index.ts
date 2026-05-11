@@ -22,12 +22,41 @@ export const usersTable = pgTable("users", {
   active: boolean("active").notNull().default(true),
   mustChangePassword: boolean("must_change_password").notNull().default(true),
   piiAcknowledgedAt: timestamp("pii_acknowledged_at", { withTimezone: true }),
+  // Persisted lockout state. Counted in addition to the IP-bucket rate-limiter
+  // so that a credential-stuffing attacker rotating IPs still gets locked out.
+  failedLoginAttempts: integer("failed_login_attempts").notNull().default(0),
+  lockedUntil: timestamp("locked_until", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .defaultNow()
     .$onUpdate(() => new Date()),
 });
+
+// ─────── Password setup / reset tokens
+// One-time tokens emailed to users to set their initial password (kind=invite)
+// or reset a forgotten password (kind=reset). The `tokenHash` is a SHA-256 of
+// the token; the raw token only exists in the email link, so a DB read alone
+// can't take over an account.
+export const passwordSetupTokensTable = pgTable(
+  "password_setup_tokens",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => usersTable.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull().unique(),
+    kind: text("kind").notNull(), // invite | reset
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdByUserId: integer("created_by_user_id").references(() => usersTable.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    userIdx: index("password_setup_tokens_user_idx").on(t.userId),
+    expiresIdx: index("password_setup_tokens_expires_idx").on(t.expiresAt),
+  }),
+);
 
 // ─────── Sessions (connect-pg-simple)
 export const sessionsTable = pgTable(

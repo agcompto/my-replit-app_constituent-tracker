@@ -1,5 +1,5 @@
 import { useLogin } from "@workspace/api-client-react";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -100,6 +100,11 @@ export default function Login() {
             >
               {loginMutation.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : "Sign In"}
             </Button>
+            <div className="text-center text-sm">
+              <Link href="/forgot-password" className="text-primary hover:underline" data-testid="link-forgot-password">
+                Forgot your password?
+              </Link>
+            </div>
           </form>
         </Form>
       </div>

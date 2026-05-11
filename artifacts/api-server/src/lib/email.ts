@@ -3,7 +3,6 @@ import { logger } from "./logger";
 
 let cached: Resend | null | undefined;
 
-/** Returns a configured Resend client, or null when the API key isn't set. */
 function getClient(): Resend | null {
   if (cached !== undefined) return cached;
   const key = process.env.RESEND_API_KEY;
@@ -17,10 +16,12 @@ function getClient(): Resend | null {
 
 export interface EmailResult {
   sent: boolean;
-  /** Message ID returned by the provider, when available. */
   messageId?: string;
-  /** Why the email could not be sent. Populated only when `sent === false`. */
   error?: string;
+}
+
+export function isEmailConfigured(): boolean {
+  return !!process.env.RESEND_API_KEY && !!process.env.EMAIL_FROM;
 }
 
 function escapeHtml(s: string): string {
@@ -32,90 +33,75 @@ function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
-interface SendCredentialsArgs {
+interface SetupLinkArgs {
   to: string;
   recipientName: string;
-  tempPassword: string;
-  /** "new account" emails read differently from "your password was reset" emails. */
-  kind: "new_account" | "reset";
-  /** Display name of the admin who triggered the action — shown in the email body. */
+  url: string;
+  /** "invite" for new accounts, "reset" for forgotten passwords or admin reset. */
+  kind: "invite" | "reset";
   triggeredBy?: string;
-  /** Public origin to link the recipient to the sign-in page. */
-  appUrl?: string;
+  /** Hours until the link expires; used for the "expires in X hours" line. */
+  expiresInHours: number;
 }
 
 /**
- * Send the recipient their temporary password. Returns `{ sent: false }` when
- * the email provider isn't configured so callers can fall back to surfacing the
- * password in the admin UI instead. Never throws — email failures must not
- * break the create-user / reset-password flow.
+ * Email a password-setup link to a user. Returns `{sent:false}` (never throws)
+ * when delivery fails so callers can fall back to surfacing the URL in the
+ * admin UI. The raw URL is the only sensitive value in the email; nothing is
+ * logged that would reveal user identity beyond the `messageId`.
  */
-export async function sendPasswordCredentials(
-  args: SendCredentialsArgs,
-): Promise<EmailResult> {
+export async function sendPasswordSetupLink(args: SetupLinkArgs): Promise<EmailResult> {
   const client = getClient();
-  if (!client) {
-    return { sent: false, error: "RESEND_API_KEY not configured" };
-  }
+  if (!client) return { sent: false, error: "RESEND_API_KEY not configured" };
   const from = process.env.EMAIL_FROM;
-  if (!from) {
-    return { sent: false, error: "EMAIL_FROM not configured" };
-  }
+  if (!from) return { sent: false, error: "EMAIL_FROM not configured" };
 
   const subject =
-    args.kind === "new_account"
-      ? "Your Constituent Touchpoint Planner account"
-      : "Your Constituent Touchpoint Planner password was reset";
+    args.kind === "invite"
+      ? "Set up your Constituent Touchpoint Planner account"
+      : "Reset your Constituent Touchpoint Planner password";
 
   const intro =
-    args.kind === "new_account"
+    args.kind === "invite"
       ? `An account has been created for you in the Constituent Touchpoint Planner${
           args.triggeredBy ? ` by ${escapeHtml(args.triggeredBy)}` : ""
-        }.`
-      : `Your Constituent Touchpoint Planner password was reset${
+        }. Use the secure link below to choose your password and sign in.`
+      : `A password reset was requested for your Constituent Touchpoint Planner account${
           args.triggeredBy ? ` by ${escapeHtml(args.triggeredBy)}` : ""
-        }.`;
+        }. Use the secure link below to choose a new password.`;
 
-  const signinLine = args.appUrl
-    ? `Sign in at <a href="${escapeHtml(args.appUrl)}">${escapeHtml(args.appUrl)}</a>.`
-    : "Sign in to the application using your email address and the password below.";
-
-  const safePass = escapeHtml(args.tempPassword);
+  const safeUrl = escapeHtml(args.url);
   const safeName = escapeHtml(args.recipientName || "there");
+  const cta = args.kind === "invite" ? "Set up password" : "Reset password";
 
   const html = `<!doctype html>
 <html><body style="font-family:system-ui,sans-serif;color:#111;line-height:1.5;max-width:560px;margin:0 auto;padding:24px">
   <h2 style="margin:0 0 12px;color:#cc0000">NC State Advancement</h2>
   <p>Hi ${safeName},</p>
   <p>${intro}</p>
-  <p>${signinLine}</p>
   <p style="margin:24px 0">
-    <strong>Email:</strong> ${escapeHtml(args.to)}<br>
-    <strong>Temporary password:</strong>
-    <code style="font-family:ui-monospace,Menlo,Consolas,monospace;background:#f3f3f3;padding:4px 8px;border-radius:4px;font-size:15px;letter-spacing:.5px">${safePass}</code>
+    <a href="${safeUrl}" style="background:#cc0000;color:#fff;text-decoration:none;padding:12px 20px;border-radius:6px;display:inline-block;font-weight:600">${cta}</a>
   </p>
-  <p>For security, you'll be required to set a new password the first time you sign in. This temporary password should not be shared.</p>
+  <p style="font-size:13px;color:#444">If the button doesn't work, copy and paste this URL into your browser:</p>
+  <p style="font-size:12px;color:#444;word-break:break-all"><a href="${safeUrl}">${safeUrl}</a></p>
+  <p style="font-size:13px;color:#444">This link expires in ${args.expiresInHours} hours and can be used only once.</p>
   <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
-  <p style="font-size:12px;color:#666">If you weren't expecting this email, please contact your administrator immediately.</p>
+  <p style="font-size:12px;color:#666">If you weren't expecting this email, you can safely ignore it — your account will not be changed.</p>
 </body></html>`;
 
   const text = [
     `Hi ${args.recipientName || "there"},`,
     "",
-    args.kind === "new_account"
+    args.kind === "invite"
       ? `An account has been created for you in the Constituent Touchpoint Planner${args.triggeredBy ? ` by ${args.triggeredBy}` : ""}.`
-      : `Your Constituent Touchpoint Planner password was reset${args.triggeredBy ? ` by ${args.triggeredBy}` : ""}.`,
-    args.appUrl ? `Sign in at: ${args.appUrl}` : "",
+      : `A password reset was requested for your Constituent Touchpoint Planner account${args.triggeredBy ? ` by ${args.triggeredBy}` : ""}.`,
     "",
-    `Email: ${args.to}`,
-    `Temporary password: ${args.tempPassword}`,
+    `${cta}: ${args.url}`,
     "",
-    "You will be required to set a new password on first sign-in. Do not share this password.",
+    `This link expires in ${args.expiresInHours} hours and can be used only once.`,
     "",
-    "If you weren't expecting this email, contact your administrator.",
-  ]
-    .filter(Boolean)
-    .join("\n");
+    "If you weren't expecting this email, you can safely ignore it.",
+  ].join("\n");
 
   try {
     const { data, error } = await client.emails.send({
@@ -126,18 +112,12 @@ export async function sendPasswordCredentials(
       text,
     });
     if (error) {
-      // Intentionally do not log recipient address — staff emails are PII.
-      logger.warn({ errName: error.name }, "Email send failed");
+      logger.warn({ errName: error.name }, "Setup-link email send failed");
       return { sent: false, error: error.message ?? "Email send failed" };
     }
     return { sent: true, messageId: data?.id };
   } catch (err) {
-    logger.warn({ errName: (err as Error).name }, "Email send threw");
+    logger.warn({ errName: (err as Error).name }, "Setup-link email send threw");
     return { sent: false, error: (err as Error).message };
   }
-}
-
-/** True when both RESEND_API_KEY and EMAIL_FROM are set. */
-export function isEmailConfigured(): boolean {
-  return !!process.env.RESEND_API_KEY && !!process.env.EMAIL_FROM;
 }

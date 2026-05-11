@@ -5,6 +5,8 @@
  * Constituent Touchpoint Planner API
  * OpenAPI spec version: 0.1.0
  */
-import type { InviteResponse } from "./inviteResponse";
 
-export type PasswordResetResponse = InviteResponse;
+export interface CompletePasswordSetupInput {
+  /** @minLength 12 */
+  newPassword: string;
+}

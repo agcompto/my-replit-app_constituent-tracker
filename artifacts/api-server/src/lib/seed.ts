@@ -2,6 +2,9 @@ import bcrypt from "bcryptjs";
 import { db, usersTable, campaignTypesTable, channelsTable, owningUnitsTable, appSettingsTable, suppressionReasonCodesTable, thresholdTemplatesTable } from "@workspace/db";
 import { logger } from "./logger";
 import { generateTempPassword } from "./password";
+import { issueSetupToken } from "./passwordSetupTokens";
+import { sendPasswordSetupLink, isEmailConfigured } from "./email";
+import { buildSetupPasswordUrl } from "./appUrl";
 
 const DEFAULT_CHANNELS = [
   "Email",
@@ -51,33 +54,74 @@ const DEFAULT_OWNING_UNITS = [
 ];
 
 export async function seedDefaults(): Promise<void> {
-  // Default super admin
+  // Default super admin. The account is created with a random unguessable
+  // password the operator never sees — they MUST complete the setup link to
+  // sign in. The link is emailed when BOOTSTRAP_ADMIN_EMAIL + Resend are
+  // configured; otherwise the link itself (NOT a password) is printed once
+  // to stderr. The link is one-time and short-lived, which is materially
+  // better than leaking a long-lived plaintext password.
   const existingUsers = await db.select({ id: usersTable.id }).from(usersTable).limit(1);
   if (existingUsers.length === 0) {
-    const bootstrapPassword = generateTempPassword(20);
-    const passwordHash = await bcrypt.hash(bootstrapPassword, 10);
-    await db.insert(usersTable).values({
-      email: "admin@example.com",
-      name: "Default Super Admin",
-      passwordHash,
-      role: "super_admin",
-      active: true,
-      mustChangePassword: true,
+    const placeholderHash = await bcrypt.hash(generateTempPassword(32), 10);
+    const adminEmail = (process.env.BOOTSTRAP_ADMIN_EMAIL ?? "admin@example.com")
+      .toLowerCase()
+      .trim();
+    const [created] = await db
+      .insert(usersTable)
+      .values({
+        email: adminEmail,
+        name: "Default Super Admin",
+        passwordHash: placeholderHash,
+        role: "super_admin",
+        active: true,
+        mustChangePassword: true,
+      })
+      .returning();
+
+    const ttlHours = 48;
+    const { rawToken } = await issueSetupToken({
+      userId: created.id,
+      kind: "invite",
+      ttlHours,
     });
-    logger.warn("BOOTSTRAP: Seeded initial super_admin account — retrieve temporary password from stderr.");
-    process.stderr.write(
-      [
-        "",
-        "========================================================",
-        " BOOTSTRAP: Initial super_admin account created",
-        `   Email:    admin@example.com`,
-        `   Password: ${bootstrapPassword}`,
-        " Log in immediately and change this password.",
-        " This message will not appear again.",
-        "========================================================",
-        "",
-      ].join("\n"),
-    );
+    const setupUrl = buildSetupPasswordUrl(rawToken);
+
+    let emailed = false;
+    if (process.env.BOOTSTRAP_ADMIN_EMAIL && isEmailConfigured()) {
+      const r = await sendPasswordSetupLink({
+        to: adminEmail,
+        recipientName: "Default Super Admin",
+        url: setupUrl,
+        kind: "invite",
+        expiresInHours: ttlHours,
+      });
+      emailed = r.sent;
+    }
+
+    if (emailed) {
+      logger.warn(
+        { adminEmail },
+        "BOOTSTRAP: Initial super_admin account created. Setup link emailed.",
+      );
+    } else {
+      logger.warn(
+        "BOOTSTRAP: Initial super_admin account created. Setup link below — open it once to choose a password.",
+      );
+      process.stderr.write(
+        [
+          "",
+          "========================================================",
+          " BOOTSTRAP: Initial super_admin account created",
+          `   Email:     ${adminEmail}`,
+          `   Setup URL: ${setupUrl}`,
+          ` This single-use link expires in ${ttlHours} hours.`,
+          " Set BOOTSTRAP_ADMIN_EMAIL + RESEND_API_KEY + EMAIL_FROM to",
+          " have the link emailed instead of printed.",
+          "========================================================",
+          "",
+        ].join("\n"),
+      );
+    }
   }
 
   const existingChannels = await db.select({ id: channelsTable.id }).from(channelsTable).limit(1);

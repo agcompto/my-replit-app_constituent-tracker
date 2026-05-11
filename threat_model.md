@@ -33,7 +33,7 @@ Constituent Touchpoint Planner is an internal web application for NC State Unive
 
 ### Spoofing
 
-The application relies on server-side sessions stored in PostgreSQL and password-based login. Session identifiers must be unpredictable, protected with secure cookie settings in production, and bound to legitimate login flows. Bootstrap behavior must not create predictable privileged accounts that allow an attacker to impersonate a trusted administrator.
+The application relies on server-side sessions stored in PostgreSQL and password-based login. Session identifiers must be unpredictable, protected with secure cookie settings in production, and bound to legitimate login flows. Bootstrap behavior must not create predictable privileged accounts that allow an attacker to impersonate a trusted administrator: the seeded super-admin starts with **no password** and is only usable via a one-time setup link printed once to the server log (or emailed when configured). Account-setup and password-reset rely on cryptographically random 256-bit tokens (32 bytes from `crypto.randomBytes`, base64url-encoded). Only the SHA-256 of the token is stored; the raw token is shown to the admin (or emailed) once and never persisted. Tokens are single-use and time-bounded (48 h for invites, 2 h for password resets); issuing a new token of the same kind invalidates any earlier live token. Password-based sign-in is throttled by per-user lockout (10 consecutive failures → 15-minute lock, persisted in `users.locked_until`) on top of per-IP rate limiting, raising the cost of credential-stuffing and brute-force attacks. Self-chosen passwords are validated against length, composition, and the HIBP k-anonymity breach corpus (only the SHA-1 prefix leaves the host) before being accepted.
 
 ### Tampering
 
@@ -45,7 +45,7 @@ Exports, uploads, settings changes, user administration, and destructive retenti
 
 ### Information Disclosure
 
-The system stores and returns donor IDs, campaign metadata, touchpoint history, reporting aggregates, and staff account details. Shared campaign visibility is intentional, but reporting feeds, export downloads, audit-style operational history, and any donor-level data must not leak beyond the role or ownership model defined by the product requirements. Logs and bootstrap messages must not disclose secrets or sensitive credentials.
+The system stores and returns donor IDs, campaign metadata, touchpoint history, reporting aggregates, and staff account details. Shared campaign visibility is intentional, but reporting feeds, export downloads, audit-style operational history, and any donor-level data must not leak beyond the role or ownership model defined by the product requirements. Logs and bootstrap messages must not disclose secrets or sensitive credentials. The forgot-password endpoint returns the same 204 response whether or not the email belongs to a real account, so an attacker cannot enumerate valid user emails through it. Password-setup token validation likewise treats unknown, expired, consumed, or inactive-user tokens identically to avoid creating a token oracle.
 
 ### Denial of Service
 
@@ -77,4 +77,4 @@ entries (`ai_audience_summary`, `ai_suggest_cadence`, `ai_classify_reason`).
 
 ### Elevation of Privilege
 
-This project has a sharp privilege boundary between `standard`, `admin`, and `super_admin`. The server must prevent lower-privileged users from granting themselves stronger roles, resetting higher-privileged accounts, reaching destructive retention features, or abusing bootstrap paths to obtain super-admin access.
+This project has a sharp privilege boundary between `standard`, `admin`, and `super_admin`. The server must prevent lower-privileged users from granting themselves stronger roles, resetting higher-privileged accounts, reaching destructive retention features, or abusing bootstrap paths to obtain super-admin access. Hard deletes (`DELETE /users/:id`, `DELETE /campaigns/:id`) are gated to `super_admin`; user delete additionally refuses self-deletion and refuses to remove the last remaining super-admin, and reassigns owned records to the acting super-admin so audit accountability is preserved. All privileged actions, including invite/resend/reset/delete, write to `audit_log` with the actor and target.

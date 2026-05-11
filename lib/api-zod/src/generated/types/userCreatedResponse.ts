@@ -9,9 +9,10 @@ import type { User } from "./user";
 
 export interface UserCreatedResponse {
   user: User;
-  /** Auto-generated temporary password. Show to admin once and rely on email delivery thereafter. */
-  tempPassword: string;
-  emailSent: boolean;
+  inviteSent: boolean;
   /** @nullable */
   emailError?: string | null;
+  /** @nullable */
+  setupUrl?: string | null;
+  expiresAt: Date;
 }

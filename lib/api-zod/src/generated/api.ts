@@ -101,6 +101,10 @@ export const UpdateUserResponse = zod.object({
   createdAt: zod.coerce.date(),
 });
 
+export const DeleteUserParams = zod.object({
+  id: zod.coerce.number(),
+});
+
 export const ResetUserPasswordParams = zod.object({
   id: zod.coerce.number(),
 });
@@ -108,9 +112,66 @@ export const ResetUserPasswordParams = zod.object({
 export const ResetUserPasswordBody = zod.object({}).passthrough();
 
 export const ResetUserPasswordResponse = zod.object({
-  tempPassword: zod.string(),
-  emailSent: zod.boolean(),
-  emailError: zod.string().nullish(),
+  inviteSent: zod
+    .boolean()
+    .describe("True when the setup-link email was successfully delivered."),
+  emailError: zod
+    .string()
+    .nullish()
+    .describe("Reason email delivery failed; null on success."),
+  setupUrl: zod
+    .string()
+    .nullish()
+    .describe(
+      "One-time setup URL. Only returned when email delivery failed so the admin can hand-deliver the link.",
+    ),
+  expiresAt: zod.coerce.date(),
+});
+
+export const ResendInviteParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ResendInviteResponse = zod.object({
+  inviteSent: zod
+    .boolean()
+    .describe("True when the setup-link email was successfully delivered."),
+  emailError: zod
+    .string()
+    .nullish()
+    .describe("Reason email delivery failed; null on success."),
+  setupUrl: zod
+    .string()
+    .nullish()
+    .describe(
+      "One-time setup URL. Only returned when email delivery failed so the admin can hand-deliver the link.",
+    ),
+  expiresAt: zod.coerce.date(),
+});
+
+export const ForgotPasswordBody = zod.object({
+  email: zod.string().email(),
+});
+
+export const ValidatePasswordSetupTokenParams = zod.object({
+  token: zod.coerce.string(),
+});
+
+export const ValidatePasswordSetupTokenResponse = zod.object({
+  email: zod.string(),
+  name: zod.string(),
+  kind: zod.enum(["invite", "reset"]),
+  expiresAt: zod.coerce.date(),
+});
+
+export const CompletePasswordSetupParams = zod.object({
+  token: zod.coerce.string(),
+});
+
+export const completePasswordSetupBodyNewPasswordMin = 12;
+
+export const CompletePasswordSetupBody = zod.object({
+  newPassword: zod.string().min(completePasswordSetupBodyNewPasswordMin),
 });
 
 export const ListCampaignTypesResponseItem = zod.object({
@@ -341,6 +402,10 @@ export const UpdateCampaignResponse = zod.object({
       systemDefault: zod.boolean(),
     }),
   ),
+});
+
+export const DeleteCampaignParams = zod.object({
+  id: zod.coerce.number(),
 });
 
 export const ArchiveCampaignParams = zod.object({

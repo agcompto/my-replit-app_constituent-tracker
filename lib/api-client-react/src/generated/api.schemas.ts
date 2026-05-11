@@ -89,20 +89,56 @@ export interface PasswordResetInput {
   [key: string]: unknown;
 }
 
-export interface UserCreatedResponse {
-  user: User;
-  /** Auto-generated temporary password. Show to admin once and rely on email delivery thereafter. */
-  tempPassword: string;
-  emailSent: boolean;
-  /** @nullable */
+export interface InviteResponse {
+  /** True when the setup-link email was successfully delivered. */
+  inviteSent: boolean;
+  /**
+   * Reason email delivery failed; null on success.
+   * @nullable
+   */
   emailError?: string | null;
+  /**
+   * One-time setup URL. Only returned when email delivery failed so the admin can hand-deliver the link.
+   * @nullable
+   */
+  setupUrl?: string | null;
+  expiresAt: string;
 }
 
-export interface PasswordResetResponse {
-  tempPassword: string;
-  emailSent: boolean;
+export interface UserCreatedResponse {
+  user: User;
+  inviteSent: boolean;
   /** @nullable */
   emailError?: string | null;
+  /** @nullable */
+  setupUrl?: string | null;
+  expiresAt: string;
+}
+
+export type PasswordResetResponse = InviteResponse;
+
+export interface ForgotPasswordInput {
+  email: string;
+}
+
+export type PasswordSetupTokenInfoKind =
+  (typeof PasswordSetupTokenInfoKind)[keyof typeof PasswordSetupTokenInfoKind];
+
+export const PasswordSetupTokenInfoKind = {
+  invite: "invite",
+  reset: "reset",
+} as const;
+
+export interface PasswordSetupTokenInfo {
+  email: string;
+  name: string;
+  kind: PasswordSetupTokenInfoKind;
+  expiresAt: string;
+}
+
+export interface CompletePasswordSetupInput {
+  /** @minLength 12 */
+  newPassword: string;
 }
 
 export interface CampaignType {

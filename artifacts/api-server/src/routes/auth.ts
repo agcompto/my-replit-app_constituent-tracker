@@ -2,7 +2,11 @@ import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { db, usersTable } from "@workspace/db";
-import { LoginBody, ChangeOwnPasswordBody } from "@workspace/api-zod";
+import {
+  LoginBody,
+  ChangeOwnPasswordBody,
+  ForgotPasswordBody,
+} from "@workspace/api-zod";
 import { loadUser, requireAuth, audit } from "../lib/auth";
 import {
   checkLoginRate,
@@ -12,8 +16,20 @@ import {
   recordChangePasswordFailure,
   recordChangePasswordSuccess,
 } from "../lib/rateLimit";
+import {
+  getLockoutState,
+  recordLoginFailureForUser,
+  clearLoginFailures,
+} from "../lib/lockout";
+import { validatePasswordPolicy } from "../lib/passwordPolicy";
+import { issueSetupToken } from "../lib/passwordSetupTokens";
+import { sendPasswordSetupLink, isEmailConfigured } from "../lib/email";
+import { buildSetupPasswordUrl } from "../lib/appUrl";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
+
+const FORGOT_PASSWORD_TTL_HOURS = 2;
 
 router.post("/auth/login", async (req, res): Promise<void> => {
   const parsed = LoginBody.safeParse(req.body);
@@ -43,6 +59,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     .select()
     .from(usersTable)
     .where(eq(usersTable.email, normalizedEmail));
+
   const sendAuthFailure = (r: { allowed: boolean; retryAfterSec: number }) => {
     if (!r.allowed) {
       res
@@ -60,12 +77,37 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     sendAuthFailure(recordLoginFailure(rateKey));
     return;
   }
+
+  // Persisted account lockout (independent of IP rotation).
+  const lock = await getLockoutState(u.id);
+  if (lock.locked) {
+    res
+      .status(429)
+      .setHeader("Retry-After", String(lock.retryAfterSec))
+      .json({
+        error: `This account is temporarily locked due to too many failed login attempts. Try again in ${Math.ceil(lock.retryAfterSec / 60)} minutes.`,
+      });
+    return;
+  }
+
   const ok = await bcrypt.compare(password, u.passwordHash);
   if (!ok) {
+    const accountLock = await recordLoginFailureForUser(u.id);
+    if (accountLock.locked) {
+      res
+        .status(429)
+        .setHeader("Retry-After", String(accountLock.retryAfterSec))
+        .json({
+          error: `This account is temporarily locked due to too many failed login attempts. Try again in ${Math.ceil(accountLock.retryAfterSec / 60)} minutes.`,
+        });
+      return;
+    }
     sendAuthFailure(recordLoginFailure(rateKey));
     return;
   }
+
   recordLoginSuccess(rateKey);
+  await clearLoginFailures(u.id);
   req.session.userId = u.id;
   const session = await loadUser(u.id);
   if (!session) {
@@ -159,11 +201,23 @@ router.post(
       return;
     }
     recordChangePasswordSuccess(userId, ip);
+
+    const policy = await validatePasswordPolicy({
+      password: newPassword,
+      email: u.email,
+      name: u.name,
+    });
+    if (!policy.ok) {
+      res.status(400).json({ error: policy.reason });
+      return;
+    }
+
     const passwordHash = await bcrypt.hash(newPassword, 10);
     await db
       .update(usersTable)
       .set({ passwordHash, mustChangePassword: false })
       .where(eq(usersTable.id, userId));
+    await clearLoginFailures(userId);
     await audit({
       actor: req.currentUser!,
       action: "change_own_password",
@@ -174,5 +228,59 @@ router.post(
     res.json(updated);
   },
 );
+
+/**
+ * "Forgot password" entry point. Always returns 204 — never reveals whether
+ * the email exists or whether a token was issued, to avoid an account
+ * enumeration oracle. Rate-limited per (email, ip) by reusing the login
+ * bucket.
+ */
+router.post("/auth/forgot-password", async (req, res): Promise<void> => {
+  const parsed = ForgotPasswordBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(204).end();
+    return;
+  }
+  const email = parsed.data.email.toLowerCase().trim();
+  const ip = req.ip ?? "unknown";
+  const rateKey = `forgot|${email}|${ip}`;
+  const rate = checkLoginRate(rateKey);
+  if (!rate.allowed) {
+    res.status(204).end();
+    return;
+  }
+  // Always count the attempt against the bucket so attackers can't fish
+  // freely.
+  recordLoginFailure(rateKey);
+
+  const [u] = await db
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.email, email));
+
+  if (u && u.active) {
+    try {
+      const { rawToken } = await issueSetupToken({
+        userId: u.id,
+        kind: "reset",
+        ttlHours: FORGOT_PASSWORD_TTL_HOURS,
+      });
+      const setupUrl = buildSetupPasswordUrl(rawToken);
+      if (isEmailConfigured()) {
+        await sendPasswordSetupLink({
+          to: u.email,
+          recipientName: u.name,
+          url: setupUrl,
+          kind: "reset",
+          expiresInHours: FORGOT_PASSWORD_TTL_HOURS,
+        });
+      }
+    } catch (err) {
+      logger.warn({ errName: (err as Error).name }, "forgot-password issue/email failed");
+    }
+  }
+
+  res.status(204).end();
+});
 
 export default router;

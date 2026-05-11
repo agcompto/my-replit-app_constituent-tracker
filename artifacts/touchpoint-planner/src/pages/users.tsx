@@ -4,6 +4,8 @@ import {
   useCreateUser,
   useUpdateUser,
   useResetUserPassword,
+  useResendInvite,
+  useDeleteUser,
   getListUsersQueryKey,
 } from "@workspace/api-client-react";
 import { useState } from "react";
@@ -57,6 +59,8 @@ import {
   Check,
   Mail,
   MailX,
+  Send,
+  Trash2,
 } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -71,13 +75,14 @@ type UserRow = {
   createdAt: string;
 };
 
-interface GeneratedCredentials {
+interface InviteResult {
   email: string;
   name: string;
-  tempPassword: string;
-  emailSent: boolean;
+  inviteSent: boolean;
   emailError?: string | null;
-  kind: "new_account" | "reset";
+  setupUrl?: string | null;
+  expiresAt: string;
+  kind: "invite" | "reset";
 }
 
 const createSchema = z.object({
@@ -98,7 +103,9 @@ export default function Users() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<UserRow | null>(null);
   const [resetting, setResetting] = useState<UserRow | null>(null);
-  const [credentials, setCredentials] = useState<GeneratedCredentials | null>(null);
+  const [resending, setResending] = useState<UserRow | null>(null);
+  const [deleting, setDeleting] = useState<UserRow | null>(null);
+  const [invite, setInvite] = useState<InviteResult | null>(null);
 
   const isAdmin = me?.role === "admin" || me?.role === "super_admin";
   const isSuperAdmin = me?.role === "super_admin";
@@ -122,7 +129,8 @@ export default function Users() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Users</h1>
           <p className="text-muted-foreground text-sm">
-            Manage system access and roles.
+            Manage system access and roles. New users receive a one-time email
+            link to set their password.
           </p>
         </div>
         <Button onClick={() => setCreateOpen(true)} data-testid="button-add-user">
@@ -154,6 +162,7 @@ export default function Users() {
                 users?.map((user) => {
                   const targetIsSuper = user.role === "super_admin";
                   const canManage = isSuperAdmin || !targetIsSuper;
+                  const isSelf = me?.id === user.id;
                   const disabledReason = canManage
                     ? undefined
                     : "Only a super admin can manage another super admin.";
@@ -178,7 +187,7 @@ export default function Users() {
                       <TableCell className="text-muted-foreground text-sm">
                         {format(new Date(user.createdAt), "MMM d, yyyy")}
                       </TableCell>
-                      <TableCell className="pr-6 text-right space-x-2">
+                      <TableCell className="pr-6 text-right space-x-1">
                         <Button
                           variant="ghost"
                           size="icon"
@@ -192,13 +201,39 @@ export default function Users() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          title={disabledReason ?? "Generate new temporary password"}
+                          title={disabledReason ?? "Resend setup link"}
+                          disabled={!canManage}
+                          onClick={() => setResending(user as UserRow)}
+                          data-testid={`button-resend-invite-${user.id}`}
+                        >
+                          <Send className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title={disabledReason ?? "Send password-reset link"}
                           disabled={!canManage}
                           onClick={() => setResetting(user as UserRow)}
                           data-testid={`button-reset-password-${user.id}`}
                         >
                           <KeyRound className="h-4 w-4" />
                         </Button>
+                        {isSuperAdmin && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title={
+                              isSelf
+                                ? "You cannot delete your own account."
+                                : "Delete user permanently"
+                            }
+                            disabled={isSelf}
+                            onClick={() => setDeleting(user as UserRow)}
+                            data-testid={`button-delete-user-${user.id}`}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   );
@@ -213,7 +248,7 @@ export default function Users() {
         open={createOpen}
         onOpenChange={setCreateOpen}
         isSuperAdmin={isSuperAdmin}
-        onCreated={(c) => setCredentials(c)}
+        onCreated={(c) => setInvite(c)}
       />
       <EditUserDialog
         user={editing}
@@ -223,11 +258,17 @@ export default function Users() {
       <ResetPasswordDialog
         user={resetting}
         onClose={() => setResetting(null)}
-        onReset={(c) => setCredentials(c)}
+        onReset={(c) => setInvite(c)}
       />
-      <CredentialsDialog
-        credentials={credentials}
-        onClose={() => setCredentials(null)}
+      <ResendInviteDialog
+        user={resending}
+        onClose={() => setResending(null)}
+        onResent={(c) => setInvite(c)}
+      />
+      <DeleteUserDialog user={deleting} onClose={() => setDeleting(null)} />
+      <InviteResultDialog
+        invite={invite}
+        onClose={() => setInvite(null)}
       />
     </div>
   );
@@ -242,7 +283,7 @@ function CreateUserDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
   isSuperAdmin: boolean;
-  onCreated: (c: GeneratedCredentials) => void;
+  onCreated: (c: InviteResult) => void;
 }) {
   const queryClient = useQueryClient();
   const mutation = useCreateUser();
@@ -260,10 +301,11 @@ function CreateUserDialog({
           onCreated({
             email: resp.user.email,
             name: resp.user.name,
-            tempPassword: resp.tempPassword,
-            emailSent: resp.emailSent,
+            inviteSent: resp.inviteSent,
             emailError: resp.emailError,
-            kind: "new_account",
+            setupUrl: resp.setupUrl,
+            expiresAt: resp.expiresAt,
+            kind: "invite",
           });
           form.reset();
           onOpenChange(false);
@@ -284,8 +326,8 @@ function CreateUserDialog({
         <DialogHeader>
           <DialogTitle>Add User</DialogTitle>
           <DialogDescription>
-            A secure temporary password will be generated automatically and emailed
-            to the user. They'll be required to change it on first sign-in.
+            A one-time setup link will be emailed to the user. They'll choose
+            their own password — admins never see or type passwords for users.
           </DialogDescription>
         </DialogHeader>
         {mutation.error && (
@@ -360,7 +402,7 @@ function CreateUserDialog({
                 {mutation.isPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  "Create User"
+                  "Create User & Send Invite"
                 )}
               </Button>
             </DialogFooter>
@@ -502,7 +544,7 @@ function ResetPasswordDialog({
 }: {
   user: UserRow | null;
   onClose: () => void;
-  onReset: (c: GeneratedCredentials) => void;
+  onReset: (c: InviteResult) => void;
 }) {
   const mutation = useResetUserPassword();
 
@@ -516,9 +558,10 @@ function ResetPasswordDialog({
           onReset({
             email: user.email,
             name: user.name,
-            tempPassword: resp.tempPassword,
-            emailSent: resp.emailSent,
+            inviteSent: resp.inviteSent,
             emailError: resp.emailError,
+            setupUrl: resp.setupUrl,
+            expiresAt: resp.expiresAt,
             kind: "reset",
           });
           onClose();
@@ -531,18 +574,17 @@ function ResetPasswordDialog({
     <Dialog open onOpenChange={(v) => !v && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Generate new temporary password?</DialogTitle>
+          <DialogTitle>Send password-reset link?</DialogTitle>
           <DialogDescription>
-            A new temporary password will be generated for{" "}
-            <strong>{user.email}</strong> and emailed to them. The current
-            password will stop working immediately, and they'll be required to
-            choose a new one on next sign-in.
+            A one-time link will be emailed to <strong>{user.email}</strong>.
+            They'll choose a new password through that link. Their existing
+            password will keep working until the new one is set.
           </DialogDescription>
         </DialogHeader>
         {mutation.error && (
           <ErrorBanner
             error={mutation.error}
-            fallback="Failed to reset password."
+            fallback="Failed to send reset link."
           />
         )}
         <DialogFooter>
@@ -562,7 +604,7 @@ function ResetPasswordDialog({
             {mutation.isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
-              "Generate & Email"
+              "Send Reset Link"
             )}
           </Button>
         </DialogFooter>
@@ -571,32 +613,198 @@ function ResetPasswordDialog({
   );
 }
 
-function CredentialsDialog({
-  credentials,
+function ResendInviteDialog({
+  user,
+  onClose,
+  onResent,
+}: {
+  user: UserRow | null;
+  onClose: () => void;
+  onResent: (c: InviteResult) => void;
+}) {
+  const mutation = useResendInvite();
+  if (!user) return null;
+  const onConfirm = () => {
+    mutation.mutate(
+      { id: user.id },
+      {
+        onSuccess: (resp) => {
+          onResent({
+            email: user.email,
+            name: user.name,
+            inviteSent: resp.inviteSent,
+            emailError: resp.emailError,
+            setupUrl: resp.setupUrl,
+            expiresAt: resp.expiresAt,
+            kind: "invite",
+          });
+          onClose();
+        },
+      },
+    );
+  };
+  return (
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Resend setup link?</DialogTitle>
+          <DialogDescription>
+            A new one-time setup link will be emailed to{" "}
+            <strong>{user.email}</strong>. Any previous unused setup link will
+            stop working.
+          </DialogDescription>
+        </DialogHeader>
+        {mutation.error && (
+          <ErrorBanner error={mutation.error} fallback="Failed to resend invite." />
+        )}
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={onClose}
+            disabled={mutation.isPending}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={onConfirm}
+            disabled={mutation.isPending}
+            data-testid="button-confirm-resend-invite"
+          >
+            {mutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              "Resend Invite"
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DeleteUserDialog({
+  user,
   onClose,
 }: {
-  credentials: GeneratedCredentials | null;
+  user: UserRow | null;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const mutation = useDeleteUser();
+  const [confirm, setConfirm] = useState("");
+  if (!user) return null;
+  const onConfirm = () => {
+    mutation.mutate(
+      { id: user.id },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListUsersQueryKey() });
+          toast({
+            title: "User deleted",
+            description: `${user.email} has been permanently removed.`,
+          });
+          setConfirm("");
+          onClose();
+        },
+      },
+    );
+  };
+  return (
+    <Dialog
+      open
+      onOpenChange={(v) => {
+        if (!v) {
+          setConfirm("");
+          onClose();
+        }
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Delete user permanently?</DialogTitle>
+          <DialogDescription>
+            This permanently removes <strong>{user.email}</strong> and revokes
+            all access. Their historical actions remain in the audit log
+            (without the actor link). Campaigns they own will be reassigned to
+            you. This cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        {mutation.error && (
+          <ErrorBanner error={mutation.error} fallback="Failed to delete user." />
+        )}
+        <div className="space-y-2">
+          <Label>
+            Type <code className="font-mono">{user.email}</code> to confirm
+          </Label>
+          <Input
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            data-testid="input-delete-confirm"
+            placeholder={user.email}
+          />
+        </div>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => {
+              setConfirm("");
+              onClose();
+            }}
+            disabled={mutation.isPending}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={mutation.isPending || confirm !== user.email}
+            onClick={onConfirm}
+            data-testid="button-confirm-delete-user"
+          >
+            {mutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              "Delete Permanently"
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function InviteResultDialog({
+  invite,
+  onClose,
+}: {
+  invite: InviteResult | null;
   onClose: () => void;
 }) {
   const { toast } = useToast();
   const [copied, setCopied] = useState(false);
 
-  if (!credentials) return null;
+  if (!invite) return null;
 
   const copy = async () => {
+    if (!invite.setupUrl) return;
     try {
-      await navigator.clipboard.writeText(credentials.tempPassword);
+      await navigator.clipboard.writeText(invite.setupUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-      toast({ title: "Password copied to clipboard" });
+      toast({ title: "Setup link copied to clipboard" });
     } catch {
       toast({
         title: "Could not copy",
-        description: "Select the password manually and copy it.",
+        description: "Select the link manually and copy it.",
         variant: "destructive",
       });
     }
   };
+
+  const title =
+    invite.kind === "invite" ? "Account created" : "Reset link generated";
 
   return (
     <Dialog
@@ -610,62 +818,57 @@ function CredentialsDialog({
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>
-            {credentials.kind === "new_account"
-              ? "Account created"
-              : "Password reset"}
-          </DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
-            {credentials.emailSent ? (
+            {invite.inviteSent ? (
               <span className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400">
-                <Mail className="h-4 w-4" /> Sent the temporary password to{" "}
-                <strong>{credentials.email}</strong>.
+                <Mail className="h-4 w-4" />
+                Setup link emailed to <strong>{invite.email}</strong>.
               </span>
             ) : (
               <span className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
-                <MailX className="h-4 w-4" /> Email was not sent
-                {credentials.emailError ? ` (${credentials.emailError})` : ""}.
-                Share this password with the user securely.
+                <MailX className="h-4 w-4" /> Email could not be delivered
+                {invite.emailError ? ` (${invite.emailError})` : ""}. Share the
+                link below with the user through a secure channel.
               </span>
             )}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3">
-          <div className="rounded-md border bg-muted/40 p-3 space-y-2">
-            <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              Temporary password
+        {invite.setupUrl && (
+          <div className="space-y-3">
+            <div className="rounded-md border bg-muted/40 p-3 space-y-2">
+              <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                One-time setup link
+              </div>
+              <div className="flex items-center gap-2">
+                <code
+                  className="flex-1 font-mono text-xs bg-background border rounded px-3 py-2 break-all select-all"
+                  data-testid="text-setup-url"
+                >
+                  {invite.setupUrl}
+                </code>
+                <Button
+                  size="icon"
+                  variant="outline"
+                  onClick={copy}
+                  title="Copy setup link"
+                  data-testid="button-copy-setup-url"
+                >
+                  {copied ? (
+                    <Check className="h-4 w-4 text-emerald-600" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Single use. Expires{" "}
+                {format(new Date(invite.expiresAt), "MMM d, yyyy 'at' h:mm a")}.
+              </p>
             </div>
-            <div className="flex items-center gap-2">
-              <code
-                className="flex-1 font-mono text-sm bg-background border rounded px-3 py-2 break-all select-all"
-                data-testid="text-temp-password"
-              >
-                {credentials.tempPassword}
-              </code>
-              <Button
-                size="icon"
-                variant="outline"
-                onClick={copy}
-                title="Copy password"
-                data-testid="button-copy-temp-password"
-              >
-                {copied ? (
-                  <Check className="h-4 w-4 text-emerald-600" />
-                ) : (
-                  <Copy className="h-4 w-4" />
-                )}
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              This is the only time the password will be shown.{" "}
-              {credentials.emailSent
-                ? "The user has also received it by email."
-                : "Email delivery is unavailable, so make sure to capture it now."}{" "}
-              The user will be required to set a new password on first sign-in.
-            </p>
           </div>
-        </div>
+        )}
 
         <DialogFooter>
           <Button onClick={onClose} data-testid="button-close-credentials">
