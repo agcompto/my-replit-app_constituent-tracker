@@ -47,7 +47,17 @@ import {
   FormItem,
   FormMessage,
 } from "@/components/ui/form";
-import { Loader2, Plus, Edit2, KeyRound, AlertTriangle } from "lucide-react";
+import {
+  Loader2,
+  Plus,
+  Edit2,
+  KeyRound,
+  AlertTriangle,
+  Copy,
+  Check,
+  Mail,
+  MailX,
+} from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 
@@ -61,11 +71,19 @@ type UserRow = {
   createdAt: string;
 };
 
+interface GeneratedCredentials {
+  email: string;
+  name: string;
+  tempPassword: string;
+  emailSent: boolean;
+  emailError?: string | null;
+  kind: "new_account" | "reset";
+}
+
 const createSchema = z.object({
   email: z.string().email("Invalid email address"),
   name: z.string().min(1, "Name is required"),
   role: z.enum(["standard", "admin", "super_admin"]),
-  password: z.string().min(8, "Must be at least 8 characters"),
 });
 
 const editSchema = z.object({
@@ -74,16 +92,13 @@ const editSchema = z.object({
   active: z.boolean(),
 });
 
-const resetSchema = z.object({
-  password: z.string().min(8, "Must be at least 8 characters"),
-});
-
 export default function Users() {
   const { data: users, isLoading } = useListUsers();
   const { data: me } = useGetMe();
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<UserRow | null>(null);
   const [resetting, setResetting] = useState<UserRow | null>(null);
+  const [credentials, setCredentials] = useState<GeneratedCredentials | null>(null);
 
   const isAdmin = me?.role === "admin" || me?.role === "super_admin";
   const isSuperAdmin = me?.role === "super_admin";
@@ -138,7 +153,6 @@ export default function Users() {
               ) : (
                 users?.map((user) => {
                   const targetIsSuper = user.role === "super_admin";
-                  // Admins (non-super) can't manage super_admin accounts (server enforces this too)
                   const canManage = isSuperAdmin || !targetIsSuper;
                   const disabledReason = canManage
                     ? undefined
@@ -178,7 +192,7 @@ export default function Users() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          title={disabledReason ?? "Reset password"}
+                          title={disabledReason ?? "Generate new temporary password"}
                           disabled={!canManage}
                           onClick={() => setResetting(user as UserRow)}
                           data-testid={`button-reset-password-${user.id}`}
@@ -199,6 +213,7 @@ export default function Users() {
         open={createOpen}
         onOpenChange={setCreateOpen}
         isSuperAdmin={isSuperAdmin}
+        onCreated={(c) => setCredentials(c)}
       />
       <EditUserDialog
         user={editing}
@@ -208,6 +223,11 @@ export default function Users() {
       <ResetPasswordDialog
         user={resetting}
         onClose={() => setResetting(null)}
+        onReset={(c) => setCredentials(c)}
+      />
+      <CredentialsDialog
+        credentials={credentials}
+        onClose={() => setCredentials(null)}
       />
     </div>
   );
@@ -217,28 +237,33 @@ function CreateUserDialog({
   open,
   onOpenChange,
   isSuperAdmin,
+  onCreated,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   isSuperAdmin: boolean;
+  onCreated: (c: GeneratedCredentials) => void;
 }) {
   const queryClient = useQueryClient();
-  const { toast } = useToast();
   const mutation = useCreateUser();
   const form = useForm<z.infer<typeof createSchema>>({
     resolver: zodResolver(createSchema),
-    defaultValues: { email: "", name: "", role: "standard", password: "" },
+    defaultValues: { email: "", name: "", role: "standard" },
   });
 
   const onSubmit = (data: z.infer<typeof createSchema>) => {
     mutation.mutate(
       { data },
       {
-        onSuccess: () => {
+        onSuccess: (resp) => {
           queryClient.invalidateQueries({ queryKey: getListUsersQueryKey() });
-          toast({
-            title: "User created",
-            description: `${data.email} will be required to change their password on first login.`,
+          onCreated({
+            email: resp.user.email,
+            name: resp.user.name,
+            tempPassword: resp.tempPassword,
+            emailSent: resp.emailSent,
+            emailError: resp.emailError,
+            kind: "new_account",
           });
           form.reset();
           onOpenChange(false);
@@ -259,8 +284,8 @@ function CreateUserDialog({
         <DialogHeader>
           <DialogTitle>Add User</DialogTitle>
           <DialogDescription>
-            Create a new user account. They'll be required to change the temporary
-            password on first sign-in.
+            A secure temporary password will be generated automatically and emailed
+            to the user. They'll be required to change it on first sign-in.
           </DialogDescription>
         </DialogHeader>
         {mutation.error && (
@@ -318,24 +343,6 @@ function CreateUserDialog({
                 </FormItem>
               )}
             />
-            <FormField
-              control={form.control}
-              name="password"
-              render={({ field }) => (
-                <FormItem>
-                  <Label>Temporary password</Label>
-                  <FormControl>
-                    <Input
-                      type="text"
-                      placeholder="Min. 8 characters"
-                      autoComplete="off"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
             <DialogFooter>
               <Button
                 type="button"
@@ -345,7 +352,11 @@ function CreateUserDialog({
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={mutation.isPending}>
+              <Button
+                type="submit"
+                disabled={mutation.isPending}
+                data-testid="button-submit-create-user"
+              >
                 {mutation.isPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
@@ -487,29 +498,29 @@ function EditUserDialog({
 function ResetPasswordDialog({
   user,
   onClose,
+  onReset,
 }: {
   user: UserRow | null;
   onClose: () => void;
+  onReset: (c: GeneratedCredentials) => void;
 }) {
-  const { toast } = useToast();
   const mutation = useResetUserPassword();
-  const form = useForm<z.infer<typeof resetSchema>>({
-    resolver: zodResolver(resetSchema),
-    defaultValues: { password: "" },
-  });
 
   if (!user) return null;
 
-  const onSubmit = (data: z.infer<typeof resetSchema>) => {
+  const onConfirm = () => {
     mutation.mutate(
-      { id: user.id, data },
+      { id: user.id, data: {} },
       {
-        onSuccess: () => {
-          toast({
-            title: "Password reset",
-            description: `${user.email} will be required to set a new password on next sign-in.`,
+        onSuccess: (resp) => {
+          onReset({
+            email: user.email,
+            name: user.name,
+            tempPassword: resp.tempPassword,
+            emailSent: resp.emailSent,
+            emailError: resp.emailError,
+            kind: "reset",
           });
-          form.reset();
           onClose();
         },
       },
@@ -517,21 +528,15 @@ function ResetPasswordDialog({
   };
 
   return (
-    <Dialog
-      open
-      onOpenChange={(v) => {
-        if (!v) {
-          form.reset();
-          onClose();
-        }
-      }}
-    >
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Reset Password</DialogTitle>
+          <DialogTitle>Generate new temporary password?</DialogTitle>
           <DialogDescription>
-            Set a temporary password for <strong>{user.email}</strong>. They'll be
-            required to change it on next sign-in.
+            A new temporary password will be generated for{" "}
+            <strong>{user.email}</strong> and emailed to them. The current
+            password will stop working immediately, and they'll be required to
+            choose a new one on next sign-in.
           </DialogDescription>
         </DialogHeader>
         {mutation.error && (
@@ -540,45 +545,133 @@ function ResetPasswordDialog({
             fallback="Failed to reset password."
           />
         )}
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="password"
-              render={({ field }) => (
-                <FormItem>
-                  <Label>Temporary password</Label>
-                  <FormControl>
-                    <Input
-                      type="text"
-                      placeholder="Min. 8 characters"
-                      autoComplete="off"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={onClose}
-                disabled={mutation.isPending}
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={onClose}
+            disabled={mutation.isPending}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={onConfirm}
+            disabled={mutation.isPending}
+            data-testid="button-confirm-reset-password"
+          >
+            {mutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              "Generate & Email"
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CredentialsDialog({
+  credentials,
+  onClose,
+}: {
+  credentials: GeneratedCredentials | null;
+  onClose: () => void;
+}) {
+  const { toast } = useToast();
+  const [copied, setCopied] = useState(false);
+
+  if (!credentials) return null;
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(credentials.tempPassword);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+      toast({ title: "Password copied to clipboard" });
+    } catch {
+      toast({
+        title: "Could not copy",
+        description: "Select the password manually and copy it.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(v) => {
+        if (!v) {
+          setCopied(false);
+          onClose();
+        }
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {credentials.kind === "new_account"
+              ? "Account created"
+              : "Password reset"}
+          </DialogTitle>
+          <DialogDescription>
+            {credentials.emailSent ? (
+              <span className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400">
+                <Mail className="h-4 w-4" /> Sent the temporary password to{" "}
+                <strong>{credentials.email}</strong>.
+              </span>
+            ) : (
+              <span className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
+                <MailX className="h-4 w-4" /> Email was not sent
+                {credentials.emailError ? ` (${credentials.emailError})` : ""}.
+                Share this password with the user securely.
+              </span>
+            )}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <div className="rounded-md border bg-muted/40 p-3 space-y-2">
+            <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Temporary password
+            </div>
+            <div className="flex items-center gap-2">
+              <code
+                className="flex-1 font-mono text-sm bg-background border rounded px-3 py-2 break-all select-all"
+                data-testid="text-temp-password"
               >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={mutation.isPending}>
-                {mutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                {credentials.tempPassword}
+              </code>
+              <Button
+                size="icon"
+                variant="outline"
+                onClick={copy}
+                title="Copy password"
+                data-testid="button-copy-temp-password"
+              >
+                {copied ? (
+                  <Check className="h-4 w-4 text-emerald-600" />
                 ) : (
-                  "Reset Password"
+                  <Copy className="h-4 w-4" />
                 )}
               </Button>
-            </DialogFooter>
-          </form>
-        </Form>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              This is the only time the password will be shown.{" "}
+              {credentials.emailSent
+                ? "The user has also received it by email."
+                : "Email delivery is unavailable, so make sure to capture it now."}{" "}
+              The user will be required to set a new password on first sign-in.
+            </p>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button onClick={onClose} data-testid="button-close-credentials">
+            Done
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

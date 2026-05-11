@@ -76,13 +76,10 @@ export const ListUsersResponseItem = zod.object({
 });
 export const ListUsersResponse = zod.array(ListUsersResponseItem);
 
-export const createUserBodyPasswordMin = 8;
-
 export const CreateUserBody = zod.object({
   email: zod.string(),
   name: zod.string(),
   role: zod.enum(["standard", "admin", "super_admin"]),
-  password: zod.string().min(createUserBodyPasswordMin),
 });
 
 export const UpdateUserParams = zod.object({
@@ -108,10 +105,12 @@ export const ResetUserPasswordParams = zod.object({
   id: zod.coerce.number(),
 });
 
-export const resetUserPasswordBodyPasswordMin = 8;
+export const ResetUserPasswordBody = zod.object({}).passthrough();
 
-export const ResetUserPasswordBody = zod.object({
-  password: zod.string().min(resetUserPasswordBodyPasswordMin),
+export const ResetUserPasswordResponse = zod.object({
+  tempPassword: zod.string(),
+  emailSent: zod.boolean(),
+  emailError: zod.string().nullish(),
 });
 
 export const ListCampaignTypesResponseItem = zod.object({

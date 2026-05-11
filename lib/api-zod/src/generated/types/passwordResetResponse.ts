@@ -6,6 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface PasswordResetInput {
-  [key: string]: unknown;
+export interface PasswordResetResponse {
+  tempPassword: string;
+  emailSent: boolean;
+  /** @nullable */
+  emailError?: string | null;
 }

@@ -129,7 +129,7 @@ paths:
           description: Created
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/User" }
+              schema: { $ref: "#/components/schemas/UserCreatedResponse" }
   /users/{id}:
     patch:
       operationId: updateUser
@@ -159,7 +159,11 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/PasswordResetInput" }
       responses:
-        "204": { description: Done }
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PasswordResetResponse" }
 
   # ───────── Campaign types
   /campaign-types:
@@ -1166,12 +1170,11 @@ components:
         createdAt: { type: string, format: date-time }
     UserInput:
       type: object
-      required: [email, name, role, password]
+      required: [email, name, role]
       properties:
         email: { type: string }
         name: { type: string }
         role: { type: string, enum: [standard, admin, super_admin] }
-        password: { type: string, minLength: 8 }
     UserUpdate:
       type: object
       properties:
@@ -1180,9 +1183,22 @@ components:
         active: { type: boolean }
     PasswordResetInput:
       type: object
-      required: [password]
+      properties: {}
+    UserCreatedResponse:
+      type: object
+      required: [user, tempPassword, emailSent]
       properties:
-        password: { type: string, minLength: 8 }
+        user: { $ref: "#/components/schemas/User" }
+        tempPassword: { type: string, description: "Auto-generated temporary password. Show to admin once and rely on email delivery thereafter." }
+        emailSent: { type: boolean }
+        emailError: { type: ["string", "null"] }
+    PasswordResetResponse:
+      type: object
+      required: [tempPassword, emailSent]
+      properties:
+        tempPassword: { type: string }
+        emailSent: { type: boolean }
+        emailError: { type: ["string", "null"] }
 
     CampaignType:
       type: object

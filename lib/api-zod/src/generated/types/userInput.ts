@@ -11,6 +11,4 @@ export interface UserInput {
   email: string;
   name: string;
   role: UserInputRole;
-  /** @minLength 8 */
-  password: string;
 }

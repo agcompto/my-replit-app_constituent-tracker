@@ -68,8 +68,6 @@ export interface UserInput {
   email: string;
   name: string;
   role: UserInputRole;
-  /** @minLength 8 */
-  password: string;
 }
 
 export type UserUpdateRole =
@@ -88,8 +86,23 @@ export interface UserUpdate {
 }
 
 export interface PasswordResetInput {
-  /** @minLength 8 */
-  password: string;
+  [key: string]: unknown;
+}
+
+export interface UserCreatedResponse {
+  user: User;
+  /** Auto-generated temporary password. Show to admin once and rely on email delivery thereafter. */
+  tempPassword: string;
+  emailSent: boolean;
+  /** @nullable */
+  emailError?: string | null;
+}
+
+export interface PasswordResetResponse {
+  tempPassword: string;
+  emailSent: boolean;
+  /** @nullable */
+  emailError?: string | null;
 }
 
 export interface CampaignType {

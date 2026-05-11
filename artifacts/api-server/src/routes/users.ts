@@ -7,11 +7,18 @@ import {
   UpdateUserParams,
   UpdateUserBody,
   ResetUserPasswordParams,
-  ResetUserPasswordBody,
 } from "@workspace/api-zod";
 import { requireRole, audit } from "../lib/auth";
+import { generateTempPassword } from "../lib/password";
+import { sendPasswordCredentials, isEmailConfigured } from "../lib/email";
 
 const router: IRouter = Router();
+
+function publicAppUrl(): string | undefined {
+  const domains = process.env.REPLIT_DOMAINS;
+  if (!domains) return undefined;
+  return `https://${domains.split(",")[0].trim()}`;
+}
 
 router.get("/users", requireRole("admin", "super_admin"), async (_req, res): Promise<void> => {
   const rows = await db.select().from(usersTable).orderBy(usersTable.createdAt);
@@ -33,12 +40,14 @@ router.post("/users", requireRole("admin", "super_admin"), async (req, res): Pro
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const { email, name, role, password } = parsed.data;
+  const { email, name, role } = parsed.data;
   if (role === "super_admin" && req.currentUser!.role !== "super_admin") {
     res.status(403).json({ error: "Only super admins can create super admins" });
     return;
   }
-  const passwordHash = await bcrypt.hash(password, 10);
+  const tempPassword = generateTempPassword();
+  const passwordHash = await bcrypt.hash(tempPassword, 10);
+  let createdUser;
   try {
     const [u] = await db
       .insert(usersTable)
@@ -50,24 +59,44 @@ router.post("/users", requireRole("admin", "super_admin"), async (req, res): Pro
         mustChangePassword: true,
       })
       .returning();
-    await audit({
-      actor: req.currentUser!,
-      action: "create_user",
-      entityType: "user",
-      entityId: u.id,
-      details: `Created ${u.email} as ${u.role}`,
-    });
-    res.status(201).json({
-      id: u.id,
-      email: u.email,
-      name: u.name,
-      role: u.role,
-      active: u.active,
-      createdAt: u.createdAt.toISOString(),
-    });
+    createdUser = u;
   } catch {
     res.status(409).json({ error: "Email already exists" });
+    return;
   }
+
+  const emailResult = isEmailConfigured()
+    ? await sendPasswordCredentials({
+        to: createdUser.email,
+        recipientName: createdUser.name,
+        tempPassword,
+        kind: "new_account",
+        triggeredBy: req.currentUser!.name,
+        appUrl: publicAppUrl(),
+      })
+    : { sent: false, error: "Email not configured" };
+
+  await audit({
+    actor: req.currentUser!,
+    action: "create_user",
+    entityType: "user",
+    entityId: createdUser.id,
+    details: `Created ${createdUser.email} as ${createdUser.role}; email_sent=${emailResult.sent}`,
+  });
+
+  res.status(201).json({
+    user: {
+      id: createdUser.id,
+      email: createdUser.email,
+      name: createdUser.name,
+      role: createdUser.role,
+      active: createdUser.active,
+      createdAt: createdUser.createdAt.toISOString(),
+    },
+    tempPassword,
+    emailSent: emailResult.sent,
+    emailError: emailResult.sent ? null : emailResult.error ?? null,
+  });
 });
 
 router.patch("/users/:id", requireRole("admin", "super_admin"), async (req, res): Promise<void> => {
@@ -127,19 +156,18 @@ router.post(
       res.status(400).json({ error: params.error.message });
       return;
     }
-    const body = ResetUserPasswordBody.safeParse(req.body);
-    if (!body.success) {
-      res.status(400).json({ error: body.error.message });
-      return;
-    }
     if (req.currentUser!.role !== "super_admin") {
-      const [target] = await db.select({ role: usersTable.role }).from(usersTable).where(eq(usersTable.id, params.data.id));
+      const [target] = await db
+        .select({ role: usersTable.role })
+        .from(usersTable)
+        .where(eq(usersTable.id, params.data.id));
       if (target?.role === "super_admin") {
         res.status(403).json({ error: "Admins cannot reset passwords for super_admin accounts" });
         return;
       }
     }
-    const passwordHash = await bcrypt.hash(body.data.password, 10);
+    const tempPassword = generateTempPassword();
+    const passwordHash = await bcrypt.hash(tempPassword, 10);
     const [u] = await db
       .update(usersTable)
       .set({ passwordHash, mustChangePassword: true })
@@ -149,13 +177,31 @@ router.post(
       res.status(404).json({ error: "User not found" });
       return;
     }
+
+    const emailResult = isEmailConfigured()
+      ? await sendPasswordCredentials({
+          to: u.email,
+          recipientName: u.name,
+          tempPassword,
+          kind: "reset",
+          triggeredBy: req.currentUser!.name,
+          appUrl: publicAppUrl(),
+        })
+      : { sent: false, error: "Email not configured" };
+
     await audit({
       actor: req.currentUser!,
       action: "reset_password",
       entityType: "user",
       entityId: u.id,
+      details: `email_sent=${emailResult.sent}`,
     });
-    res.status(204).end();
+
+    res.json({
+      tempPassword,
+      emailSent: emailResult.sent,
+      emailError: emailResult.sent ? null : emailResult.error ?? null,
+    });
   },
 );
 

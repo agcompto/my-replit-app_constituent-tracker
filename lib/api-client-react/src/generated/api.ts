@@ -61,6 +61,7 @@ import type {
   OwningUnitInput,
   OwningUnitUpdate,
   PasswordResetInput,
+  PasswordResetResponse,
   RetentionInput,
   RetentionResult,
   SavedReportView,
@@ -86,6 +87,7 @@ import type {
   UpcomingVolumeRow,
   UploadJob,
   User,
+  UserCreatedResponse,
   UserInput,
   UserUpdate,
   YoyVolume,
@@ -604,8 +606,8 @@ export const getCreateUserUrl = () => {
 export const createUser = async (
   userInput: UserInput,
   options?: RequestInit,
-): Promise<User> => {
-  return customFetch<User>(getCreateUserUrl(), {
+): Promise<UserCreatedResponse> => {
+  return customFetch<UserCreatedResponse>(getCreateUserUrl(), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
@@ -766,8 +768,8 @@ export const resetUserPassword = async (
   id: number,
   passwordResetInput: PasswordResetInput,
   options?: RequestInit,
-): Promise<void> => {
-  return customFetch<void>(getResetUserPasswordUrl(id), {
+): Promise<PasswordResetResponse> => {
+  return customFetch<PasswordResetResponse>(getResetUserPasswordUrl(id), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },

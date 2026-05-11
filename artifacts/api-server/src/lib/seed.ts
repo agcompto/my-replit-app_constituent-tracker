@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
-import { randomBytes } from "crypto";
 import { db, usersTable, campaignTypesTable, channelsTable, owningUnitsTable, appSettingsTable, suppressionReasonCodesTable, thresholdTemplatesTable } from "@workspace/db";
 import { logger } from "./logger";
+import { generateTempPassword } from "./password";
 
 const DEFAULT_CHANNELS = [
   "Email",
@@ -54,7 +54,7 @@ export async function seedDefaults(): Promise<void> {
   // Default super admin
   const existingUsers = await db.select({ id: usersTable.id }).from(usersTable).limit(1);
   if (existingUsers.length === 0) {
-    const bootstrapPassword = randomBytes(16).toString("hex");
+    const bootstrapPassword = generateTempPassword(20);
     const passwordHash = await bcrypt.hash(bootstrapPassword, 10);
     await db.insert(usersTable).values({
       email: "admin@example.com",

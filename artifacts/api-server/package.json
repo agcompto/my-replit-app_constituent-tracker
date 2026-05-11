@@ -23,7 +23,8 @@
     "express": "^5",
     "express-session": "^1.19.0",
     "pino": "^9",
-    "pino-http": "^10"
+    "pino-http": "^10",
+    "resend": "^6.12.3"
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",
