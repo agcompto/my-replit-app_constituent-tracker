@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useListThresholds, useCreateThreshold, useUpdateThreshold, useDeleteThreshold, usePreviewThresholds, useSetThresholdOverrides, useListChannels, useCreateSuppression, getListThresholdsQueryKey, getListSuppressionsQueryKey } from "@workspace/api-client-react";
+import { useListThresholds, useCreateThreshold, useUpdateThreshold, useDeleteThreshold, usePreviewThresholds, useSetThresholdOverrides, useListChannels, useCreateSuppression, useListThresholdTemplates, useApplyThresholdTemplates, getListThresholdsQueryKey, getListSuppressionsQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Plus, Trash2, Pencil, RefreshCw, Info, Search, ArrowUpDown, ArrowUp, ArrowDown, ShieldOff } from "lucide-react";
+import { Loader2, Plus, Trash2, Pencil, RefreshCw, Info, Search, ArrowUpDown, ArrowUp, ArrowDown, ShieldOff, Wand2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -30,6 +30,25 @@ export default function ThresholdsStep({ campaign }: { campaign: any }) {
   const { data: channels } = useListChannels();
   const activeChannels = channels?.filter(c => c.active) || [];
   const activeCampaignTypes = campaign.campaignTypes || [];
+
+  const { data: templates } = useListThresholdTemplates();
+  const activeTemplates = (templates ?? []).filter((t: any) => t.active);
+  const applyTemplates = useApplyThresholdTemplates();
+
+  const handleApplyDefaults = () => {
+    applyTemplates.mutate({ id: campaign.id }, {
+      onSuccess: (res: any) => {
+        toast({
+          title: "Defaults applied",
+          description: `Created ${res.created} new rule${res.created === 1 ? "" : "s"}, skipped ${res.skipped} duplicate${res.skipped === 1 ? "" : "s"}.`,
+        });
+        queryClient.invalidateQueries({ queryKey: getListThresholdsQueryKey(campaign.id) });
+      },
+      onError: (err: any) => {
+        toast({ title: "Failed to apply templates", description: err?.response?.data?.error || String(err?.message ?? err), variant: "destructive" });
+      },
+    });
+  };
 
   const createMutation = useCreateThreshold();
   const updateMutation = useUpdateThreshold();
@@ -247,6 +266,20 @@ export default function ThresholdsStep({ campaign }: { campaign: any }) {
               <p>A threshold checks any rolling window (e.g. 14 days) that includes each selected send date. This includes other planned touches in this campaign and previously exported touchpoints across the system.</p>
             </div>
           </div>
+
+          {activeTemplates.length > 0 && (
+            <div className="border border-primary/30 bg-primary/5 p-4 rounded-md flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="text-sm">
+                <div className="font-semibold flex items-center gap-2"><Wand2 className="h-4 w-4 text-primary" /> Apply default templates</div>
+                <p className="text-muted-foreground mt-0.5">
+                  Copy {activeTemplates.length} active template{activeTemplates.length === 1 ? "" : "s"} into this campaign. Existing rules with the same name are skipped.
+                </p>
+              </div>
+              <Button onClick={handleApplyDefaults} disabled={applyTemplates.isPending} variant="default">
+                {applyTemplates.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Wand2 className="h-4 w-4 mr-2" />} Apply Defaults
+              </Button>
+            </div>
+          )}
 
           <div className="border p-4 rounded-md space-y-4">
             <h3 className="font-semibold text-sm">Add New Threshold</h3>

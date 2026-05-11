@@ -23,6 +23,7 @@ router.get("/settings", requireAuth, async (_req, res): Promise<void> => {
     googleSheetImportEnabled: s.googleSheetImportEnabled,
     retentionDeleteEnabled: s.retentionDeleteEnabled,
     globalThresholdsEnabled: s.globalThresholdsEnabled,
+    aiAssistEnabled: s.aiAssistEnabled,
   });
 });
 
@@ -54,6 +55,7 @@ router.patch(
       googleSheetImportEnabled: updated.googleSheetImportEnabled,
       retentionDeleteEnabled: updated.retentionDeleteEnabled,
       globalThresholdsEnabled: updated.globalThresholdsEnabled,
+      aiAssistEnabled: updated.aiAssistEnabled,
     });
   },
 );

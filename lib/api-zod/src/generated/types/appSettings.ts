@@ -20,4 +20,5 @@ export interface AppSettings {
   googleSheetImportEnabled: boolean;
   retentionDeleteEnabled: boolean;
   globalThresholdsEnabled: boolean;
+  aiAssistEnabled: boolean;
 }

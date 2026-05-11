@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import { randomBytes } from "crypto";
-import { db, usersTable, campaignTypesTable, channelsTable, owningUnitsTable, appSettingsTable, suppressionReasonCodesTable } from "@workspace/db";
+import { db, usersTable, campaignTypesTable, channelsTable, owningUnitsTable, appSettingsTable, suppressionReasonCodesTable, thresholdTemplatesTable } from "@workspace/db";
 import { logger } from "./logger";
 
 const DEFAULT_CHANNELS = [
@@ -117,6 +117,45 @@ export async function seedDefaults(): Promise<void> {
         systemDefault: true,
       })),
     );
+  }
+
+  const existingTemplates = await db
+    .select({ id: thresholdTemplatesTable.id })
+    .from(thresholdTemplatesTable)
+    .limit(1);
+  if (existingTemplates.length === 0) {
+    await db.insert(thresholdTemplatesTable).values([
+      {
+        name: "Standard cap — 3 in 14 days",
+        description: "Default communication-fatigue limit across all channels.",
+        maxTouchpoints: 3,
+        windowDays: 14,
+        scope: "all",
+        actionMode: "flag",
+        active: true,
+        systemDefault: true,
+      },
+      {
+        name: "Email saturation — 2 in 7 days",
+        description: "Prevent more than two email touches per week.",
+        maxTouchpoints: 2,
+        windowDays: 7,
+        scope: "all",
+        actionMode: "flag",
+        active: true,
+        systemDefault: true,
+      },
+      {
+        name: "Phonathon recency — 1 in 30 days",
+        description: "Avoid back-to-back phone outreach within a month.",
+        maxTouchpoints: 1,
+        windowDays: 30,
+        scope: "all",
+        actionMode: "manual",
+        active: true,
+        systemDefault: true,
+      },
+    ]);
   }
 
   const existingSettings = await db.select().from(appSettingsTable).limit(1);

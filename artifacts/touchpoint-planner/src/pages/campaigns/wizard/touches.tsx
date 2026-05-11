@@ -8,6 +8,7 @@ import {
   useUploadTouchAudience,
   useClearTouchAudience,
   useGetSettings,
+  useAiSuggestCadence,
   getListTouchesQueryKey,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -22,7 +23,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { PiiWarning } from "@/components/ui/PiiWarning";
-import { Loader2, Plus, Edit2, Trash2, AlertTriangle, Info, Users, Upload, FileText, X, Download } from "lucide-react";
+import { Loader2, Plus, Edit2, Trash2, AlertTriangle, Info, Users, Upload, FileText, X, Download, Sparkles } from "lucide-react";
 import { format, isBefore, startOfDay } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
@@ -68,6 +69,21 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
   const deleteTouch = useDeleteTouch();
   const uploadTouchAudience = useUploadTouchAudience();
   const clearTouchAudience = useClearTouchAudience();
+  const suggestCadence = useAiSuggestCadence();
+  const [cadence, setCadence] = useState<{ rationale: string; touches: Array<{ order: number; channelLabel: string; dayOffset: number; purpose: string }>; generatedAt: string } | null>(null);
+  const [cadenceOpen, setCadenceOpen] = useState(false);
+
+  const handleSuggestCadence = () => {
+    setCadenceOpen(true);
+    suggestCadence.mutate({ id: campaign.id }, {
+      onSuccess: (res) => setCadence(res),
+      onError: (err: any) => toast({
+        title: "AI suggestion failed",
+        description: err?.response?.data?.error || err?.message || "Unknown error",
+        variant: "destructive",
+      }),
+    });
+  };
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -248,7 +264,14 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
               Define the individual planned communications. Each touch sends to the campaign-wide audience by default, or you can set a per-touch list.
             </CardDescription>
           </div>
-          <Button onClick={handleOpenNew} size="sm"><Plus className="h-4 w-4 mr-2"/> Add Touch</Button>
+          <div className="flex gap-2">
+            {settings?.aiAssistEnabled && (
+              <Button onClick={handleSuggestCadence} size="sm" variant="outline" disabled={suggestCadence.isPending}>
+                {suggestCadence.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2 text-primary" />} Suggest Cadence
+              </Button>
+            )}
+            <Button onClick={handleOpenNew} size="sm"><Plus className="h-4 w-4 mr-2"/> Add Touch</Button>
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
@@ -561,6 +584,45 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
               </div>
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={cadenceOpen} onOpenChange={setCadenceOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Sparkles className="h-5 w-5 text-primary" /> Suggested Cadence</DialogTitle>
+            <DialogDescription>
+              An AI-generated draft based on this campaign's setup. Use it as a starting point — review every touch before adding.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            {suggestCadence.isPending ? (
+              <div className="flex items-center justify-center h-32 text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin mr-2" /> Drafting cadence…
+              </div>
+            ) : cadence ? (
+              <div className="space-y-4">
+                <p className="text-sm whitespace-pre-wrap text-muted-foreground">{cadence.rationale}</p>
+                <div className="border rounded-md divide-y">
+                  {cadence.touches.map((t) => (
+                    <div key={t.order} className="flex items-start gap-3 p-3 text-sm">
+                      <div className="font-mono text-xs bg-muted rounded px-2 py-1">#{t.order}</div>
+                      <div className="flex-1">
+                        <div className="font-medium">{t.channelLabel} <span className="text-muted-foreground">· Day +{t.dayOffset}</span></div>
+                        <div className="text-muted-foreground text-xs mt-0.5">{t.purpose}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">Generated {format(new Date(cadence.generatedAt), "MMM d, yyyy 'at' h:mm a")}</p>
+              </div>
+            ) : (
+              <div className="text-sm text-muted-foreground">No suggestion available.</div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCadenceOpen(false)}>Close</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

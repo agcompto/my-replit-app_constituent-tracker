@@ -224,6 +224,238 @@ router.get("/reports/high-volume-donors", requireRole("admin", "super_admin"), a
   );
 });
 
+router.get("/reports/cohort-analysis", requireRole("admin", "super_admin"), async (req, res): Promise<void> => {
+  const monthsRaw = req.query.months;
+  let months = typeof monthsRaw === "string" ? parseInt(monthsRaw, 10) : 6;
+  if (!Number.isFinite(months) || months < 1) months = 6;
+  if (months > 36) months = 36;
+
+  const ouRaw = req.query.owningUnit;
+  const owningUnit = typeof ouRaw === "string" && ouRaw.trim() ? ouRaw.trim() : undefined;
+  const chRaw = req.query.channelId;
+  let channelId: number | undefined;
+  if (typeof chRaw === "string" && chRaw.trim()) {
+    const n = parseInt(chRaw, 10);
+    if (!Number.isFinite(n)) { res.status(400).json({ message: "Invalid channelId" }); return; }
+    channelId = n;
+  }
+
+  const filterParts: SQL[] = [
+    sql`${touchpointsTable.isSeed} = false`,
+    sql`${campaignsTable.status} <> 'voided'`,
+  ];
+  if (owningUnit) filterParts.push(sql`${campaignsTable.owningUnit} = ${owningUnit}`);
+  if (channelId !== undefined) filterParts.push(sql`${touchpointsTable.channelId} = ${channelId}`);
+  const filterSql = sql.join(filterParts, sql` AND `);
+
+  // First-touch month per donor → cohort assignment
+  const rows = await db.execute<{
+    cohort_month: string;
+    cohort_size: number;
+    total_touchpoints: number;
+  }>(sql`
+    WITH first_touch AS (
+      SELECT
+        ${touchpointsTable.donorId} AS donor_id,
+        MIN(${touchpointsTable.sendDate}) AS first_send
+      FROM ${touchpointsTable}
+      INNER JOIN ${campaignsTable}
+        ON ${touchpointsTable.campaignId} = ${campaignsTable.id}
+      WHERE ${filterSql}
+      GROUP BY ${touchpointsTable.donorId}
+    ),
+    cohorted AS (
+      SELECT
+        donor_id,
+        first_send,
+        DATE_TRUNC('month', first_send)::date AS cohort_start
+      FROM first_touch
+    )
+    SELECT
+      to_char(c.cohort_start, 'YYYY-MM') AS cohort_month,
+      COUNT(DISTINCT c.donor_id)::int AS cohort_size,
+      COUNT(${touchpointsTable.id})::int AS total_touchpoints
+    FROM cohorted c
+    INNER JOIN ${touchpointsTable}
+      ON ${touchpointsTable.donorId} = c.donor_id
+     AND ${touchpointsTable.sendDate} >= c.first_send
+     AND ${touchpointsTable.sendDate} < (c.cohort_start + (${months}::int || ' months')::interval)::date
+    INNER JOIN ${campaignsTable}
+      ON ${touchpointsTable.campaignId} = ${campaignsTable.id}
+    WHERE ${filterSql}
+    GROUP BY c.cohort_start
+    ORDER BY c.cohort_start DESC
+    LIMIT 24
+  `);
+
+  const cohorts = (rows.rows ?? []).map((r) => ({
+    cohortMonth: r.cohort_month,
+    cohortSize: Number(r.cohort_size) || 0,
+    totalTouchpoints: Number(r.total_touchpoints) || 0,
+    avgTouchpointsPerDonor:
+      Number(r.cohort_size) > 0
+        ? Number((Number(r.total_touchpoints) / Number(r.cohort_size)).toFixed(2))
+        : 0,
+  }));
+
+  res.json({ generatedAt: new Date().toISOString(), months, cohorts });
+});
+
+function shiftYear(iso: string, years: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(Date.UTC(y - years, m - 1, d));
+  return dt.toISOString().slice(0, 10);
+}
+
+router.get("/reports/yoy-volume", requireRole("admin", "super_admin"), async (req, res): Promise<void> => {
+  const cs = req.query.currentStart;
+  const ce = req.query.currentEnd;
+  if (typeof cs !== "string" || typeof ce !== "string") {
+    res.status(400).json({ message: "currentStart and currentEnd are required" });
+    return;
+  }
+  const currentStart = parseIsoDate(cs);
+  const currentEnd = parseIsoDate(ce);
+  if (!currentStart || !currentEnd) {
+    res.status(400).json({ message: "Invalid date (expected YYYY-MM-DD)" });
+    return;
+  }
+  if (currentStart > currentEnd) {
+    res.status(400).json({ message: "currentStart must be on or before currentEnd" });
+    return;
+  }
+  const ps = req.query.priorStart;
+  const pe = req.query.priorEnd;
+  let priorStart: string;
+  let priorEnd: string;
+  if (typeof ps === "string" && typeof pe === "string") {
+    const a = parseIsoDate(ps), b = parseIsoDate(pe);
+    if (!a || !b) { res.status(400).json({ message: "Invalid prior date" }); return; }
+    if (a > b) { res.status(400).json({ message: "priorStart must be on or before priorEnd" }); return; }
+    priorStart = a; priorEnd = b;
+  } else {
+    priorStart = shiftYear(currentStart, 1);
+    priorEnd = shiftYear(currentEnd, 1);
+  }
+
+  const ouRaw = req.query.owningUnit;
+  const owningUnit = typeof ouRaw === "string" && ouRaw.trim() ? ouRaw.trim() : undefined;
+  const chRaw = req.query.channelId;
+  let channelId: number | undefined;
+  if (typeof chRaw === "string" && chRaw.trim()) {
+    const n = parseInt(chRaw, 10);
+    if (!Number.isFinite(n)) { res.status(400).json({ message: "Invalid channelId" }); return; }
+    channelId = n;
+  }
+
+  function buildWhere(start: string, end: string): SQL {
+    const parts: SQL[] = [
+      sql`${touchpointsTable.isSeed} = false`,
+      sql`${campaignsTable.status} <> 'voided'`,
+      sql`${touchpointsTable.sendDate} >= ${start}::date`,
+      sql`${touchpointsTable.sendDate} <= ${end}::date`,
+    ];
+    if (owningUnit) parts.push(sql`${campaignsTable.owningUnit} = ${owningUnit}`);
+    if (channelId !== undefined) parts.push(sql`${touchpointsTable.channelId} = ${channelId}`);
+    return sql.join(parts, sql` AND `);
+  }
+
+  const [curTotal] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(touchpointsTable)
+    .innerJoin(campaignsTable, sql`${touchpointsTable.campaignId} = ${campaignsTable.id}`)
+    .where(buildWhere(currentStart, currentEnd));
+  const [priTotal] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(touchpointsTable)
+    .innerJoin(campaignsTable, sql`${touchpointsTable.campaignId} = ${campaignsTable.id}`)
+    .where(buildWhere(priorStart, priorEnd));
+
+  const curByChannel = await db
+    .select({
+      label: channelsTable.name,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(touchpointsTable)
+    .innerJoin(channelsTable, sql`${touchpointsTable.channelId} = ${channelsTable.id}`)
+    .innerJoin(campaignsTable, sql`${touchpointsTable.campaignId} = ${campaignsTable.id}`)
+    .where(buildWhere(currentStart, currentEnd))
+    .groupBy(channelsTable.name);
+  const priByChannel = await db
+    .select({
+      label: channelsTable.name,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(touchpointsTable)
+    .innerJoin(channelsTable, sql`${touchpointsTable.channelId} = ${channelsTable.id}`)
+    .innerJoin(campaignsTable, sql`${touchpointsTable.campaignId} = ${campaignsTable.id}`)
+    .where(buildWhere(priorStart, priorEnd))
+    .groupBy(channelsTable.name);
+
+  const channelMap = new Map<string, { current: number; prior: number }>();
+  for (const r of curByChannel) channelMap.set(r.label, { current: r.count, prior: 0 });
+  for (const r of priByChannel) {
+    const e = channelMap.get(r.label) ?? { current: 0, prior: 0 };
+    e.prior = r.count;
+    channelMap.set(r.label, e);
+  }
+  const byChannel = Array.from(channelMap.entries())
+    .map(([label, v]) => ({ label, current: v.current, prior: v.prior }))
+    .sort((a, b) => b.current + b.prior - (a.current + a.prior));
+
+  // By month-offset: align month index from start of each range
+  function monthsBetween(start: string, end: string): number {
+    const [sy, sm] = start.split("-").map(Number);
+    const [ey, em] = end.split("-").map(Number);
+    return (ey - sy) * 12 + (em - sm) + 1;
+  }
+  const monthCount = Math.max(monthsBetween(currentStart, currentEnd), monthsBetween(priorStart, priorEnd));
+
+  async function monthBuckets(start: string, end: string): Promise<Map<number, number>> {
+    const rows = await db
+      .select({
+        bucket: sql<string>`to_char(date_trunc('month', ${touchpointsTable.sendDate}), 'YYYY-MM')`,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(touchpointsTable)
+      .innerJoin(campaignsTable, sql`${touchpointsTable.campaignId} = ${campaignsTable.id}`)
+      .where(buildWhere(start, end))
+      .groupBy(sql`date_trunc('month', ${touchpointsTable.sendDate})`)
+      .orderBy(sql`date_trunc('month', ${touchpointsTable.sendDate})`);
+    const [sy, sm] = start.split("-").map(Number);
+    const map = new Map<number, number>();
+    for (const r of rows) {
+      const [y, m] = r.bucket.split("-").map(Number);
+      const offset = (y - sy) * 12 + (m - sm);
+      map.set(offset, r.count);
+    }
+    return map;
+  }
+  const curBuckets = await monthBuckets(currentStart, currentEnd);
+  const priBuckets = await monthBuckets(priorStart, priorEnd);
+  const byMonth: { monthOffset: number; current: number; prior: number }[] = [];
+  for (let i = 0; i < monthCount; i++) {
+    byMonth.push({ monthOffset: i, current: curBuckets.get(i) ?? 0, prior: priBuckets.get(i) ?? 0 });
+  }
+
+  const currentTotal = curTotal?.count ?? 0;
+  const priorTotal = priTotal?.count ?? 0;
+  const percentChange = priorTotal > 0
+    ? Number((((currentTotal - priorTotal) / priorTotal) * 100).toFixed(2))
+    : currentTotal > 0 ? 100 : 0;
+
+  res.json({
+    generatedAt: new Date().toISOString(),
+    currentRange: { start: currentStart, end: currentEnd },
+    priorRange: { start: priorStart, end: priorEnd },
+    currentTotal,
+    priorTotal,
+    percentChange,
+    byChannel,
+    byMonth,
+  });
+});
+
 router.get("/reports/upload-history", requireRole("admin", "super_admin"), async (_req, res): Promise<void> => {
   const rows = await db
     .select({

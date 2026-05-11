@@ -1077,6 +1077,7 @@ export const GetSettingsResponse = zod.object({
   googleSheetImportEnabled: zod.boolean(),
   retentionDeleteEnabled: zod.boolean(),
   globalThresholdsEnabled: zod.boolean(),
+  aiAssistEnabled: zod.boolean(),
 });
 
 export const updateSettingsBodyFiscalYearStartMonthMax = 12;
@@ -1097,6 +1098,7 @@ export const UpdateSettingsBody = zod.object({
   googleSheetImportEnabled: zod.boolean().optional(),
   retentionDeleteEnabled: zod.boolean().optional(),
   globalThresholdsEnabled: zod.boolean().optional(),
+  aiAssistEnabled: zod.boolean().optional(),
 });
 
 export const updateSettingsResponseFiscalYearStartMonthMax = 12;
@@ -1115,6 +1117,7 @@ export const UpdateSettingsResponse = zod.object({
   googleSheetImportEnabled: zod.boolean(),
   retentionDeleteEnabled: zod.boolean(),
   globalThresholdsEnabled: zod.boolean(),
+  aiAssistEnabled: zod.boolean(),
 });
 
 export const RunRetentionDeleteBody = zod.object({
@@ -1125,4 +1128,260 @@ export const RunRetentionDeleteBody = zod.object({
 export const RunRetentionDeleteResponse = zod.object({
   campaignsDeleted: zod.number(),
   touchpointsDeleted: zod.number(),
+});
+
+export const ListThresholdTemplatesResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  description: zod.string().nullish(),
+  maxTouchpoints: zod.number(),
+  windowDays: zod.number(),
+  scope: zod.enum(["all", "channel", "campaign_type", "channel_and_type"]),
+  channelId: zod.number().nullish(),
+  campaignTypeId: zod.number().nullish(),
+  actionMode: zod.enum(["track", "flag", "remove", "manual"]),
+  active: zod.boolean(),
+  systemDefault: zod.boolean(),
+  createdAt: zod.coerce.date(),
+});
+export const ListThresholdTemplatesResponse = zod.array(
+  ListThresholdTemplatesResponseItem,
+);
+
+export const createThresholdTemplateBodyNameMax = 120;
+
+export const CreateThresholdTemplateBody = zod.object({
+  name: zod.string().min(1).max(createThresholdTemplateBodyNameMax),
+  description: zod.string().optional(),
+  maxTouchpoints: zod.number().min(1),
+  windowDays: zod.number().min(1),
+  scope: zod.enum(["all", "channel", "campaign_type", "channel_and_type"]),
+  channelId: zod.number().optional(),
+  campaignTypeId: zod.number().optional(),
+  actionMode: zod.enum(["track", "flag", "remove", "manual"]),
+  active: zod.boolean().optional(),
+});
+
+export const UpdateThresholdTemplateParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const updateThresholdTemplateBodyNameMax = 120;
+
+export const UpdateThresholdTemplateBody = zod.object({
+  name: zod.string().min(1).max(updateThresholdTemplateBodyNameMax).optional(),
+  description: zod.string().nullish(),
+  maxTouchpoints: zod.number().min(1).optional(),
+  windowDays: zod.number().min(1).optional(),
+  scope: zod
+    .enum(["all", "channel", "campaign_type", "channel_and_type"])
+    .optional(),
+  channelId: zod.number().nullish(),
+  campaignTypeId: zod.number().nullish(),
+  actionMode: zod.enum(["track", "flag", "remove", "manual"]).optional(),
+  active: zod.boolean().optional(),
+});
+
+export const UpdateThresholdTemplateResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  description: zod.string().nullish(),
+  maxTouchpoints: zod.number(),
+  windowDays: zod.number(),
+  scope: zod.enum(["all", "channel", "campaign_type", "channel_and_type"]),
+  channelId: zod.number().nullish(),
+  campaignTypeId: zod.number().nullish(),
+  actionMode: zod.enum(["track", "flag", "remove", "manual"]),
+  active: zod.boolean(),
+  systemDefault: zod.boolean(),
+  createdAt: zod.coerce.date(),
+});
+
+export const DeleteThresholdTemplateParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ApplyThresholdTemplatesParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ApplyThresholdTemplatesResponse = zod.object({
+  created: zod.number(),
+  skipped: zod.number(),
+  total: zod.number(),
+  skippedNames: zod.array(zod.string()).optional(),
+});
+
+export const AiAudienceSummaryParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const AiAudienceSummaryResponse = zod.object({
+  summary: zod.string(),
+  generatedAt: zod.coerce.date(),
+});
+
+export const AiSuggestCadenceParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const AiSuggestCadenceResponse = zod.object({
+  generatedAt: zod.coerce.date(),
+  rationale: zod.string(),
+  touches: zod.array(
+    zod.object({
+      order: zod.number(),
+      channelLabel: zod.string(),
+      dayOffset: zod.number(),
+      purpose: zod.string(),
+    }),
+  ),
+});
+
+export const aiClassifySuppressionReasonBodyTextMin = 3;
+export const aiClassifySuppressionReasonBodyTextMax = 4000;
+
+export const AiClassifySuppressionReasonBody = zod.object({
+  text: zod
+    .string()
+    .min(aiClassifySuppressionReasonBodyTextMin)
+    .max(aiClassifySuppressionReasonBodyTextMax),
+});
+
+export const aiClassifySuppressionReasonResponseSuggestionsItemConfidenceMin = 0;
+export const aiClassifySuppressionReasonResponseSuggestionsItemConfidenceMax = 1;
+
+export const AiClassifySuppressionReasonResponse = zod.object({
+  generatedAt: zod.coerce.date(),
+  suggestions: zod.array(
+    zod.object({
+      reasonCodeId: zod.number(),
+      reasonName: zod.string(),
+      confidence: zod
+        .number()
+        .min(aiClassifySuppressionReasonResponseSuggestionsItemConfidenceMin)
+        .max(aiClassifySuppressionReasonResponseSuggestionsItemConfidenceMax),
+      rationale: zod.string(),
+    }),
+  ),
+});
+
+export const getCohortAnalysisQueryMonthsMax = 36;
+
+export const GetCohortAnalysisQueryParams = zod.object({
+  months: zod.coerce
+    .number()
+    .min(1)
+    .max(getCohortAnalysisQueryMonthsMax)
+    .optional(),
+  owningUnit: zod.coerce.string().optional(),
+  channelId: zod.coerce.number().optional(),
+});
+
+export const GetCohortAnalysisResponse = zod.object({
+  generatedAt: zod.coerce.date(),
+  months: zod.number(),
+  cohorts: zod.array(
+    zod.object({
+      cohortMonth: zod.string(),
+      cohortSize: zod.number(),
+      totalTouchpoints: zod.number(),
+      avgTouchpointsPerDonor: zod.number(),
+    }),
+  ),
+});
+
+export const GetYoyVolumeQueryParams = zod.object({
+  currentStart: zod.date(),
+  currentEnd: zod.date(),
+  priorStart: zod.date().optional(),
+  priorEnd: zod.date().optional(),
+  owningUnit: zod.coerce.string().optional(),
+  channelId: zod.coerce.number().optional(),
+});
+
+export const GetYoyVolumeResponse = zod.object({
+  generatedAt: zod.coerce.date(),
+  currentRange: zod.object({
+    start: zod.coerce.date(),
+    end: zod.coerce.date(),
+  }),
+  priorRange: zod.object({
+    start: zod.coerce.date(),
+    end: zod.coerce.date(),
+  }),
+  currentTotal: zod.number(),
+  priorTotal: zod.number(),
+  percentChange: zod.number(),
+  byChannel: zod.array(
+    zod.object({
+      label: zod.string(),
+      current: zod.number(),
+      prior: zod.number(),
+    }),
+  ),
+  byMonth: zod.array(
+    zod.object({
+      monthOffset: zod.number(),
+      current: zod.number(),
+      prior: zod.number(),
+    }),
+  ),
+});
+
+export const ListSavedReportViewsQueryParams = zod.object({
+  viewType: zod.coerce.string().optional(),
+});
+
+export const ListSavedReportViewsResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  viewType: zod.string(),
+  filters: zod.record(zod.string(), zod.unknown()),
+  config: zod.record(zod.string(), zod.unknown()),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListSavedReportViewsResponse = zod.array(
+  ListSavedReportViewsResponseItem,
+);
+
+export const createSavedReportViewBodyNameMax = 120;
+
+export const createSavedReportViewBodyViewTypeMax = 40;
+
+export const CreateSavedReportViewBody = zod.object({
+  name: zod.string().min(1).max(createSavedReportViewBodyNameMax),
+  viewType: zod.string().min(1).max(createSavedReportViewBodyViewTypeMax),
+  filters: zod.record(zod.string(), zod.unknown()).optional(),
+  config: zod.record(zod.string(), zod.unknown()).optional(),
+});
+
+export const UpdateSavedReportViewParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const updateSavedReportViewBodyNameMax = 120;
+
+export const updateSavedReportViewBodyViewTypeMax = 40;
+
+export const UpdateSavedReportViewBody = zod.object({
+  name: zod.string().min(1).max(updateSavedReportViewBodyNameMax),
+  viewType: zod.string().min(1).max(updateSavedReportViewBodyViewTypeMax),
+  filters: zod.record(zod.string(), zod.unknown()).optional(),
+  config: zod.record(zod.string(), zod.unknown()).optional(),
+});
+
+export const UpdateSavedReportViewResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  viewType: zod.string(),
+  filters: zod.record(zod.string(), zod.unknown()),
+  config: zod.record(zod.string(), zod.unknown()),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+export const DeleteSavedReportViewParams = zod.object({
+  id: zod.coerce.number(),
 });

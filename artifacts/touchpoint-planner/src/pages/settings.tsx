@@ -1,4 +1,4 @@
-import { useGetSettings, useUpdateSettings, useListCampaignTypes, useCreateCampaignType, useUpdateCampaignType, useListChannels, useCreateChannel, useUpdateChannel, useListOwningUnits, useCreateOwningUnit, useUpdateOwningUnit, useRunRetentionDelete, useListSuppressionReasons, useCreateSuppressionReason, useUpdateSuppressionReason, getListCampaignTypesQueryKey, getListChannelsQueryKey, getListOwningUnitsQueryKey, getGetSettingsQueryKey, getListSuppressionReasonsQueryKey } from "@workspace/api-client-react";
+import { useGetSettings, useUpdateSettings, useListCampaignTypes, useCreateCampaignType, useUpdateCampaignType, useListChannels, useCreateChannel, useUpdateChannel, useListOwningUnits, useCreateOwningUnit, useUpdateOwningUnit, useRunRetentionDelete, useListSuppressionReasons, useCreateSuppressionReason, useUpdateSuppressionReason, useListThresholdTemplates, useCreateThresholdTemplate, useUpdateThresholdTemplate, useDeleteThresholdTemplate, getListCampaignTypesQueryKey, getListChannelsQueryKey, getListOwningUnitsQueryKey, getGetSettingsQueryKey, getListSuppressionReasonsQueryKey, getListThresholdTemplatesQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -7,12 +7,14 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Plus, AlertTriangle } from "lucide-react";
+import { Loader2, Plus, AlertTriangle, Trash2, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { useGetMe } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Pencil } from "lucide-react";
 
 export default function Settings() {
   const { data: me } = useGetMe();
@@ -176,7 +178,7 @@ export default function Settings() {
   };
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6 max-w-5xl" data-testid="settings-root">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">System Settings</h1>
         <p className="text-muted-foreground text-sm">Configure system-wide parameters and taxonomy.</p>
@@ -185,9 +187,14 @@ export default function Settings() {
       <Tabs defaultValue="taxonomy">
         <TabsList className="mb-4">
           <TabsTrigger value="taxonomy">Taxonomy</TabsTrigger>
+          <TabsTrigger value="templates">Threshold Templates</TabsTrigger>
           <TabsTrigger value="system">System Parameters</TabsTrigger>
           {isSuperAdmin && <TabsTrigger value="retention" className="text-destructive data-[state=active]:text-destructive">Data Retention</TabsTrigger>}
         </TabsList>
+
+        <TabsContent value="templates" className="space-y-6">
+          <ThresholdTemplatesPanel isSuperAdmin={isSuperAdmin} />
+        </TabsContent>
 
         <TabsContent value="taxonomy" className="space-y-6">
           <Card>
@@ -396,6 +403,13 @@ export default function Settings() {
                     </div>
                     <Switch checked={settings?.globalThresholdsEnabled} onCheckedChange={c => handleUpdateSetting('globalThresholdsEnabled', c)} />
                   </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label className="text-base flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary" /> AI Assist</Label>
+                      <p className="text-sm text-muted-foreground">Enable AI-powered audience summaries, cadence suggestions, and reason classification.</p>
+                    </div>
+                    <Switch checked={settings?.aiAssistEnabled} onCheckedChange={c => handleUpdateSetting('aiAssistEnabled', c)} />
+                  </div>
                 </>
               )}
             </CardContent>
@@ -443,5 +457,320 @@ export default function Settings() {
         )}
       </Tabs>
     </div>
+  );
+}
+
+type ScopeKind = "all" | "channel" | "campaign_type" | "channel_and_type";
+type ActionMode = "track" | "flag" | "remove" | "manual";
+
+const ACTION_MODE_LABELS: Record<ActionMode, string> = {
+  track: "Track (record but allow)",
+  flag: "Flag (warn, allow override)",
+  remove: "Remove (auto-suppress over-limit)",
+  manual: "Manual (require reviewer decision)",
+};
+
+interface TemplateForm {
+  name: string;
+  description: string;
+  maxTouchpoints: string;
+  windowDays: string;
+  scope: ScopeKind;
+  channelId: string;
+  campaignTypeId: string;
+  actionMode: ActionMode;
+}
+
+const NONE_VALUE = "__none__";
+const EMPTY_FORM: TemplateForm = {
+  name: "",
+  description: "",
+  maxTouchpoints: "3",
+  windowDays: "14",
+  scope: "all",
+  channelId: "",
+  campaignTypeId: "",
+  actionMode: "flag",
+};
+
+function ThresholdTemplatesPanel({ isSuperAdmin }: { isSuperAdmin: boolean }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const { data: templates, isLoading } = useListThresholdTemplates();
+  const { data: channels } = useListChannels();
+  const { data: campaignTypes } = useListCampaignTypes();
+  const createT = useCreateThresholdTemplate();
+  const updateT = useUpdateThresholdTemplate();
+  const deleteT = useDeleteThresholdTemplate();
+
+  const [form, setForm] = useState<TemplateForm>(EMPTY_FORM);
+  const [editingId, setEditingId] = useState<number | null>(null);
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: getListThresholdTemplatesQueryKey() });
+
+  const buildPayload = (f: TemplateForm) => {
+    const max = Number(f.maxTouchpoints);
+    const win = Number(f.windowDays);
+    if (!Number.isFinite(max) || max < 1) throw new Error("Max touchpoints must be at least 1.");
+    if (!Number.isFinite(win) || win < 1) throw new Error("Window days must be at least 1.");
+
+    const needsChannel = f.scope === "channel" || f.scope === "channel_and_type";
+    const needsType = f.scope === "campaign_type" || f.scope === "channel_and_type";
+    if (needsChannel && !f.channelId) throw new Error("Select a channel for this scope.");
+    if (needsType && !f.campaignTypeId) throw new Error("Select a campaign type for this scope.");
+
+    return {
+      name: f.name.trim(),
+      description: f.description.trim() || undefined,
+      maxTouchpoints: max,
+      windowDays: win,
+      scope: f.scope,
+      actionMode: f.actionMode,
+      ...(needsChannel ? { channelId: Number(f.channelId) } : {}),
+      ...(needsType ? { campaignTypeId: Number(f.campaignTypeId) } : {}),
+    };
+  };
+
+  const buildUpdatePayload = (f: TemplateForm) => {
+    const base = buildPayload(f);
+    const needsChannel = f.scope === "channel" || f.scope === "channel_and_type";
+    const needsType = f.scope === "campaign_type" || f.scope === "channel_and_type";
+    return {
+      ...base,
+      channelId: needsChannel ? Number(f.channelId) : null,
+      campaignTypeId: needsType ? Number(f.campaignTypeId) : null,
+    };
+  };
+
+  const handleAdd = () => {
+    if (!form.name.trim()) return;
+    let payload;
+    try { payload = buildPayload(form); }
+    catch (e: any) { toast({ title: "Check the form", description: e.message, variant: "destructive" }); return; }
+    createT.mutate(
+      { data: payload },
+      {
+        onSuccess: () => { toast({ title: "Template added" }); setForm(EMPTY_FORM); invalidate(); },
+        onError: (e: any) => toast({ title: "Could not add", description: e?.response?.data?.error || e?.message, variant: "destructive" }),
+      },
+    );
+  };
+
+  const handleSaveEdit = () => {
+    if (editingId == null) return;
+    let payload;
+    try { payload = buildUpdatePayload(form); }
+    catch (e: any) { toast({ title: "Check the form", description: e.message, variant: "destructive" }); return; }
+    updateT.mutate(
+      { id: editingId, data: payload },
+      {
+        onSuccess: () => { toast({ title: "Template updated" }); setEditingId(null); setForm(EMPTY_FORM); invalidate(); },
+        onError: (e: any) => toast({ title: "Could not update", description: e?.response?.data?.error || e?.message, variant: "destructive" }),
+      },
+    );
+  };
+
+  const openEdit = (t: any) => {
+    setForm({
+      name: t.name,
+      description: t.description || "",
+      maxTouchpoints: String(t.maxTouchpoints),
+      windowDays: String(t.windowDays),
+      scope: t.scope as ScopeKind,
+      channelId: t.channelId ? String(t.channelId) : "",
+      campaignTypeId: t.campaignTypeId ? String(t.campaignTypeId) : "",
+      actionMode: t.actionMode as ActionMode,
+    });
+    setEditingId(t.id);
+  };
+
+  const handleToggle = (id: number, active: boolean) => {
+    updateT.mutate({ id, data: { active } }, {
+      onSuccess: invalidate,
+      onError: (e: any) => toast({ title: "Could not update", description: e?.response?.data?.error || e?.message, variant: "destructive" }),
+    });
+  };
+
+  const handleDelete = (id: number, name: string) => {
+    if (!confirm(`Delete template "${name}"? This cannot be undone.`)) return;
+    deleteT.mutate({ id }, {
+      onSuccess: () => { toast({ title: "Template deleted" }); invalidate(); },
+      onError: (e: any) => toast({ title: "Could not delete", description: e?.response?.data?.error || e?.message, variant: "destructive" }),
+    });
+  };
+
+  const channelName = (id?: number | null) => channels?.find((c) => c.id === id)?.name || "—";
+  const typeName = (id?: number | null) => campaignTypes?.find((t) => t.id === id)?.name || "—";
+
+  const needsChannel = form.scope === "channel" || form.scope === "channel_and_type";
+  const needsType = form.scope === "campaign_type" || form.scope === "channel_and_type";
+  const activeChannels = (channels ?? []).filter((c) => c.active);
+  const activeCampaignTypes = (campaignTypes ?? []).filter((t) => t.active);
+
+  const formFields = (
+    <div className="grid md:grid-cols-2 gap-4">
+      <div className="space-y-2">
+        <Label>Name</Label>
+        <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Standard 3-per-14" />
+      </div>
+      <div className="space-y-2">
+        <Label>Description (optional)</Label>
+        <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Internal note" />
+      </div>
+      <div className="space-y-2">
+        <Label>Max Touchpoints</Label>
+        <Input type="number" min="1" value={form.maxTouchpoints} onChange={(e) => setForm({ ...form, maxTouchpoints: e.target.value })} />
+      </div>
+      <div className="space-y-2">
+        <Label>Window (Days)</Label>
+        <Input type="number" min="1" value={form.windowDays} onChange={(e) => setForm({ ...form, windowDays: e.target.value })} />
+      </div>
+      <div className="space-y-2">
+        <Label>Scope</Label>
+        <Select value={form.scope} onValueChange={(v) => setForm({ ...form, scope: v as ScopeKind, channelId: "", campaignTypeId: "" })}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All touches</SelectItem>
+            <SelectItem value="channel">Channel-specific</SelectItem>
+            <SelectItem value="campaign_type">Campaign type-specific</SelectItem>
+            <SelectItem value="channel_and_type">Channel + campaign type</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-2">
+        <Label>Action</Label>
+        <Select value={form.actionMode} onValueChange={(v) => setForm({ ...form, actionMode: v as ActionMode })}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {(Object.keys(ACTION_MODE_LABELS) as ActionMode[]).map((m) => (
+              <SelectItem key={m} value={m}>{ACTION_MODE_LABELS[m]}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      {needsChannel && (
+        <div className="space-y-2">
+          <Label>Channel</Label>
+          <Select value={form.channelId || NONE_VALUE} onValueChange={(v) => setForm({ ...form, channelId: v === NONE_VALUE ? "" : v })}>
+            <SelectTrigger><SelectValue placeholder="Select a channel" /></SelectTrigger>
+            <SelectContent>
+              {activeChannels.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+      {needsType && (
+        <div className="space-y-2">
+          <Label>Campaign Type</Label>
+          <Select value={form.campaignTypeId || NONE_VALUE} onValueChange={(v) => setForm({ ...form, campaignTypeId: v === NONE_VALUE ? "" : v })}>
+            <SelectTrigger><SelectValue placeholder="Select a campaign type" /></SelectTrigger>
+            <SelectContent>
+              {activeCampaignTypes.map((t) => <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Threshold Templates</CardTitle>
+        <CardDescription>
+          Reusable threshold rules that can be applied to any campaign with one click. System defaults cannot be deleted; only super admins can deactivate them.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {editingId == null && (
+          <div className="border p-4 rounded-md space-y-4">
+            <h3 className="font-semibold text-sm">Add New Template</h3>
+            {formFields}
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setForm(EMPTY_FORM)} disabled={createT.isPending}>Reset</Button>
+              <Button onClick={handleAdd} disabled={!form.name.trim() || createT.isPending}>
+                {createT.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />} Add Template
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <Dialog open={editingId != null} onOpenChange={(o) => { if (!o) { setEditingId(null); setForm(EMPTY_FORM); } }}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Edit Threshold Template</DialogTitle>
+              <DialogDescription>Update the rule definition. Existing campaigns are not retroactively changed.</DialogDescription>
+            </DialogHeader>
+            <div className="py-2">{formFields}</div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setEditingId(null); setForm(EMPTY_FORM); }}>Cancel</Button>
+              <Button onClick={handleSaveEdit} disabled={!form.name.trim() || updateT.isPending}>
+                {updateT.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Save Changes
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Limit</TableHead>
+              <TableHead>Scope</TableHead>
+              <TableHead>Action</TableHead>
+              <TableHead>Source</TableHead>
+              <TableHead className="text-right">Active</TableHead>
+              <TableHead className="text-right w-12"></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              <TableRow><TableCell colSpan={7} className="text-center h-24"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></TableCell></TableRow>
+            ) : !templates?.length ? (
+              <TableRow><TableCell colSpan={7} className="text-center h-24 text-muted-foreground">No templates yet.</TableCell></TableRow>
+            ) : (
+              templates.map((t) => (
+                <TableRow key={t.id}>
+                  <TableCell>
+                    <div className="font-medium">{t.name}</div>
+                    {t.description && <div className="text-xs text-muted-foreground">{t.description}</div>}
+                  </TableCell>
+                  <TableCell className="text-sm">{t.maxTouchpoints} per {t.windowDays}d</TableCell>
+                  <TableCell className="text-sm capitalize">
+                    {t.scope.replace(/_/g, " ")}
+                    {(t.scope === "channel" || t.scope === "channel_and_type") && <span className="text-muted-foreground"> · {channelName(t.channelId)}</span>}
+                    {(t.scope === "campaign_type" || t.scope === "channel_and_type") && <span className="text-muted-foreground"> · {typeName(t.campaignTypeId)}</span>}
+                  </TableCell>
+                  <TableCell className="text-sm capitalize">{t.actionMode}</TableCell>
+                  <TableCell>
+                    {t.systemDefault ? <Badge variant="outline" className="text-xs">System default</Badge> : <span className="text-xs text-muted-foreground">Custom</span>}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Switch
+                      checked={t.active}
+                      onCheckedChange={(c) => handleToggle(t.id, c)}
+                      disabled={t.systemDefault && !isSuperAdmin}
+                      title={t.systemDefault && !isSuperAdmin ? "System default — only a super admin can change this" : undefined}
+                    />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-1">
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(t)} aria-label={`Edit ${t.name}`}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      {!t.systemDefault && (
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDelete(t.id, t.name)} aria-label={`Delete ${t.name}`}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
   );
 }

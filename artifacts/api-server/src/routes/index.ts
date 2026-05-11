@@ -7,6 +7,7 @@ import campaignsRouter from "./campaigns";
 import audienceRouter from "./audience";
 import touchesRouter from "./touches";
 import thresholdsRouter from "./thresholds";
+import thresholdTemplatesRouter from "./thresholdTemplates";
 import suppressionsRouter from "./suppressions";
 import suppressionReasonsRouter from "./suppressionReasons";
 import seedsRouter from "./seeds";
@@ -16,6 +17,8 @@ import donorsRouter from "./donors";
 import reportsRouter from "./reports";
 import auditRouter from "./audit";
 import settingsRouter from "./settings";
+import aiRouter from "./ai";
+import savedReportViewsRouter from "./savedReportViews";
 
 const router: IRouter = Router();
 
@@ -27,6 +30,7 @@ router.use(campaignsRouter);
 router.use(audienceRouter);
 router.use(touchesRouter);
 router.use(thresholdsRouter);
+router.use(thresholdTemplatesRouter);
 router.use(suppressionsRouter);
 router.use(suppressionReasonsRouter);
 router.use(seedsRouter);
@@ -36,5 +40,7 @@ router.use(donorsRouter);
 router.use(reportsRouter);
 router.use(auditRouter);
 router.use(settingsRouter);
+router.use(aiRouter);
+router.use(savedReportViewsRouter);
 
 export default router;

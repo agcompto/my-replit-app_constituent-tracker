@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useListSuppressions, useCreateSuppression, useDeleteSuppression, useListSeeds, useCreateSeedGroup, useDeleteSeedGroup, useListChannels, useListTouches, useListSuppressionReasons, getListSuppressionsQueryKey, getListSeedsQueryKey } from "@workspace/api-client-react";
+import { useListSuppressions, useCreateSuppression, useDeleteSuppression, useListSeeds, useCreateSeedGroup, useDeleteSeedGroup, useListChannels, useListTouches, useListSuppressionReasons, useAiClassifySuppressionReason, useGetSettings, getListSuppressionsQueryKey, getListSeedsQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { PiiWarning } from "@/components/ui/PiiWarning";
-import { Loader2, Plus, Trash2, ShieldAlert, Sparkles } from "lucide-react";
+import { Loader2, Plus, Trash2, ShieldAlert, Sparkles, Wand2 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 
@@ -22,7 +23,30 @@ export default function SuppressionsSeedsStep({ campaign }: { campaign: any }) {
   const { data: channels } = useListChannels();
   const { data: touches } = useListTouches(campaign.id);
   const { data: reasonCodes } = useListSuppressionReasons();
+  const { data: settings } = useGetSettings();
   const activeReasonCodes = (reasonCodes || []).filter((r) => r.active);
+  const classifyReason = useAiClassifySuppressionReason();
+  const { toast } = useToast();
+  const [aiSuggestions, setAiSuggestions] = useState<Array<{ reasonCodeId: number; reasonName: string; confidence: number; rationale: string }>>([]);
+
+  const handleClassify = () => {
+    const text = suppForm.notes.trim();
+    if (text.length < 3) {
+      toast({ title: "Add a few words to your notes first", variant: "destructive" });
+      return;
+    }
+    classifyReason.mutate({ data: { text } }, {
+      onSuccess: (res) => {
+        setAiSuggestions(res.suggestions ?? []);
+        if (!res.suggestions?.length) toast({ title: "No matching reason found" });
+      },
+      onError: (err: any) => toast({
+        title: "AI classification failed",
+        description: err?.response?.data?.error || err?.message || "Unknown error",
+        variant: "destructive",
+      }),
+    });
+  };
 
   const activeChannels = channels?.filter(c => c.active) || [];
   const activeCampaignTypes = campaign.campaignTypes || [];
@@ -164,9 +188,33 @@ export default function SuppressionsSeedsStep({ campaign }: { campaign: any }) {
               </div>
 
               <div className="space-y-2">
-                <Label>Notes (Optional)</Label>
+                <div className="flex items-center justify-between gap-2">
+                  <Label>Notes (Optional)</Label>
+                  {settings?.aiAssistEnabled && (
+                    <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={handleClassify} disabled={classifyReason.isPending || !suppForm.notes.trim()}>
+                      {classifyReason.isPending ? <Loader2 className="h-3 w-3 mr-1.5 animate-spin" /> : <Wand2 className="h-3 w-3 mr-1.5 text-primary" />} Classify reason from notes
+                    </Button>
+                  )}
+                </div>
                 <Input value={suppForm.notes} onChange={e => setSuppForm({...suppForm, notes: e.target.value})} placeholder="Free-text context (no PII)." />
                 <PiiWarning text={suppForm.notes} />
+                {aiSuggestions.length > 0 && (
+                  <div className="rounded-md border border-primary/30 bg-primary/5 p-3 space-y-2">
+                    <p className="text-xs font-semibold flex items-center gap-1.5"><Sparkles className="h-3 w-3 text-primary" /> AI suggestions</p>
+                    {aiSuggestions.map((s) => (
+                      <div key={s.reasonCodeId} className="flex items-start justify-between gap-2 text-xs">
+                        <div className="flex-1">
+                          <div className="font-medium">{s.reasonName} <span className="text-muted-foreground">· {Math.round(s.confidence * 100)}% confidence</span></div>
+                          <div className="text-muted-foreground">{s.rationale}</div>
+                        </div>
+                        <Button type="button" variant="outline" size="sm" className="h-7 text-xs"
+                          onClick={() => { setSuppForm({ ...suppForm, reasonCodeId: String(s.reasonCodeId) }); setAiSuggestions([]); }}>
+                          Use
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <Button onClick={handleAddSuppression} disabled={!suppForm.rawText.trim() || createSupp.isPending} className="w-full">

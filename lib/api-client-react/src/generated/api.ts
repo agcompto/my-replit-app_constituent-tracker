@@ -17,7 +17,12 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  AiCadenceSuggestion,
+  AiClassifyInput,
+  AiClassifyResult,
+  AiSummary,
   AppSettings,
+  ApplyTemplatesResult,
   AudienceInput,
   AudienceUploadResult,
   AuditEntry,
@@ -34,17 +39,21 @@ import type {
   Channel,
   ChannelInput,
   ChannelUpdate,
+  CohortAnalysis,
   Dashboard,
   DonorLookup,
   ExportJob,
   ExportResult,
   GetAuditLogParams,
+  GetCohortAnalysisParams,
   GetDashboardParams,
   GetHighVolumeDonorsParams,
   GetUpcomingVolumeParams,
+  GetYoyVolumeParams,
   HealthStatus,
   HighVolumeDonor,
   ListCampaignsParams,
+  ListSavedReportViewsParams,
   LoginInput,
   OverrideInput,
   OwningUnit,
@@ -53,6 +62,8 @@ import type {
   PasswordResetInput,
   RetentionInput,
   RetentionResult,
+  SavedReportView,
+  SavedReportViewInput,
   SeedGroup,
   SeedGroupInput,
   SessionUser,
@@ -65,6 +76,9 @@ import type {
   ThresholdCheck,
   ThresholdInput,
   ThresholdPreview,
+  ThresholdTemplate,
+  ThresholdTemplateInput,
+  ThresholdTemplateUpdate,
   Touch,
   TouchInput,
   TouchUpdate,
@@ -73,6 +87,7 @@ import type {
   User,
   UserInput,
   UserUpdate,
+  YoyVolume,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -5035,4 +5050,1137 @@ export const useRunRetentionDelete = <
   TContext
 > => {
   return useMutation(getRunRetentionDeleteMutationOptions(options));
+};
+
+export const getListThresholdTemplatesUrl = () => {
+  return `/api/threshold-templates`;
+};
+
+export const listThresholdTemplates = async (
+  options?: RequestInit,
+): Promise<ThresholdTemplate[]> => {
+  return customFetch<ThresholdTemplate[]>(getListThresholdTemplatesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListThresholdTemplatesQueryKey = () => {
+  return [`/api/threshold-templates`] as const;
+};
+
+export const getListThresholdTemplatesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listThresholdTemplates>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listThresholdTemplates>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListThresholdTemplatesQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listThresholdTemplates>>
+  > = ({ signal }) => listThresholdTemplates({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listThresholdTemplates>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListThresholdTemplatesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listThresholdTemplates>>
+>;
+export type ListThresholdTemplatesQueryError = ErrorType<unknown>;
+
+export function useListThresholdTemplates<
+  TData = Awaited<ReturnType<typeof listThresholdTemplates>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listThresholdTemplates>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListThresholdTemplatesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getCreateThresholdTemplateUrl = () => {
+  return `/api/threshold-templates`;
+};
+
+export const createThresholdTemplate = async (
+  thresholdTemplateInput: ThresholdTemplateInput,
+  options?: RequestInit,
+): Promise<ThresholdTemplate> => {
+  return customFetch<ThresholdTemplate>(getCreateThresholdTemplateUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(thresholdTemplateInput),
+  });
+};
+
+export const getCreateThresholdTemplateMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createThresholdTemplate>>,
+    TError,
+    { data: BodyType<ThresholdTemplateInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createThresholdTemplate>>,
+  TError,
+  { data: BodyType<ThresholdTemplateInput> },
+  TContext
+> => {
+  const mutationKey = ["createThresholdTemplate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createThresholdTemplate>>,
+    { data: BodyType<ThresholdTemplateInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createThresholdTemplate(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateThresholdTemplateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createThresholdTemplate>>
+>;
+export type CreateThresholdTemplateMutationBody =
+  BodyType<ThresholdTemplateInput>;
+export type CreateThresholdTemplateMutationError = ErrorType<unknown>;
+
+export const useCreateThresholdTemplate = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createThresholdTemplate>>,
+    TError,
+    { data: BodyType<ThresholdTemplateInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createThresholdTemplate>>,
+  TError,
+  { data: BodyType<ThresholdTemplateInput> },
+  TContext
+> => {
+  return useMutation(getCreateThresholdTemplateMutationOptions(options));
+};
+
+export const getUpdateThresholdTemplateUrl = (id: number) => {
+  return `/api/threshold-templates/${id}`;
+};
+
+export const updateThresholdTemplate = async (
+  id: number,
+  thresholdTemplateUpdate: ThresholdTemplateUpdate,
+  options?: RequestInit,
+): Promise<ThresholdTemplate> => {
+  return customFetch<ThresholdTemplate>(getUpdateThresholdTemplateUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(thresholdTemplateUpdate),
+  });
+};
+
+export const getUpdateThresholdTemplateMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateThresholdTemplate>>,
+    TError,
+    { id: number; data: BodyType<ThresholdTemplateUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateThresholdTemplate>>,
+  TError,
+  { id: number; data: BodyType<ThresholdTemplateUpdate> },
+  TContext
+> => {
+  const mutationKey = ["updateThresholdTemplate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateThresholdTemplate>>,
+    { id: number; data: BodyType<ThresholdTemplateUpdate> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateThresholdTemplate(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateThresholdTemplateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateThresholdTemplate>>
+>;
+export type UpdateThresholdTemplateMutationBody =
+  BodyType<ThresholdTemplateUpdate>;
+export type UpdateThresholdTemplateMutationError = ErrorType<unknown>;
+
+export const useUpdateThresholdTemplate = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateThresholdTemplate>>,
+    TError,
+    { id: number; data: BodyType<ThresholdTemplateUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateThresholdTemplate>>,
+  TError,
+  { id: number; data: BodyType<ThresholdTemplateUpdate> },
+  TContext
+> => {
+  return useMutation(getUpdateThresholdTemplateMutationOptions(options));
+};
+
+export const getDeleteThresholdTemplateUrl = (id: number) => {
+  return `/api/threshold-templates/${id}`;
+};
+
+export const deleteThresholdTemplate = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteThresholdTemplateUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteThresholdTemplateMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteThresholdTemplate>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteThresholdTemplate>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteThresholdTemplate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteThresholdTemplate>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteThresholdTemplate(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteThresholdTemplateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteThresholdTemplate>>
+>;
+
+export type DeleteThresholdTemplateMutationError = ErrorType<unknown>;
+
+export const useDeleteThresholdTemplate = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteThresholdTemplate>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteThresholdTemplate>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteThresholdTemplateMutationOptions(options));
+};
+
+export const getApplyThresholdTemplatesUrl = (id: number) => {
+  return `/api/campaigns/${id}/apply-threshold-templates`;
+};
+
+export const applyThresholdTemplates = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ApplyTemplatesResult> => {
+  return customFetch<ApplyTemplatesResult>(getApplyThresholdTemplatesUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getApplyThresholdTemplatesMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof applyThresholdTemplates>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof applyThresholdTemplates>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["applyThresholdTemplates"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof applyThresholdTemplates>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return applyThresholdTemplates(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ApplyThresholdTemplatesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof applyThresholdTemplates>>
+>;
+
+export type ApplyThresholdTemplatesMutationError = ErrorType<unknown>;
+
+export const useApplyThresholdTemplates = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof applyThresholdTemplates>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof applyThresholdTemplates>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getApplyThresholdTemplatesMutationOptions(options));
+};
+
+export const getAiAudienceSummaryUrl = (id: number) => {
+  return `/api/campaigns/${id}/ai/audience-summary`;
+};
+
+export const aiAudienceSummary = async (
+  id: number,
+  options?: RequestInit,
+): Promise<AiSummary> => {
+  return customFetch<AiSummary>(getAiAudienceSummaryUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getAiAudienceSummaryMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof aiAudienceSummary>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof aiAudienceSummary>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["aiAudienceSummary"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof aiAudienceSummary>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return aiAudienceSummary(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AiAudienceSummaryMutationResult = NonNullable<
+  Awaited<ReturnType<typeof aiAudienceSummary>>
+>;
+
+export type AiAudienceSummaryMutationError = ErrorType<unknown>;
+
+export const useAiAudienceSummary = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof aiAudienceSummary>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof aiAudienceSummary>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getAiAudienceSummaryMutationOptions(options));
+};
+
+export const getAiSuggestCadenceUrl = (id: number) => {
+  return `/api/campaigns/${id}/ai/suggest-cadence`;
+};
+
+export const aiSuggestCadence = async (
+  id: number,
+  options?: RequestInit,
+): Promise<AiCadenceSuggestion> => {
+  return customFetch<AiCadenceSuggestion>(getAiSuggestCadenceUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getAiSuggestCadenceMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof aiSuggestCadence>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof aiSuggestCadence>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["aiSuggestCadence"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof aiSuggestCadence>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return aiSuggestCadence(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AiSuggestCadenceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof aiSuggestCadence>>
+>;
+
+export type AiSuggestCadenceMutationError = ErrorType<unknown>;
+
+export const useAiSuggestCadence = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof aiSuggestCadence>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof aiSuggestCadence>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getAiSuggestCadenceMutationOptions(options));
+};
+
+export const getAiClassifySuppressionReasonUrl = () => {
+  return `/api/ai/classify-suppression-reason`;
+};
+
+export const aiClassifySuppressionReason = async (
+  aiClassifyInput: AiClassifyInput,
+  options?: RequestInit,
+): Promise<AiClassifyResult> => {
+  return customFetch<AiClassifyResult>(getAiClassifySuppressionReasonUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(aiClassifyInput),
+  });
+};
+
+export const getAiClassifySuppressionReasonMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof aiClassifySuppressionReason>>,
+    TError,
+    { data: BodyType<AiClassifyInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof aiClassifySuppressionReason>>,
+  TError,
+  { data: BodyType<AiClassifyInput> },
+  TContext
+> => {
+  const mutationKey = ["aiClassifySuppressionReason"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof aiClassifySuppressionReason>>,
+    { data: BodyType<AiClassifyInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return aiClassifySuppressionReason(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AiClassifySuppressionReasonMutationResult = NonNullable<
+  Awaited<ReturnType<typeof aiClassifySuppressionReason>>
+>;
+export type AiClassifySuppressionReasonMutationBody = BodyType<AiClassifyInput>;
+export type AiClassifySuppressionReasonMutationError = ErrorType<unknown>;
+
+export const useAiClassifySuppressionReason = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof aiClassifySuppressionReason>>,
+    TError,
+    { data: BodyType<AiClassifyInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof aiClassifySuppressionReason>>,
+  TError,
+  { data: BodyType<AiClassifyInput> },
+  TContext
+> => {
+  return useMutation(getAiClassifySuppressionReasonMutationOptions(options));
+};
+
+export const getGetCohortAnalysisUrl = (params?: GetCohortAnalysisParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/reports/cohort-analysis?${stringifiedParams}`
+    : `/api/reports/cohort-analysis`;
+};
+
+export const getCohortAnalysis = async (
+  params?: GetCohortAnalysisParams,
+  options?: RequestInit,
+): Promise<CohortAnalysis> => {
+  return customFetch<CohortAnalysis>(getGetCohortAnalysisUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetCohortAnalysisQueryKey = (
+  params?: GetCohortAnalysisParams,
+) => {
+  return [`/api/reports/cohort-analysis`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetCohortAnalysisQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCohortAnalysis>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetCohortAnalysisParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCohortAnalysis>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetCohortAnalysisQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getCohortAnalysis>>
+  > = ({ signal }) => getCohortAnalysis(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCohortAnalysis>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCohortAnalysisQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCohortAnalysis>>
+>;
+export type GetCohortAnalysisQueryError = ErrorType<unknown>;
+
+export function useGetCohortAnalysis<
+  TData = Awaited<ReturnType<typeof getCohortAnalysis>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetCohortAnalysisParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCohortAnalysis>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCohortAnalysisQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getGetYoyVolumeUrl = (params: GetYoyVolumeParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/reports/yoy-volume?${stringifiedParams}`
+    : `/api/reports/yoy-volume`;
+};
+
+export const getYoyVolume = async (
+  params: GetYoyVolumeParams,
+  options?: RequestInit,
+): Promise<YoyVolume> => {
+  return customFetch<YoyVolume>(getGetYoyVolumeUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetYoyVolumeQueryKey = (params?: GetYoyVolumeParams) => {
+  return [`/api/reports/yoy-volume`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetYoyVolumeQueryOptions = <
+  TData = Awaited<ReturnType<typeof getYoyVolume>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetYoyVolumeParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getYoyVolume>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetYoyVolumeQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getYoyVolume>>> = ({
+    signal,
+  }) => getYoyVolume(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getYoyVolume>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetYoyVolumeQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getYoyVolume>>
+>;
+export type GetYoyVolumeQueryError = ErrorType<unknown>;
+
+export function useGetYoyVolume<
+  TData = Awaited<ReturnType<typeof getYoyVolume>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetYoyVolumeParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getYoyVolume>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetYoyVolumeQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getListSavedReportViewsUrl = (
+  params?: ListSavedReportViewsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/saved-report-views?${stringifiedParams}`
+    : `/api/saved-report-views`;
+};
+
+export const listSavedReportViews = async (
+  params?: ListSavedReportViewsParams,
+  options?: RequestInit,
+): Promise<SavedReportView[]> => {
+  return customFetch<SavedReportView[]>(getListSavedReportViewsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListSavedReportViewsQueryKey = (
+  params?: ListSavedReportViewsParams,
+) => {
+  return [`/api/saved-report-views`, ...(params ? [params] : [])] as const;
+};
+
+export const getListSavedReportViewsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listSavedReportViews>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListSavedReportViewsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listSavedReportViews>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListSavedReportViewsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listSavedReportViews>>
+  > = ({ signal }) =>
+    listSavedReportViews(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listSavedReportViews>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListSavedReportViewsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listSavedReportViews>>
+>;
+export type ListSavedReportViewsQueryError = ErrorType<unknown>;
+
+export function useListSavedReportViews<
+  TData = Awaited<ReturnType<typeof listSavedReportViews>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListSavedReportViewsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listSavedReportViews>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListSavedReportViewsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getCreateSavedReportViewUrl = () => {
+  return `/api/saved-report-views`;
+};
+
+export const createSavedReportView = async (
+  savedReportViewInput: SavedReportViewInput,
+  options?: RequestInit,
+): Promise<SavedReportView> => {
+  return customFetch<SavedReportView>(getCreateSavedReportViewUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(savedReportViewInput),
+  });
+};
+
+export const getCreateSavedReportViewMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createSavedReportView>>,
+    TError,
+    { data: BodyType<SavedReportViewInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createSavedReportView>>,
+  TError,
+  { data: BodyType<SavedReportViewInput> },
+  TContext
+> => {
+  const mutationKey = ["createSavedReportView"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createSavedReportView>>,
+    { data: BodyType<SavedReportViewInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createSavedReportView(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateSavedReportViewMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createSavedReportView>>
+>;
+export type CreateSavedReportViewMutationBody = BodyType<SavedReportViewInput>;
+export type CreateSavedReportViewMutationError = ErrorType<unknown>;
+
+export const useCreateSavedReportView = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createSavedReportView>>,
+    TError,
+    { data: BodyType<SavedReportViewInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createSavedReportView>>,
+  TError,
+  { data: BodyType<SavedReportViewInput> },
+  TContext
+> => {
+  return useMutation(getCreateSavedReportViewMutationOptions(options));
+};
+
+export const getUpdateSavedReportViewUrl = (id: number) => {
+  return `/api/saved-report-views/${id}`;
+};
+
+export const updateSavedReportView = async (
+  id: number,
+  savedReportViewInput: SavedReportViewInput,
+  options?: RequestInit,
+): Promise<SavedReportView> => {
+  return customFetch<SavedReportView>(getUpdateSavedReportViewUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(savedReportViewInput),
+  });
+};
+
+export const getUpdateSavedReportViewMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSavedReportView>>,
+    TError,
+    { id: number; data: BodyType<SavedReportViewInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateSavedReportView>>,
+  TError,
+  { id: number; data: BodyType<SavedReportViewInput> },
+  TContext
+> => {
+  const mutationKey = ["updateSavedReportView"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateSavedReportView>>,
+    { id: number; data: BodyType<SavedReportViewInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateSavedReportView(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateSavedReportViewMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateSavedReportView>>
+>;
+export type UpdateSavedReportViewMutationBody = BodyType<SavedReportViewInput>;
+export type UpdateSavedReportViewMutationError = ErrorType<unknown>;
+
+export const useUpdateSavedReportView = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSavedReportView>>,
+    TError,
+    { id: number; data: BodyType<SavedReportViewInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateSavedReportView>>,
+  TError,
+  { id: number; data: BodyType<SavedReportViewInput> },
+  TContext
+> => {
+  return useMutation(getUpdateSavedReportViewMutationOptions(options));
+};
+
+export const getDeleteSavedReportViewUrl = (id: number) => {
+  return `/api/saved-report-views/${id}`;
+};
+
+export const deleteSavedReportView = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteSavedReportViewUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteSavedReportViewMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteSavedReportView>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteSavedReportView>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteSavedReportView"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteSavedReportView>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteSavedReportView(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteSavedReportViewMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteSavedReportView>>
+>;
+
+export type DeleteSavedReportViewMutationError = ErrorType<unknown>;
+
+export const useDeleteSavedReportView = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteSavedReportView>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteSavedReportView>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteSavedReportViewMutationOptions(options));
 };

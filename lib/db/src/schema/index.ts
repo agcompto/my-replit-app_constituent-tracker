@@ -192,6 +192,28 @@ export const thresholdsTable = pgTable("thresholds", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ─────── Threshold templates (admin-managed default rule library)
+// When creating or editing a campaign's thresholds, staff can apply the active
+// templates to seed the campaign's rules (a copy is made into thresholdsTable).
+export const thresholdTemplatesTable = pgTable("threshold_templates", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  maxTouchpoints: integer("max_touchpoints").notNull(),
+  windowDays: integer("window_days").notNull(),
+  scope: text("scope").notNull(), // all | channel | campaign_type | channel_and_type
+  channelId: integer("channel_id").references(() => channelsTable.id),
+  campaignTypeId: integer("campaign_type_id").references(() => campaignTypesTable.id),
+  actionMode: text("action_mode").notNull(), // track | flag | remove | manual
+  active: boolean("active").notNull().default(true),
+  systemDefault: boolean("system_default").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});
+
 export const thresholdOverridesTable = pgTable(
   "threshold_overrides",
   {
@@ -369,11 +391,35 @@ export const appSettingsTable = pgTable("app_settings", {
   googleSheetImportEnabled: boolean("google_sheet_import_enabled").notNull().default(false),
   retentionDeleteEnabled: boolean("retention_delete_enabled").notNull().default(false),
   globalThresholdsEnabled: boolean("global_thresholds_enabled").notNull().default(false),
+  aiAssistEnabled: boolean("ai_assist_enabled").notNull().default(false),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .defaultNow()
     .$onUpdate(() => new Date()),
 });
+
+// ─────── Saved report views (per-user filter snapshots)
+export const savedReportViewsTable = pgTable(
+  "saved_report_views",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => usersTable.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    viewType: text("view_type").notNull(), // dashboard | upcoming | high-volume | cohort | yoy
+    filtersJson: jsonb("filters_json").$type<Record<string, unknown>>().notNull().default({}),
+    configJson: jsonb("config_json").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => ({
+    userIdx: index("saved_report_views_user_idx").on(t.userId, t.viewType),
+  }),
+);
 
 // Suppress unused warning
 void uniqueIndex;

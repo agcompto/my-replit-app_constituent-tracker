@@ -714,6 +714,7 @@ export interface AppSettings {
   googleSheetImportEnabled: boolean;
   retentionDeleteEnabled: boolean;
   globalThresholdsEnabled: boolean;
+  aiAssistEnabled: boolean;
 }
 
 export interface SettingsUpdate {
@@ -730,6 +731,7 @@ export interface SettingsUpdate {
   googleSheetImportEnabled?: boolean;
   retentionDeleteEnabled?: boolean;
   globalThresholdsEnabled?: boolean;
+  aiAssistEnabled?: boolean;
 }
 
 export interface RetentionInput {
@@ -740,6 +742,251 @@ export interface RetentionInput {
 export interface RetentionResult {
   campaignsDeleted: number;
   touchpointsDeleted: number;
+}
+
+export type ThresholdTemplateScope =
+  (typeof ThresholdTemplateScope)[keyof typeof ThresholdTemplateScope];
+
+export const ThresholdTemplateScope = {
+  all: "all",
+  channel: "channel",
+  campaign_type: "campaign_type",
+  channel_and_type: "channel_and_type",
+} as const;
+
+export type ThresholdTemplateActionMode =
+  (typeof ThresholdTemplateActionMode)[keyof typeof ThresholdTemplateActionMode];
+
+export const ThresholdTemplateActionMode = {
+  track: "track",
+  flag: "flag",
+  remove: "remove",
+  manual: "manual",
+} as const;
+
+export interface ThresholdTemplate {
+  id: number;
+  name: string;
+  /** @nullable */
+  description?: string | null;
+  maxTouchpoints: number;
+  windowDays: number;
+  scope: ThresholdTemplateScope;
+  /** @nullable */
+  channelId?: number | null;
+  /** @nullable */
+  campaignTypeId?: number | null;
+  actionMode: ThresholdTemplateActionMode;
+  active: boolean;
+  systemDefault: boolean;
+  createdAt: string;
+}
+
+export type ThresholdTemplateInputScope =
+  (typeof ThresholdTemplateInputScope)[keyof typeof ThresholdTemplateInputScope];
+
+export const ThresholdTemplateInputScope = {
+  all: "all",
+  channel: "channel",
+  campaign_type: "campaign_type",
+  channel_and_type: "channel_and_type",
+} as const;
+
+export type ThresholdTemplateInputActionMode =
+  (typeof ThresholdTemplateInputActionMode)[keyof typeof ThresholdTemplateInputActionMode];
+
+export const ThresholdTemplateInputActionMode = {
+  track: "track",
+  flag: "flag",
+  remove: "remove",
+  manual: "manual",
+} as const;
+
+export interface ThresholdTemplateInput {
+  /**
+   * @minLength 1
+   * @maxLength 120
+   */
+  name: string;
+  description?: string;
+  /** @minimum 1 */
+  maxTouchpoints: number;
+  /** @minimum 1 */
+  windowDays: number;
+  scope: ThresholdTemplateInputScope;
+  channelId?: number;
+  campaignTypeId?: number;
+  actionMode: ThresholdTemplateInputActionMode;
+  active?: boolean;
+}
+
+export type ThresholdTemplateUpdateScope =
+  (typeof ThresholdTemplateUpdateScope)[keyof typeof ThresholdTemplateUpdateScope];
+
+export const ThresholdTemplateUpdateScope = {
+  all: "all",
+  channel: "channel",
+  campaign_type: "campaign_type",
+  channel_and_type: "channel_and_type",
+} as const;
+
+export type ThresholdTemplateUpdateActionMode =
+  (typeof ThresholdTemplateUpdateActionMode)[keyof typeof ThresholdTemplateUpdateActionMode];
+
+export const ThresholdTemplateUpdateActionMode = {
+  track: "track",
+  flag: "flag",
+  remove: "remove",
+  manual: "manual",
+} as const;
+
+export interface ThresholdTemplateUpdate {
+  /**
+   * @minLength 1
+   * @maxLength 120
+   */
+  name?: string;
+  /** @nullable */
+  description?: string | null;
+  /** @minimum 1 */
+  maxTouchpoints?: number;
+  /** @minimum 1 */
+  windowDays?: number;
+  scope?: ThresholdTemplateUpdateScope;
+  /** @nullable */
+  channelId?: number | null;
+  /** @nullable */
+  campaignTypeId?: number | null;
+  actionMode?: ThresholdTemplateUpdateActionMode;
+  active?: boolean;
+}
+
+export interface ApplyTemplatesResult {
+  created: number;
+  skipped: number;
+  total: number;
+  skippedNames?: string[];
+}
+
+export interface AiSummary {
+  summary: string;
+  generatedAt: string;
+}
+
+export type AiCadenceSuggestionTouchesItem = {
+  order: number;
+  channelLabel: string;
+  dayOffset: number;
+  purpose: string;
+};
+
+export interface AiCadenceSuggestion {
+  generatedAt: string;
+  rationale: string;
+  touches: AiCadenceSuggestionTouchesItem[];
+}
+
+export interface AiClassifyInput {
+  /**
+   * @minLength 3
+   * @maxLength 4000
+   */
+  text: string;
+}
+
+export type AiClassifyResultSuggestionsItem = {
+  reasonCodeId: number;
+  reasonName: string;
+  /**
+   * @minimum 0
+   * @maximum 1
+   */
+  confidence: number;
+  rationale: string;
+};
+
+export interface AiClassifyResult {
+  generatedAt: string;
+  suggestions: AiClassifyResultSuggestionsItem[];
+}
+
+export type CohortAnalysisCohortsItem = {
+  cohortMonth: string;
+  cohortSize: number;
+  totalTouchpoints: number;
+  avgTouchpointsPerDonor: number;
+};
+
+export interface CohortAnalysis {
+  generatedAt: string;
+  months: number;
+  cohorts: CohortAnalysisCohortsItem[];
+}
+
+export type YoyVolumeCurrentRange = {
+  start: string;
+  end: string;
+};
+
+export type YoyVolumePriorRange = {
+  start: string;
+  end: string;
+};
+
+export type YoyVolumeByChannelItem = {
+  label: string;
+  current: number;
+  prior: number;
+};
+
+export type YoyVolumeByMonthItem = {
+  monthOffset: number;
+  current: number;
+  prior: number;
+};
+
+export interface YoyVolume {
+  generatedAt: string;
+  currentRange: YoyVolumeCurrentRange;
+  priorRange: YoyVolumePriorRange;
+  currentTotal: number;
+  priorTotal: number;
+  percentChange: number;
+  byChannel: YoyVolumeByChannelItem[];
+  byMonth: YoyVolumeByMonthItem[];
+}
+
+export type SavedReportViewFilters = { [key: string]: unknown };
+
+export type SavedReportViewConfig = { [key: string]: unknown };
+
+export interface SavedReportView {
+  id: number;
+  name: string;
+  viewType: string;
+  filters: SavedReportViewFilters;
+  config: SavedReportViewConfig;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type SavedReportViewInputFilters = { [key: string]: unknown };
+
+export type SavedReportViewInputConfig = { [key: string]: unknown };
+
+export interface SavedReportViewInput {
+  /**
+   * @minLength 1
+   * @maxLength 120
+   */
+  name: string;
+  /**
+   * @minLength 1
+   * @maxLength 40
+   */
+  viewType: string;
+  filters?: SavedReportViewInputFilters;
+  config?: SavedReportViewInputConfig;
 }
 
 export type ListCampaignsParams = {
@@ -777,4 +1024,27 @@ export type GetAuditLogParams = {
   entityType?: string;
   startDate?: string;
   endDate?: string;
+};
+
+export type GetCohortAnalysisParams = {
+  /**
+   * @minimum 1
+   * @maximum 36
+   */
+  months?: number;
+  owningUnit?: string;
+  channelId?: number;
+};
+
+export type GetYoyVolumeParams = {
+  currentStart: string;
+  currentEnd: string;
+  priorStart?: string;
+  priorEnd?: string;
+  owningUnit?: string;
+  channelId?: number;
+};
+
+export type ListSavedReportViewsParams = {
+  viewType?: string;
 };

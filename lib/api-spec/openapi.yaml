@@ -28,6 +28,9 @@ tags:
   - name: retention
   - name: suppressionReasons
   - name: healthCheck
+  - name: thresholdTemplates
+  - name: aiAssist
+  - name: savedViews
 
 paths:
   /healthz:
@@ -914,6 +917,198 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/RetentionResult" }
 
+  # ───────── Threshold templates (admin-managed default rule library)
+  /threshold-templates:
+    get:
+      operationId: listThresholdTemplates
+      tags: [thresholdTemplates]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ThresholdTemplate" }
+    post:
+      operationId: createThresholdTemplate
+      tags: [thresholdTemplates]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ThresholdTemplateInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ThresholdTemplate" }
+  /threshold-templates/{id}:
+    patch:
+      operationId: updateThresholdTemplate
+      tags: [thresholdTemplates]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ThresholdTemplateUpdate" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ThresholdTemplate" }
+    delete:
+      operationId: deleteThresholdTemplate
+      tags: [thresholdTemplates]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: Deleted }
+  /campaigns/{id}/apply-threshold-templates:
+    post:
+      operationId: applyThresholdTemplates
+      tags: [thresholdTemplates]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApplyTemplatesResult" }
+
+  # ───────── AI assist
+  /campaigns/{id}/ai/audience-summary:
+    post:
+      operationId: aiAudienceSummary
+      tags: [aiAssist]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AiSummary" }
+  /campaigns/{id}/ai/suggest-cadence:
+    post:
+      operationId: aiSuggestCadence
+      tags: [aiAssist]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AiCadenceSuggestion" }
+  /ai/classify-suppression-reason:
+    post:
+      operationId: aiClassifySuppressionReason
+      tags: [aiAssist]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AiClassifyInput" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AiClassifyResult" }
+
+  # ───────── Advanced reporting
+  /reports/cohort-analysis:
+    get:
+      operationId: getCohortAnalysis
+      tags: [reports]
+      parameters:
+        - { name: months, in: query, schema: { type: integer, minimum: 1, maximum: 36 } }
+        - { name: owningUnit, in: query, schema: { type: string } }
+        - { name: channelId, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CohortAnalysis" }
+  /reports/yoy-volume:
+    get:
+      operationId: getYoyVolume
+      tags: [reports]
+      parameters:
+        - { name: currentStart, in: query, required: true, schema: { type: string, format: date } }
+        - { name: currentEnd, in: query, required: true, schema: { type: string, format: date } }
+        - { name: priorStart, in: query, schema: { type: string, format: date } }
+        - { name: priorEnd, in: query, schema: { type: string, format: date } }
+        - { name: owningUnit, in: query, schema: { type: string } }
+        - { name: channelId, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/YoyVolume" }
+
+  # ───────── Saved report views (per-user)
+  /saved-report-views:
+    get:
+      operationId: listSavedReportViews
+      tags: [savedViews]
+      parameters:
+        - { name: viewType, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SavedReportView" }
+    post:
+      operationId: createSavedReportView
+      tags: [savedViews]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SavedReportViewInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SavedReportView" }
+  /saved-report-views/{id}:
+    patch:
+      operationId: updateSavedReportView
+      tags: [savedViews]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SavedReportViewInput" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SavedReportView" }
+    delete:
+      operationId: deleteSavedReportView
+      tags: [savedViews]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: Deleted }
+
 components:
   schemas:
     HealthStatus:
@@ -1521,13 +1716,14 @@ components:
 
     AppSettings:
       type: object
-      required: [fiscalYearStartMonth, fiscalYearStartDay, googleSheetImportEnabled, retentionDeleteEnabled, globalThresholdsEnabled]
+      required: [fiscalYearStartMonth, fiscalYearStartDay, googleSheetImportEnabled, retentionDeleteEnabled, globalThresholdsEnabled, aiAssistEnabled]
       properties:
         fiscalYearStartMonth: { type: integer, minimum: 1, maximum: 12 }
         fiscalYearStartDay: { type: integer, minimum: 1, maximum: 31 }
         googleSheetImportEnabled: { type: boolean }
         retentionDeleteEnabled: { type: boolean }
         globalThresholdsEnabled: { type: boolean }
+        aiAssistEnabled: { type: boolean }
     SettingsUpdate:
       type: object
       properties:
@@ -1536,6 +1732,7 @@ components:
         googleSheetImportEnabled: { type: boolean }
         retentionDeleteEnabled: { type: boolean }
         globalThresholdsEnabled: { type: boolean }
+        aiAssistEnabled: { type: boolean }
 
     RetentionInput:
       type: object
@@ -1549,3 +1746,173 @@ components:
       properties:
         campaignsDeleted: { type: integer }
         touchpointsDeleted: { type: integer }
+
+    ThresholdTemplate:
+      type: object
+      required: [id, name, maxTouchpoints, windowDays, scope, actionMode, active, systemDefault, createdAt]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        description: { type: ["string", "null"] }
+        maxTouchpoints: { type: integer }
+        windowDays: { type: integer }
+        scope: { type: string, enum: [all, channel, campaign_type, channel_and_type] }
+        channelId: { type: ["integer", "null"] }
+        campaignTypeId: { type: ["integer", "null"] }
+        actionMode: { type: string, enum: [track, flag, remove, manual] }
+        active: { type: boolean }
+        systemDefault: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    ThresholdTemplateInput:
+      type: object
+      required: [name, maxTouchpoints, windowDays, scope, actionMode]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: string }
+        maxTouchpoints: { type: integer, minimum: 1 }
+        windowDays: { type: integer, minimum: 1 }
+        scope: { type: string, enum: [all, channel, campaign_type, channel_and_type] }
+        channelId: { type: integer }
+        campaignTypeId: { type: integer }
+        actionMode: { type: string, enum: [track, flag, remove, manual] }
+        active: { type: boolean }
+    ThresholdTemplateUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: ["string", "null"] }
+        maxTouchpoints: { type: integer, minimum: 1 }
+        windowDays: { type: integer, minimum: 1 }
+        scope: { type: string, enum: [all, channel, campaign_type, channel_and_type] }
+        channelId: { type: ["integer", "null"] }
+        campaignTypeId: { type: ["integer", "null"] }
+        actionMode: { type: string, enum: [track, flag, remove, manual] }
+        active: { type: boolean }
+    ApplyTemplatesResult:
+      type: object
+      required: [created, skipped, total]
+      properties:
+        created: { type: integer }
+        skipped: { type: integer }
+        total: { type: integer }
+        skippedNames:
+          type: array
+          items: { type: string }
+
+    AiSummary:
+      type: object
+      required: [summary, generatedAt]
+      properties:
+        summary: { type: string }
+        generatedAt: { type: string, format: date-time }
+    AiCadenceSuggestion:
+      type: object
+      required: [generatedAt, rationale, touches]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        rationale: { type: string }
+        touches:
+          type: array
+          items:
+            type: object
+            required: [order, channelLabel, dayOffset, purpose]
+            properties:
+              order: { type: integer }
+              channelLabel: { type: string }
+              dayOffset: { type: integer }
+              purpose: { type: string }
+    AiClassifyInput:
+      type: object
+      required: [text]
+      properties:
+        text: { type: string, minLength: 3, maxLength: 4000 }
+    AiClassifyResult:
+      type: object
+      required: [generatedAt, suggestions]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        suggestions:
+          type: array
+          items:
+            type: object
+            required: [reasonCodeId, reasonName, confidence, rationale]
+            properties:
+              reasonCodeId: { type: integer }
+              reasonName: { type: string }
+              confidence: { type: number, minimum: 0, maximum: 1 }
+              rationale: { type: string }
+
+    CohortAnalysis:
+      type: object
+      required: [generatedAt, months, cohorts]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        months: { type: integer }
+        cohorts:
+          type: array
+          items:
+            type: object
+            required: [cohortMonth, cohortSize, totalTouchpoints, avgTouchpointsPerDonor]
+            properties:
+              cohortMonth: { type: string }
+              cohortSize: { type: integer }
+              totalTouchpoints: { type: integer }
+              avgTouchpointsPerDonor: { type: number }
+    YoyVolume:
+      type: object
+      required: [generatedAt, currentRange, priorRange, currentTotal, priorTotal, percentChange, byChannel, byMonth]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        currentRange:
+          type: object
+          required: [start, end]
+          properties:
+            start: { type: string, format: date }
+            end: { type: string, format: date }
+        priorRange:
+          type: object
+          required: [start, end]
+          properties:
+            start: { type: string, format: date }
+            end: { type: string, format: date }
+        currentTotal: { type: integer }
+        priorTotal: { type: integer }
+        percentChange: { type: number }
+        byChannel:
+          type: array
+          items:
+            type: object
+            required: [label, current, prior]
+            properties:
+              label: { type: string }
+              current: { type: integer }
+              prior: { type: integer }
+        byMonth:
+          type: array
+          items:
+            type: object
+            required: [monthOffset, current, prior]
+            properties:
+              monthOffset: { type: integer }
+              current: { type: integer }
+              prior: { type: integer }
+
+    SavedReportView:
+      type: object
+      required: [id, name, viewType, filters, config, createdAt, updatedAt]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        viewType: { type: string }
+        filters: { type: object, additionalProperties: true }
+        config: { type: object, additionalProperties: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    SavedReportViewInput:
+      type: object
+      required: [name, viewType]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        viewType: { type: string, minLength: 1, maxLength: 40 }
+        filters: { type: object, additionalProperties: true }
+        config: { type: object, additionalProperties: true }

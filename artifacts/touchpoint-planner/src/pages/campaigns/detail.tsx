@@ -1,13 +1,15 @@
-import { useGetCampaign, useArchiveCampaign, useVoidCampaign, getGetCampaignQueryKey } from "@workspace/api-client-react";
+import { useGetCampaign, useArchiveCampaign, useVoidCampaign, useAiAudienceSummary, useGetSettings, getGetCampaignQueryKey } from "@workspace/api-client-react";
 import { useRoute, useLocation } from "wouter";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { Loader2, ArrowLeft, Edit, Archive, Ban } from "lucide-react";
+import { Loader2, ArrowLeft, Edit, Archive, Ban, Sparkles, RefreshCw } from "lucide-react";
 import { format } from "date-fns";
+import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useGetMe } from "@workspace/api-client-react";
+import { useToast } from "@/hooks/use-toast";
 
 export default function CampaignDetail() {
   const [, params] = useRoute("/campaigns/:id");
@@ -22,6 +24,21 @@ export default function CampaignDetail() {
 
   const archiveMutation = useArchiveCampaign();
   const voidMutation = useVoidCampaign();
+  const { data: settings } = useGetSettings();
+  const aiSummaryMutation = useAiAudienceSummary();
+  const { toast } = useToast();
+  const [aiSummary, setAiSummary] = useState<{ summary: string; generatedAt: string } | null>(null);
+
+  const handleGenerateSummary = () => {
+    aiSummaryMutation.mutate({ id }, {
+      onSuccess: (res) => setAiSummary(res),
+      onError: (err: any) => toast({
+        title: "AI summary failed",
+        description: err?.response?.data?.error || err?.message || "Unknown error",
+        variant: "destructive",
+      }),
+    });
+  };
 
   const isAdmin = me?.role === "admin" || me?.role === "super_admin";
   const isVoided = campaign?.status === "voided";
@@ -80,6 +97,27 @@ export default function CampaignDetail() {
           )}
         </div>
       </div>
+
+      {settings?.aiAssistEnabled && (
+        <Card className="border-primary/30">
+          <CardHeader className="flex flex-row items-start justify-between gap-4">
+            <div>
+              <CardTitle className="flex items-center gap-2"><Sparkles className="h-5 w-5 text-primary" /> AI Audience Summary</CardTitle>
+              <CardDescription>A short, plain-English brief based on this campaign's audience and planned touches. No constituent IDs are sent.</CardDescription>
+            </div>
+            <Button onClick={handleGenerateSummary} disabled={aiSummaryMutation.isPending} variant="secondary" size="sm">
+              {aiSummaryMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+              {aiSummary ? "Regenerate" : "Generate"}
+            </Button>
+          </CardHeader>
+          {aiSummary && (
+            <CardContent>
+              <p className="whitespace-pre-wrap text-sm leading-relaxed">{aiSummary.summary}</p>
+              <p className="text-xs text-muted-foreground mt-3">Generated {format(new Date(aiSummary.generatedAt), "MMM d, yyyy 'at' h:mm a")}</p>
+            </CardContent>
+          )}
+        </Card>
+      )}
 
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
