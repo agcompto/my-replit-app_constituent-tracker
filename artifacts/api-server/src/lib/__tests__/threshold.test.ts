@@ -84,4 +84,28 @@ describe("resolveEffectiveAudienceByTouch", () => {
     );
     expect(result.get(11)!.size).toBe(0);
   });
+
+  it("empty campaign + empty custom yields empty audiences", () => {
+    const result = resolveEffectiveAudienceByTouch(
+      new Set(),
+      new Map(),
+      [touch(10, "campaign"), touch(11, "custom")],
+    );
+    expect(result.get(10)!.size).toBe(0);
+    expect(result.get(11)!.size).toBe(0);
+  });
+
+  it("returns one entry per touch even when touches share send date / channel / type", () => {
+    const result = resolveEffectiveAudienceByTouch(
+      new Set(["00000001"]),
+      new Map(),
+      [
+        touch(10, "campaign"),
+        touch(20, "campaign"),
+        touch(30, "campaign"),
+      ],
+    );
+    expect(result.size).toBe(3);
+    expect([...result.keys()].sort((a, b) => a - b)).toEqual([10, 20, 30]);
+  });
 });

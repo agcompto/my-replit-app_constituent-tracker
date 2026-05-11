@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { and, eq } from "drizzle-orm";
-import { db, savedReportViewsTable } from "@workspace/db";
+import { and, eq, or } from "drizzle-orm";
+import { db, savedReportViewsTable, usersTable } from "@workspace/db";
 import {
   CreateSavedReportViewBody,
   UpdateSavedReportViewBody,
@@ -19,11 +19,16 @@ const ALLOWED_VIEW_TYPES = new Set([
   "yoy",
 ]);
 
-function serialize(r: typeof savedReportViewsTable.$inferSelect) {
+type ViewRow = typeof savedReportViewsTable.$inferSelect;
+
+function serialize(r: ViewRow, ownerName?: string | null, isOwner = true) {
   return {
     id: r.id,
     name: r.name,
     viewType: r.viewType,
+    visibility: r.visibility,
+    isOwner,
+    ownerName: ownerName ?? null,
     filters: r.filtersJson ?? {},
     config: r.configJson ?? {},
     createdAt: r.createdAt.toISOString(),
@@ -31,17 +36,31 @@ function serialize(r: typeof savedReportViewsTable.$inferSelect) {
   };
 }
 
+function normalizeVisibility(v: unknown): "private" | "org" {
+  return v === "org" ? "org" : "private";
+}
+
 router.get("/saved-report-views", requireAuth, async (req, res): Promise<void> => {
   const userId = req.currentUser!.id;
   const viewType = typeof req.query.viewType === "string" ? req.query.viewType : undefined;
-  const conds = [eq(savedReportViewsTable.userId, userId)];
-  if (viewType) conds.push(eq(savedReportViewsTable.viewType, viewType));
+  // A user sees: their own views (any visibility) + org-shared views from anyone.
+  const visibilityCond = or(
+    eq(savedReportViewsTable.userId, userId),
+    eq(savedReportViewsTable.visibility, "org"),
+  )!;
+  const where = viewType
+    ? and(visibilityCond, eq(savedReportViewsTable.viewType, viewType))!
+    : visibilityCond;
   const rows = await db
-    .select()
+    .select({
+      v: savedReportViewsTable,
+      ownerName: usersTable.name,
+    })
     .from(savedReportViewsTable)
-    .where(conds.length === 1 ? conds[0] : and(...conds))
+    .leftJoin(usersTable, eq(usersTable.id, savedReportViewsTable.userId))
+    .where(where)
     .orderBy(savedReportViewsTable.name);
-  res.json(rows.map(serialize));
+  res.json(rows.map((r) => serialize(r.v, r.ownerName, r.v.userId === userId)));
 });
 
 router.post("/saved-report-views", requireAuth, async (req, res): Promise<void> => {
@@ -51,12 +70,16 @@ router.post("/saved-report-views", requireAuth, async (req, res): Promise<void> 
     res.status(400).json({ error: "Unknown viewType" });
     return;
   }
+  const visibility = normalizeVisibility(
+    (body.data as { visibility?: unknown }).visibility,
+  );
   const [row] = await db
     .insert(savedReportViewsTable)
     .values({
       userId: req.currentUser!.id,
       name: body.data.name.trim(),
       viewType: body.data.viewType,
+      visibility,
       filtersJson: (body.data.filters ?? {}) as Record<string, unknown>,
       configJson: (body.data.config ?? {}) as Record<string, unknown>,
     })
@@ -66,9 +89,9 @@ router.post("/saved-report-views", requireAuth, async (req, res): Promise<void> 
     action: "create_saved_report_view",
     entityType: "saved_report_view",
     entityId: row.id,
-    details: `${row.viewType}: ${row.name}`,
+    details: `${row.viewType} (${row.visibility}): ${row.name}`,
   });
-  res.status(201).json(serialize(row));
+  res.status(201).json(serialize(row, req.currentUser!.name, true));
 });
 
 router.patch("/saved-report-views/:id", requireAuth, async (req, res): Promise<void> => {
@@ -94,12 +117,14 @@ router.patch("/saved-report-views/:id", requireAuth, async (req, res): Promise<v
   if (body.data.viewType !== undefined) update.viewType = body.data.viewType;
   if (body.data.filters !== undefined) update.filtersJson = body.data.filters as Record<string, unknown>;
   if (body.data.config !== undefined) update.configJson = body.data.config as Record<string, unknown>;
+  const rawVis = (body.data as { visibility?: unknown }).visibility;
+  if (rawVis !== undefined) update.visibility = normalizeVisibility(rawVis);
   const [row] = await db
     .update(savedReportViewsTable)
     .set(update)
     .where(eq(savedReportViewsTable.id, id))
     .returning();
-  res.json(serialize(row));
+  res.json(serialize(row, req.currentUser!.name, true));
 });
 
 router.delete("/saved-report-views/:id", requireAuth, async (req, res): Promise<void> => {

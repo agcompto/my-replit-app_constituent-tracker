@@ -1021,6 +1021,17 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AiClassifyResult" }
+  /ai/usage:
+    get:
+      operationId: getAiUsage
+      tags: [aiAssist]
+      summary: Caller's daily AI token usage and remaining budget
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AiUsage" }
 
   # ───────── Advanced reporting
   /reports/cohort-analysis:
@@ -1899,11 +1910,14 @@ components:
 
     SavedReportView:
       type: object
-      required: [id, name, viewType, filters, config, createdAt, updatedAt]
+      required: [id, name, viewType, visibility, isOwner, filters, config, createdAt, updatedAt]
       properties:
         id: { type: integer }
         name: { type: string }
         viewType: { type: string }
+        visibility: { type: string, enum: [private, org] }
+        isOwner: { type: boolean }
+        ownerName: { type: ["string", "null"] }
         filters: { type: object, additionalProperties: true }
         config: { type: object, additionalProperties: true }
         createdAt: { type: string, format: date-time }
@@ -1914,5 +1928,14 @@ components:
       properties:
         name: { type: string, minLength: 1, maxLength: 120 }
         viewType: { type: string, minLength: 1, maxLength: 40 }
+        visibility: { type: string, enum: [private, org] }
         filters: { type: object, additionalProperties: true }
         config: { type: object, additionalProperties: true }
+
+    AiUsage:
+      type: object
+      required: [used, budget, remaining]
+      properties:
+        used: { type: integer }
+        budget: { type: integer }
+        remaining: { type: integer }

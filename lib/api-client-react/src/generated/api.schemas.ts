@@ -956,6 +956,14 @@ export interface YoyVolume {
   byMonth: YoyVolumeByMonthItem[];
 }
 
+export type SavedReportViewVisibility =
+  (typeof SavedReportViewVisibility)[keyof typeof SavedReportViewVisibility];
+
+export const SavedReportViewVisibility = {
+  private: "private",
+  org: "org",
+} as const;
+
 export type SavedReportViewFilters = { [key: string]: unknown };
 
 export type SavedReportViewConfig = { [key: string]: unknown };
@@ -964,11 +972,23 @@ export interface SavedReportView {
   id: number;
   name: string;
   viewType: string;
+  visibility: SavedReportViewVisibility;
+  isOwner: boolean;
+  /** @nullable */
+  ownerName?: string | null;
   filters: SavedReportViewFilters;
   config: SavedReportViewConfig;
   createdAt: string;
   updatedAt: string;
 }
+
+export type SavedReportViewInputVisibility =
+  (typeof SavedReportViewInputVisibility)[keyof typeof SavedReportViewInputVisibility];
+
+export const SavedReportViewInputVisibility = {
+  private: "private",
+  org: "org",
+} as const;
 
 export type SavedReportViewInputFilters = { [key: string]: unknown };
 
@@ -985,8 +1005,15 @@ export interface SavedReportViewInput {
    * @maxLength 40
    */
   viewType: string;
+  visibility?: SavedReportViewInputVisibility;
   filters?: SavedReportViewInputFilters;
   config?: SavedReportViewInputConfig;
+}
+
+export interface AiUsage {
+  used: number;
+  budget: number;
+  remaining: number;
 }
 
 export type ListCampaignsParams = {

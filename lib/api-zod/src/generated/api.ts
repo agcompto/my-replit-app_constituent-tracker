@@ -1266,6 +1266,15 @@ export const AiClassifySuppressionReasonResponse = zod.object({
   ),
 });
 
+/**
+ * @summary Caller's daily AI token usage and remaining budget
+ */
+export const GetAiUsageResponse = zod.object({
+  used: zod.number(),
+  budget: zod.number(),
+  remaining: zod.number(),
+});
+
 export const getCohortAnalysisQueryMonthsMax = 36;
 
 export const GetCohortAnalysisQueryParams = zod.object({
@@ -1337,6 +1346,9 @@ export const ListSavedReportViewsResponseItem = zod.object({
   id: zod.number(),
   name: zod.string(),
   viewType: zod.string(),
+  visibility: zod.enum(["private", "org"]),
+  isOwner: zod.boolean(),
+  ownerName: zod.string().nullish(),
   filters: zod.record(zod.string(), zod.unknown()),
   config: zod.record(zod.string(), zod.unknown()),
   createdAt: zod.coerce.date(),
@@ -1353,6 +1365,7 @@ export const createSavedReportViewBodyViewTypeMax = 40;
 export const CreateSavedReportViewBody = zod.object({
   name: zod.string().min(1).max(createSavedReportViewBodyNameMax),
   viewType: zod.string().min(1).max(createSavedReportViewBodyViewTypeMax),
+  visibility: zod.enum(["private", "org"]).optional(),
   filters: zod.record(zod.string(), zod.unknown()).optional(),
   config: zod.record(zod.string(), zod.unknown()).optional(),
 });
@@ -1368,6 +1381,7 @@ export const updateSavedReportViewBodyViewTypeMax = 40;
 export const UpdateSavedReportViewBody = zod.object({
   name: zod.string().min(1).max(updateSavedReportViewBodyNameMax),
   viewType: zod.string().min(1).max(updateSavedReportViewBodyViewTypeMax),
+  visibility: zod.enum(["private", "org"]).optional(),
   filters: zod.record(zod.string(), zod.unknown()).optional(),
   config: zod.record(zod.string(), zod.unknown()).optional(),
 });
@@ -1376,6 +1390,9 @@ export const UpdateSavedReportViewResponse = zod.object({
   id: zod.number(),
   name: zod.string(),
   viewType: zod.string(),
+  visibility: zod.enum(["private", "org"]),
+  isOwner: zod.boolean(),
+  ownerName: zod.string().nullish(),
   filters: zod.record(zod.string(), zod.unknown()),
   config: zod.record(zod.string(), zod.unknown()),
   createdAt: zod.coerce.date(),

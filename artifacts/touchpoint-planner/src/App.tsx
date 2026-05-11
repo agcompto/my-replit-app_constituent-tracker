@@ -2,6 +2,8 @@ import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { useKeyboardShortcuts, ShortcutHelpDialog } from "@/hooks/useKeyboardShortcuts";
 import NotFound from "@/pages/not-found";
 import { AuthGuard } from "@/components/layout/AuthGuard";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -51,31 +53,37 @@ const queryClient = new QueryClient({
 });
 
 function Router() {
+  const { helpOpen, setHelpOpen } = useKeyboardShortcuts();
   return (
-    <Switch>
-      <Route path="/login" component={Login} />
-      <Route path="/change-password">
-        <AuthGuard>
-          <ChangePassword />
-        </AuthGuard>
-      </Route>
-      <Route path="*">
-        <AuthenticatedRoutes />
-      </Route>
-    </Switch>
+    <>
+      <Switch>
+        <Route path="/login" component={Login} />
+        <Route path="/change-password">
+          <AuthGuard>
+            <ChangePassword />
+          </AuthGuard>
+        </Route>
+        <Route path="*">
+          <AuthenticatedRoutes />
+        </Route>
+      </Switch>
+      <ShortcutHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
+    </>
   );
 }
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <Router />
-        </WouterRouter>
-        <Toaster />
-      </TooltipProvider>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+            <Router />
+          </WouterRouter>
+          <Toaster />
+        </TooltipProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 

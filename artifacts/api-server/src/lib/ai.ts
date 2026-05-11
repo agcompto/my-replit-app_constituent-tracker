@@ -1,7 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { db, appSettingsTable } from "@workspace/db";
+import { and, gte, eq, sql } from "drizzle-orm";
+import { db, appSettingsTable, aiUsageTable } from "@workspace/db";
 
-const MODEL = "claude-sonnet-4-6";
+export const MODEL = "claude-sonnet-4-6";
+
+// Per-user daily AI cost ceiling (in tokens). Both input + output count.
+// Picked to be generous for human-driven UI use but block runaway loops.
+export const AI_DAILY_TOKEN_BUDGET = 200_000;
 
 let client: Anthropic | null = null;
 
@@ -69,12 +74,18 @@ export async function ensureAiEnabled(): Promise<void> {
   }
 }
 
-/** Run a single Anthropic completion. Returns the model's plain-text reply. */
+export interface AiCompletion {
+  text: string;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+/** Run a single Anthropic completion. Returns the reply plus token usage. */
 export async function complete(opts: {
   system: string;
   user: string;
   maxTokens?: number;
-}): Promise<string> {
+}): Promise<AiCompletion> {
   const c = getClient();
   const response = await c.messages.create({
     model: MODEL,
@@ -86,7 +97,11 @@ export async function complete(opts: {
   for (const block of response.content) {
     if (block.type === "text") parts.push(block.text);
   }
-  return parts.join("\n").trim();
+  return {
+    text: parts.join("\n").trim(),
+    inputTokens: response.usage?.input_tokens ?? 0,
+    outputTokens: response.usage?.output_tokens ?? 0,
+  };
 }
 
 /** Run an Anthropic completion and parse the response as JSON. Strips ```json fences if present. */
@@ -94,15 +109,77 @@ export async function completeJson<T>(opts: {
   system: string;
   user: string;
   maxTokens?: number;
-}): Promise<T> {
-  const text = await complete(opts);
-  let cleaned = text.trim();
+}): Promise<{ value: T; inputTokens: number; outputTokens: number }> {
+  const r = await complete(opts);
+  let cleaned = r.text.trim();
   // Strip optional ```json ... ``` fences the model sometimes emits.
   const fence = /^```(?:json)?\s*([\s\S]*?)\s*```$/m.exec(cleaned);
   if (fence) cleaned = fence[1].trim();
   try {
-    return JSON.parse(cleaned) as T;
+    return {
+      value: JSON.parse(cleaned) as T,
+      inputTokens: r.inputTokens,
+      outputTokens: r.outputTokens,
+    };
   } catch (err) {
-    throw new Error(`AI response was not valid JSON: ${(err as Error).message}\nRaw: ${text.slice(0, 500)}`);
+    throw new Error(
+      `AI response was not valid JSON: ${(err as Error).message}\nRaw: ${r.text.slice(0, 500)}`,
+    );
+  }
+}
+
+/**
+ * Return today's token usage (input + output) for a user. "Today" is a UTC
+ * 24-hour rolling window for simplicity (avoids timezone confusion in audit
+ * data; matches how Anthropic itself bills).
+ */
+export async function getDailyAiTokenUsage(userId: number): Promise<number> {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const [row] = await db
+    .select({
+      total: sql<number>`coalesce(sum(${aiUsageTable.inputTokens} + ${aiUsageTable.outputTokens}), 0)::int`,
+    })
+    .from(aiUsageTable)
+    .where(
+      and(eq(aiUsageTable.userId, userId), gte(aiUsageTable.createdAt, since)),
+    );
+  return row?.total ?? 0;
+}
+
+export class AiBudgetExceededError extends Error {
+  constructor(public used: number, public budget: number) {
+    super(
+      `Daily AI token budget exceeded (${used}/${budget}). Try again tomorrow or ask an admin to raise the cap.`,
+    );
+    this.name = "AiBudgetExceededError";
+  }
+}
+
+/** Reject the call before it goes out if the user is already over budget. */
+export async function ensureUnderDailyBudget(userId: number): Promise<void> {
+  const used = await getDailyAiTokenUsage(userId);
+  if (used >= AI_DAILY_TOKEN_BUDGET) {
+    throw new AiBudgetExceededError(used, AI_DAILY_TOKEN_BUDGET);
+  }
+}
+
+/** Persist a usage row. Failures are logged but never thrown — they must not break the user-visible flow. */
+export async function recordAiUsage(args: {
+  userId: number;
+  route: string;
+  inputTokens: number;
+  outputTokens: number;
+  succeeded: boolean;
+}): Promise<void> {
+  try {
+    await db.insert(aiUsageTable).values({
+      userId: args.userId,
+      route: args.route,
+      inputTokens: args.inputTokens,
+      outputTokens: args.outputTokens,
+      succeeded: args.succeeded,
+    });
+  } catch {
+    // intentional swallow — accounting failures must not break user flows
   }
 }

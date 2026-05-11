@@ -11,8 +11,21 @@ import {
   suppressionReasonCodesTable,
 } from "@workspace/db";
 import { AiClassifySuppressionReasonBody } from "@workspace/api-zod";
-import { requireAuth } from "../lib/auth";
-import { complete, completeJson, ensureAiEnabled, AiDisabledError, AiPiiBlockedError, assertNoPii } from "../lib/ai";
+import { requireAuth, audit } from "../lib/auth";
+import { checkAiPerMinute } from "../lib/rateLimit";
+import {
+  complete,
+  completeJson,
+  ensureAiEnabled,
+  ensureUnderDailyBudget,
+  recordAiUsage,
+  AiDisabledError,
+  AiPiiBlockedError,
+  AiBudgetExceededError,
+  assertNoPii,
+  MODEL,
+  AI_DAILY_TOKEN_BUDGET,
+} from "../lib/ai";
 
 const router: IRouter = Router();
 
@@ -25,15 +38,43 @@ function handleAiError(err: unknown, res: import("express").Response, log: { err
     res.status(422).json({ error: err.message });
     return;
   }
+  if (err instanceof AiBudgetExceededError) {
+    res.status(429).json({ error: err.message });
+    return;
+  }
   log.error({ err }, "AI request failed");
   res.status(502).json({ error: "AI request failed" });
+}
+
+/**
+ * Run common AI gating: settings flag, per-user-per-minute throttle, and
+ * daily token budget. Returns true if the request should proceed; otherwise
+ * writes the response and returns false.
+ */
+async function gateAiRequest(
+  req: import("express").Request,
+  res: import("express").Response,
+): Promise<boolean> {
+  await ensureAiEnabled();
+  const userId = req.currentUser!.id;
+  const rate = checkAiPerMinute(userId);
+  if (!rate.allowed) {
+    res.setHeader("Retry-After", String(rate.retryAfterSec));
+    res.status(429).json({
+      error: `AI rate limit exceeded. Try again in ${rate.retryAfterSec}s.`,
+    });
+    return false;
+  }
+  await ensureUnderDailyBudget(userId);
+  return true;
 }
 
 router.post("/campaigns/:id/ai/audience-summary", requireAuth, async (req, res): Promise<void> => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  let usage = { input: 0, output: 0, ok: false };
   try {
-    await ensureAiEnabled();
+    if (!(await gateAiRequest(req, res))) return;
     const [campaign] = await db.select().from(campaignsTable).where(eq(campaignsTable.id, id));
     if (!campaign) { res.status(404).json({ error: "Not found" }); return; }
 
@@ -80,7 +121,7 @@ router.post("/campaigns/:id/ai/audience-summary", requireAuth, async (req, res):
     };
     assertNoPii(facts, "campaign");
 
-    const summary = await complete({
+    const result = await complete({
       system:
         "You are a concise advancement-operations assistant for NC State University. " +
         "Summarize a constituent communication campaign for an internal staff audience. " +
@@ -93,18 +134,37 @@ router.post("/campaigns/:id/ai/audience-summary", requireAuth, async (req, res):
         JSON.stringify(facts, null, 2),
       maxTokens: 1024,
     });
+    usage = { input: result.inputTokens, output: result.outputTokens, ok: true };
 
-    res.json({ summary, generatedAt: new Date().toISOString() });
+    res.json({ summary: result.text, generatedAt: new Date().toISOString() });
   } catch (err) {
     handleAiError(err, res, req.log);
+  } finally {
+    if (req.currentUser) {
+      await recordAiUsage({
+        userId: req.currentUser.id,
+        route: "audience-summary",
+        inputTokens: usage.input,
+        outputTokens: usage.output,
+        succeeded: usage.ok,
+      });
+      await audit({
+        actor: req.currentUser,
+        action: "ai_audience_summary",
+        entityType: "campaign",
+        entityId: id,
+        details: `model=${MODEL} in=${usage.input} out=${usage.output} ok=${usage.ok}`,
+      });
+    }
   }
 });
 
 router.post("/campaigns/:id/ai/suggest-cadence", requireAuth, async (req, res): Promise<void> => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  let usage = { input: 0, output: 0, ok: false };
   try {
-    await ensureAiEnabled();
+    if (!(await gateAiRequest(req, res))) return;
     const [campaign] = await db.select().from(campaignsTable).where(eq(campaignsTable.id, id));
     if (!campaign) { res.status(404).json({ error: "Not found" }); return; }
 
@@ -152,13 +212,14 @@ router.post("/campaigns/:id/ai/suggest-cadence", requireAuth, async (req, res): 
         JSON.stringify(facts, null, 2),
       maxTokens: 1500,
     });
+    usage = { input: data.inputTokens, output: data.outputTokens, ok: true };
 
-    if (!Array.isArray(data.touches)) {
+    if (!Array.isArray(data.value.touches)) {
       res.status(502).json({ error: "AI returned malformed cadence" });
       return;
     }
     const channelLabels = new Set(channels.map((c) => c.name));
-    const touches = data.touches
+    const touches = data.value.touches
       .filter((t) => t && typeof t.channelLabel === "string" && channelLabels.has(t.channelLabel))
       .slice(0, 6)
       .map((t, i) => ({
@@ -170,17 +231,35 @@ router.post("/campaigns/:id/ai/suggest-cadence", requireAuth, async (req, res): 
 
     res.json({
       generatedAt: new Date().toISOString(),
-      rationale: String(data.rationale ?? ""),
+      rationale: String(data.value.rationale ?? ""),
       touches,
     });
   } catch (err) {
     handleAiError(err, res, req.log);
+  } finally {
+    if (req.currentUser) {
+      await recordAiUsage({
+        userId: req.currentUser.id,
+        route: "suggest-cadence",
+        inputTokens: usage.input,
+        outputTokens: usage.output,
+        succeeded: usage.ok,
+      });
+      await audit({
+        actor: req.currentUser,
+        action: "ai_suggest_cadence",
+        entityType: "campaign",
+        entityId: id,
+        details: `model=${MODEL} in=${usage.input} out=${usage.output} ok=${usage.ok}`,
+      });
+    }
   }
 });
 
 router.post("/ai/classify-suppression-reason", requireAuth, async (req, res): Promise<void> => {
+  let usage = { input: 0, output: 0, ok: false };
   try {
-    await ensureAiEnabled();
+    if (!(await gateAiRequest(req, res))) return;
     const body = AiClassifySuppressionReasonBody.safeParse(req.body);
     if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
     assertNoPii(body.data.text, "text");
@@ -211,9 +290,10 @@ router.post("/ai/classify-suppression-reason", requireAuth, async (req, res): Pr
         JSON.stringify(reasons.map((r) => ({ id: r.id, name: r.name, description: r.description })), null, 2),
       maxTokens: 800,
     });
+    usage = { input: data.inputTokens, output: data.outputTokens, ok: true };
 
     const byId = new Map(reasons.map((r) => [r.id, r]));
-    const suggestions = (Array.isArray(data.suggestions) ? data.suggestions : [])
+    const suggestions = (Array.isArray(data.value.suggestions) ? data.value.suggestions : [])
       .map((s) => {
         const code = byId.get(Number(s.reasonCodeId));
         if (!code) return null;
@@ -231,7 +311,30 @@ router.post("/ai/classify-suppression-reason", requireAuth, async (req, res): Pr
     res.json({ generatedAt: new Date().toISOString(), suggestions });
   } catch (err) {
     handleAiError(err, res, req.log);
+  } finally {
+    if (req.currentUser) {
+      await recordAiUsage({
+        userId: req.currentUser.id,
+        route: "classify-suppression-reason",
+        inputTokens: usage.input,
+        outputTokens: usage.output,
+        succeeded: usage.ok,
+      });
+      await audit({
+        actor: req.currentUser,
+        action: "ai_classify_reason",
+        entityType: "suppression_reason_code",
+        details: `model=${MODEL} in=${usage.input} out=${usage.output} ok=${usage.ok}`,
+      });
+    }
   }
+});
+
+// Read current AI usage for the calling user so the UI can display headroom.
+router.get("/ai/usage", requireAuth, async (req, res): Promise<void> => {
+  const { getDailyAiTokenUsage } = await import("../lib/ai");
+  const used = await getDailyAiTokenUsage(req.currentUser!.id);
+  res.json({ used, budget: AI_DAILY_TOKEN_BUDGET, remaining: Math.max(0, AI_DAILY_TOKEN_BUDGET - used) });
 });
 
 export default router;

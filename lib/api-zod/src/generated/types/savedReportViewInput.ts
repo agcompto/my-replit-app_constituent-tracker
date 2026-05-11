@@ -7,6 +7,7 @@
  */
 import type { SavedReportViewInputConfig } from "./savedReportViewInputConfig";
 import type { SavedReportViewInputFilters } from "./savedReportViewInputFilters";
+import type { SavedReportViewInputVisibility } from "./savedReportViewInputVisibility";
 
 export interface SavedReportViewInput {
   /**
@@ -19,6 +20,7 @@ export interface SavedReportViewInput {
    * @maxLength 40
    */
   viewType: string;
+  visibility?: SavedReportViewInputVisibility;
   filters?: SavedReportViewInputFilters;
   config?: SavedReportViewInputConfig;
 }

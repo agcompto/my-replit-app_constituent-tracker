@@ -3,7 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Download, Loader2 } from "lucide-react";
+import { Download } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 import { format } from "date-fns";
 import { Link } from "wouter";
 
@@ -56,7 +57,16 @@ export default function Exports() {
                 </TableHeader>
                 <TableBody>
                   {exportsLoading ? (
-                    <TableRow><TableCell colSpan={6} className="h-32 text-center"><Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" /></TableCell></TableRow>
+                    Array.from({ length: 5 }).map((_, i) => (
+                      <TableRow key={`exp-sk-${i}`} aria-hidden>
+                        <TableCell className="pl-6"><Skeleton className="h-4 w-44" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-36" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-28" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                        <TableCell className="text-right"><Skeleton className="h-4 w-12 ml-auto" /></TableCell>
+                        <TableCell className="pr-6 text-right"><Skeleton className="h-4 w-8 ml-auto" /></TableCell>
+                      </TableRow>
+                    ))
                   ) : exports?.length === 0 ? (
                     <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">No exports found.</TableCell></TableRow>
                   ) : exports?.map(job => (
@@ -105,7 +115,16 @@ export default function Exports() {
                 </TableHeader>
                 <TableBody>
                   {uploadsLoading ? (
-                    <TableRow><TableCell colSpan={6} className="h-32 text-center"><Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" /></TableCell></TableRow>
+                    Array.from({ length: 5 }).map((_, i) => (
+                      <TableRow key={`upl-sk-${i}`} aria-hidden>
+                        <TableCell className="pl-6"><Skeleton className="h-4 w-32" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-28" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                        <TableCell className="text-right"><Skeleton className="h-4 w-12 ml-auto" /></TableCell>
+                        <TableCell className="text-right"><Skeleton className="h-4 w-12 ml-auto" /></TableCell>
+                        <TableCell className="pr-6"><Skeleton className="h-4 w-32" /></TableCell>
+                      </TableRow>
+                    ))
                   ) : uploads?.length === 0 ? (
                     <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">No uploads found.</TableCell></TableRow>
                   ) : uploads?.map(job => (

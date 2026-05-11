@@ -51,6 +51,30 @@ The system stores and returns donor IDs, campaign metadata, touchpoint history, 
 
 Audience upload and export flows can process large donor lists and write many database rows. The application must keep request sizes bounded, avoid unauthenticated expensive operations, and ensure login abuse is rate-limited enough for production deployment.
 
+### AI Provider Boundary
+
+The application optionally calls an external AI provider (Anthropic, reached via
+the Replit AI Integrations proxy). This adds a new trust boundary: any text or
+structured payload sent to the provider leaves the application's data plane.
+The product's no-PII contract therefore extends to AI calls and is enforced
+defense-in-depth at three layers:
+
+- **Settings gate** — every AI route checks `app_settings.ai_assist_enabled`
+  (`ensureAiEnabled`). When the org disables AI, the routes return 403 before
+  any external call is made.
+- **Field allowlist** — AI routes pass only structured, pre-approved fields
+  (status, owning unit, dates, channel/type names, counts). Free-text fields
+  the user might have populated (campaign names, audience descriptions, touch
+  names, suppression notes) are excluded from the prompt unless the route is
+  explicitly text-classifying that field.
+- **Pattern guard** — `assertNoPii` scans every string in the outbound payload
+  for email, phone, SSN, and donor-ID patterns and refuses the call (HTTP 422)
+  rather than redacting silently.
+
+AI usage is rate-limited per user per minute and recorded in the `ai_usage`
+table for auditability and budget review. AI routes also write `audit_log`
+entries (`ai_audience_summary`, `ai_suggest_cadence`, `ai_classify_reason`).
+
 ### Elevation of Privilege
 
 This project has a sharp privilege boundary between `standard`, `admin`, and `super_admin`. The server must prevent lower-privileged users from granting themselves stronger roles, resetting higher-privileged accounts, reaching destructive retention features, or abusing bootstrap paths to obtain super-admin access.

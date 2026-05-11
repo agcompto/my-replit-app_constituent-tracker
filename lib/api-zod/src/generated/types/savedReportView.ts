@@ -7,11 +7,16 @@
  */
 import type { SavedReportViewConfig } from "./savedReportViewConfig";
 import type { SavedReportViewFilters } from "./savedReportViewFilters";
+import type { SavedReportViewVisibility } from "./savedReportViewVisibility";
 
 export interface SavedReportView {
   id: number;
   name: string;
   viewType: string;
+  visibility: SavedReportViewVisibility;
+  isOwner: boolean;
+  /** @nullable */
+  ownerName?: string | null;
   filters: SavedReportViewFilters;
   config: SavedReportViewConfig;
   createdAt: Date;

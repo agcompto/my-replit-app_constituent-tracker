@@ -419,13 +419,14 @@ function SavedViews({
   const deleteView = useDeleteSavedReportView();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
+  const [visibility, setVisibility] = useState<"private" | "org">("private");
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: getListSavedReportViewsQueryKey({ viewType }) });
 
   const handleSave = () => {
     if (!name.trim()) return;
     createView.mutate(
-      { data: { name: name.trim(), viewType, filters: filters as any, config: (config ?? {}) as any } },
+      { data: { name: name.trim(), viewType, visibility, filters: filters as any, config: (config ?? {}) as any } },
       {
         onSuccess: () => {
           toast({ title: "View saved" });
@@ -461,17 +462,23 @@ function SavedViews({
               <div key={v.id} className="flex items-center pr-1">
                 <SelectItem value={String(v.id)} className="flex-1">
                   <span>{v.name}</span>
-                  <span className="ml-2 text-xs text-muted-foreground">· {v.viewType}</span>
+                  {v.visibility === "org" ? (
+                    <span className="ml-2 text-xs text-muted-foreground">· shared{!v.isOwner && v.ownerName ? ` by ${v.ownerName}` : ""}</span>
+                  ) : (
+                    <span className="ml-2 text-xs text-muted-foreground">· private</span>
+                  )}
                 </SelectItem>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 text-muted-foreground"
-                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDelete(v.id); }}
-                  aria-label={`Delete saved view ${v.name}`}
-                >
-                  <Trash2 className="h-3 w-3" />
-                </Button>
+                {v.isOwner ? (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-muted-foreground"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDelete(v.id); }}
+                    aria-label={`Delete saved view ${v.name}`}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                ) : null}
               </div>
             ))
           )}
@@ -487,9 +494,26 @@ function SavedViews({
             <DialogTitle>Save current view</DialogTitle>
             <DialogDescription>Stores the current filters for the <strong>{viewType}</strong> tab so you can recall them later.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-2 py-2">
-            <Label>Name</Label>
-            <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Q1 fundraising overview" />
+          <div className="space-y-3 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="saved-view-name">Name</Label>
+              <Input id="saved-view-name" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Q1 fundraising overview" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="saved-view-visibility">Visibility</Label>
+              <Select value={visibility} onValueChange={(v) => setVisibility(v === "org" ? "org" : "private")}>
+                <SelectTrigger id="saved-view-visibility">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="private">Private — only you</SelectItem>
+                  <SelectItem value="org">Shared — visible to everyone in your organization</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Shared views appear in everyone's saved views list. Only the owner can edit or delete them.
+              </p>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>

@@ -21,6 +21,7 @@ import type {
   AiClassifyInput,
   AiClassifyResult,
   AiSummary,
+  AiUsage,
   AppSettings,
   ApplyTemplatesResult,
   AudienceInput,
@@ -5675,6 +5676,79 @@ export const useAiClassifySuppressionReason = <
 > => {
   return useMutation(getAiClassifySuppressionReasonMutationOptions(options));
 };
+
+/**
+ * @summary Caller's daily AI token usage and remaining budget
+ */
+export const getGetAiUsageUrl = () => {
+  return `/api/ai/usage`;
+};
+
+export const getAiUsage = async (options?: RequestInit): Promise<AiUsage> => {
+  return customFetch<AiUsage>(getGetAiUsageUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetAiUsageQueryKey = () => {
+  return [`/api/ai/usage`] as const;
+};
+
+export const getGetAiUsageQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAiUsage>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getAiUsage>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetAiUsageQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiUsage>>> = ({
+    signal,
+  }) => getAiUsage({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAiUsage>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetAiUsageQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAiUsage>>
+>;
+export type GetAiUsageQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Caller's daily AI token usage and remaining budget
+ */
+
+export function useGetAiUsage<
+  TData = Awaited<ReturnType<typeof getAiUsage>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getAiUsage>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetAiUsageQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 export const getGetCohortAnalysisUrl = (params?: GetCohortAnalysisParams) => {
   const normalizedParams = new URLSearchParams();

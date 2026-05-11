@@ -153,6 +153,11 @@ export const touchesTable = pgTable(
     customDuplicateIdCount: integer("custom_duplicate_id_count").notNull().default(0),
     customRejectedIdCount: integer("custom_rejected_id_count").notNull().default(0),
     customExtraColumnsIgnored: boolean("custom_extra_columns_ignored").notNull().default(false),
+    // Provenance: how this touch was created. "manual" by default; "ai_cadence"
+    // when the touch was inserted from an accepted AI cadence suggestion.
+    createdBySource: text("created_by_source").notNull().default("manual"),
+    aiModel: text("ai_model"),
+    aiGeneratedAt: timestamp("ai_generated_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
@@ -408,6 +413,7 @@ export const savedReportViewsTable = pgTable(
       .references(() => usersTable.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     viewType: text("view_type").notNull(), // dashboard | upcoming | high-volume | cohort | yoy
+    visibility: text("visibility").notNull().default("private"), // private | org
     filtersJson: jsonb("filters_json").$type<Record<string, unknown>>().notNull().default({}),
     configJson: jsonb("config_json").$type<Record<string, unknown>>().notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -418,6 +424,26 @@ export const savedReportViewsTable = pgTable(
   },
   (t) => ({
     userIdx: index("saved_report_views_user_idx").on(t.userId, t.viewType),
+    visIdx: index("saved_report_views_visibility_idx").on(t.visibility, t.viewType),
+  }),
+);
+
+// ─────── AI usage log (per-user budget tracking)
+export const aiUsageTable = pgTable(
+  "ai_usage",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => usersTable.id, { onDelete: "cascade" }),
+    route: text("route").notNull(), // audience-summary | suggest-cadence | classify-suppression-reason
+    inputTokens: integer("input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+    succeeded: boolean("succeeded").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    userDayIdx: index("ai_usage_user_day_idx").on(t.userId, t.createdAt),
   }),
 );
 

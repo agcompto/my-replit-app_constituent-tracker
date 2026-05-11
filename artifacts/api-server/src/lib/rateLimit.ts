@@ -80,7 +80,57 @@ export function recordChangePasswordSuccess(userId: number, ip: string): void {
   recordSuccess(`cp|${userId}|${ip}`);
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Generic per-key sliding-window counter (used for AI per-minute throttling).
+// Distinct from the lockout-style buckets above: this counts requests in a
+// rolling window and rejects once `max` is exceeded for `windowMs`.
+// ──────────────────────────────────────────────────────────────────────────
+interface SlidingBucket {
+  timestamps: number[];
+}
+const slidingBuckets = new Map<string, SlidingBucket>();
+
+export function checkSlidingRate(
+  key: string,
+  max: number,
+  windowMs: number,
+): RateLimitResult {
+  const now = Date.now();
+  const cutoff = now - windowMs;
+  const b = slidingBuckets.get(key);
+  if (!b) {
+    slidingBuckets.set(key, { timestamps: [now] });
+    return { allowed: true, retryAfterSec: 0 };
+  }
+  // Drop expired timestamps
+  while (b.timestamps.length > 0 && b.timestamps[0] < cutoff) {
+    b.timestamps.shift();
+  }
+  if (b.timestamps.length >= max) {
+    const oldest = b.timestamps[0];
+    return {
+      allowed: false,
+      retryAfterSec: Math.max(1, Math.ceil((oldest + windowMs - now) / 1000)),
+    };
+  }
+  b.timestamps.push(now);
+  return { allowed: true, retryAfterSec: 0 };
+}
+
+// AI per-user throttle: 10 calls / minute
+export function checkAiPerMinute(userId: number): RateLimitResult {
+  return checkSlidingRate(`ai|user|${userId}`, 10, 60_000);
+}
+
 // Periodic cleanup
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, b] of slidingBuckets) {
+    while (b.timestamps.length && b.timestamps[0] < now - 60_000) b.timestamps.shift();
+    if (b.timestamps.length === 0) slidingBuckets.delete(k);
+  }
+}, 5 * 60 * 1000).unref?.();
+
 setInterval(() => {
   const now = Date.now();
   for (const [k, b] of buckets) {
