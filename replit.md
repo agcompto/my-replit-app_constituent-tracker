@@ -10,10 +10,15 @@ Internal NC State University Advancement tool for planning donor communication t
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks/Zod from `lib/api-spec/openapi.yaml`
 - `pnpm --filter @workspace/db run push` — push DB schema changes
 - Required env: `DATABASE_URL`, `SESSION_SECRET`
+- Optional email env (recommended): `RESEND_API_KEY`, `EMAIL_FROM` — when set, new-user and reset-password flows email the temporary password to the recipient via Resend. When unset, the admin still gets a generated password to share manually.
 
 ## Bootstrap super-admin (dev / fresh DB)
 
 On first startup against an empty database, a `super_admin` account is created at `admin@example.com` with a **randomly generated** temporary password printed once to the server log (level `warn`). Log in with that password and change it immediately; `mustChangePassword` is set so the UI will prompt you.
+
+## Temporary passwords
+
+Admins never type passwords. Creating a user (`POST /users`) and resetting one (`POST /users/:id/reset-password`) both auto-generate a strong temporary password (`lib/password.ts`, ~92 bits of entropy from a no-look-alikes alphabet). The server emails it to the recipient via `lib/email.ts` (Resend) and also returns it once to the calling admin in the response, so the UI shows a "copy password" fallback when email delivery is unavailable. The user is forced to change the password on first sign-in (`mustChangePassword`). Both actions write `audit_log` entries with `email_sent=true|false`.
 
 ## Stack
 

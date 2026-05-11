@@ -126,12 +126,13 @@ export async function sendPasswordCredentials(
       text,
     });
     if (error) {
-      logger.warn({ err: error, to: args.to }, "Email send failed");
+      // Intentionally do not log recipient address — staff emails are PII.
+      logger.warn({ errName: error.name }, "Email send failed");
       return { sent: false, error: error.message ?? "Email send failed" };
     }
     return { sent: true, messageId: data?.id };
   } catch (err) {
-    logger.warn({ err, to: args.to }, "Email send threw");
+    logger.warn({ errName: (err as Error).name }, "Email send threw");
     return { sent: false, error: (err as Error).message };
   }
 }
