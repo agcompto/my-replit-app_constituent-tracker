@@ -17,6 +17,7 @@ import PDFDocument from "pdfkit";
 import { requireAuth, requireRole, audit, canMutateCampaign } from "../lib/auth";
 import { requireRecentAuth } from "../lib/recentAuth";
 import { loadCampaignFull, loadCampaignSummary, setCampaignTypes } from "../lib/campaigns";
+import { planClone } from "../lib/cloneCampaign";
 
 const router: IRouter = Router();
 
@@ -212,25 +213,6 @@ router.post("/campaigns/:id/clone", requireAuth, async (req, res): Promise<void>
       ? body.data.intendedSendStartDate.toISOString().slice(0, 10)
       : (body.data.intendedSendStartDate ?? null);
 
-  // Resolve the per-touch date shift. Explicit dateShiftDays wins; otherwise
-  // derive (new intended - old intended) so a 6-week-later send date moves
-  // every planned touch six weeks later automatically.
-  let shiftDays = 0;
-  if (typeof body.data.dateShiftDays === "number") {
-    shiftDays = body.data.dateShiftDays;
-  } else if (newIntendedSendDate && source.intendedSendStartDate) {
-    const [ny, nm, nd] = newIntendedSendDate.split("-").map(Number);
-    const [oy, om, od] = source.intendedSendStartDate.split("-").map(Number);
-    shiftDays = Math.round(
-      (Date.UTC(ny, nm - 1, nd) - Date.UTC(oy, om - 1, od)) / 86400000,
-    );
-  }
-  const shiftISO = (iso: string): string => {
-    const [y, m, d] = iso.split("-").map(Number);
-    const dt = new Date(Date.UTC(y, m - 1, d + shiftDays));
-    return dt.toISOString().slice(0, 10);
-  };
-
   // Authorization note: cloning is gated on requireAuth only (not
   // canMutateCampaign). The product allows every authenticated staff member
   // to view every campaign via GET /campaigns/:id, so cloning the structural
@@ -238,6 +220,75 @@ router.post("/campaigns/:id/clone", requireAuth, async (req, res): Promise<void>
   // user could not already read. The clone is theirs to edit; the source is
   // unchanged.
   const result = await db.transaction(async (tx) => {
+    // Pull the source's structural rows up front so the clone plan is built
+    // from a consistent snapshot. Touches are ordered by send date so the
+    // resulting touch-id map is deterministic.
+    const sourceTouches = await tx
+      .select()
+      .from(touchesTable)
+      .where(eq(touchesTable.campaignId, source.id))
+      .orderBy(touchesTable.sendDate);
+    const sourceThresholds = await tx
+      .select()
+      .from(thresholdsTable)
+      .where(eq(thresholdsTable.campaignId, source.id));
+    const sourceSuppressions = await tx
+      .select()
+      .from(suppressionsTable)
+      .where(eq(suppressionsTable.campaignId, source.id));
+    const sourceSeeds = await tx
+      .select()
+      .from(seedGroupsTable)
+      .where(eq(seedGroupsTable.campaignId, source.id));
+
+    const plan = planClone({
+      touches: sourceTouches.map((t) => ({
+        id: t.id,
+        touchName: t.touchName,
+        channelId: t.channelId,
+        campaignTypeId: t.campaignTypeId,
+        sendDate:
+          typeof t.sendDate === "string"
+            ? t.sendDate
+            : (t.sendDate as Date).toISOString().slice(0, 10),
+        notes: t.notes,
+        audienceMode: t.audienceMode as "campaign" | "custom",
+      })),
+      thresholds: sourceThresholds.map((th) => ({
+        name: th.name,
+        maxTouchpoints: th.maxTouchpoints,
+        windowDays: th.windowDays,
+        scope: th.scope,
+        channelId: th.channelId,
+        campaignTypeId: th.campaignTypeId,
+        actionMode: th.actionMode,
+      })),
+      suppressions: sourceSuppressions.map((s) => ({
+        scope: s.scope,
+        channelId: s.channelId,
+        campaignTypeId: s.campaignTypeId,
+        touchId: s.touchId,
+        reasonCodeId: s.reasonCodeId,
+        reason: s.reason,
+        notes: s.notes,
+        donorIds: (s.donorIds ?? []) as string[],
+      })),
+      seeds: sourceSeeds.map((sg) => ({
+        scope: sg.scope,
+        channelId: sg.channelId,
+        touchId: sg.touchId,
+        donorIds: (sg.donorIds ?? []) as string[],
+      })),
+      options: {
+        newIntendedSendDate,
+        sourceIntendedSendDate: source.intendedSendStartDate,
+        explicitShiftDays:
+          typeof body.data.dateShiftDays === "number"
+            ? body.data.dateShiftDays
+            : undefined,
+      },
+    });
+
     const [newCampaign] = await tx
       .insert(campaignsTable)
       .values({
@@ -252,55 +303,38 @@ router.post("/campaigns/:id/clone", requireAuth, async (req, res): Promise<void>
       })
       .returning();
 
-    // Copy campaign-type links.
     if (source.campaignTypes.length > 0) {
-      await tx
-        .insert(campaignTypeLinksTable)
-        .values(
-          source.campaignTypes.map((t) => ({
-            campaignId: newCampaign.id,
-            campaignTypeId: t.id,
-          })),
-        );
+      await tx.insert(campaignTypeLinksTable).values(
+        source.campaignTypes.map((t) => ({
+          campaignId: newCampaign.id,
+          campaignTypeId: t.id,
+        })),
+      );
     }
 
-    // Copy touches with shifted send dates. Audience-mode is preserved but
-    // custom audience counts reset to zero — staff re-upload the new list.
-    const sourceTouches = await tx
-      .select()
-      .from(touchesTable)
-      .where(eq(touchesTable.campaignId, source.id))
-      .orderBy(touchesTable.sendDate);
+    // Insert touches one-by-one so we can build the source→clone touch-id
+    // map needed by seed remapping below.
     const touchIdMap = new Map<number, number>();
-    for (const t of sourceTouches) {
-      const sendISO =
-        typeof t.sendDate === "string"
-          ? t.sendDate
-          : (t.sendDate as Date).toISOString().slice(0, 10);
+    for (const pt of plan.touches) {
       const [nt] = await tx
         .insert(touchesTable)
         .values({
           campaignId: newCampaign.id,
-          touchName: t.touchName,
-          channelId: t.channelId,
-          campaignTypeId: t.campaignTypeId,
-          sendDate: shiftISO(sendISO),
-          notes: t.notes,
-          audienceMode: t.audienceMode,
+          touchName: pt.touchName,
+          channelId: pt.channelId,
+          campaignTypeId: pt.campaignTypeId,
+          sendDate: pt.sendDate,
+          notes: pt.notes,
+          audienceMode: pt.audienceMode,
           createdBySource: "manual",
         })
         .returning();
-      touchIdMap.set(t.id, nt.id);
+      touchIdMap.set(pt.sourceId, nt.id);
     }
 
-    // Copy thresholds verbatim.
-    const sourceThresholds = await tx
-      .select()
-      .from(thresholdsTable)
-      .where(eq(thresholdsTable.campaignId, source.id));
-    if (sourceThresholds.length > 0) {
+    if (plan.thresholds.length > 0) {
       await tx.insert(thresholdsTable).values(
-        sourceThresholds.map((th) => ({
+        plan.thresholds.map((th) => ({
           campaignId: newCampaign.id,
           name: th.name,
           maxTouchpoints: th.maxTouchpoints,
@@ -313,65 +347,38 @@ router.post("/campaigns/:id/clone", requireAuth, async (req, res): Promise<void>
       );
     }
 
-    // Suppressions: copy structural rules whose donorIds list is empty.
-    // Skip donor-ID-specific suppressions — those reference people from the
-    // source audience and should be re-curated against the new list.
-    // For touch-scoped rules we also remap touchId via touchIdMap.
-    const sourceSuppressions = await tx
-      .select()
-      .from(suppressionsTable)
-      .where(eq(suppressionsTable.campaignId, source.id));
-    let copiedSuppressions = 0;
-    let skippedSuppressions = 0;
-    const suppressionInserts: Array<typeof suppressionsTable.$inferInsert> = [];
-    for (const s of sourceSuppressions) {
-      if ((s.donorIds ?? []).length > 0) {
-        skippedSuppressions++;
-        continue;
-      }
-      const remappedTouchId =
-        s.touchId != null ? (touchIdMap.get(s.touchId) ?? null) : null;
-      if (s.touchId != null && remappedTouchId == null) {
-        skippedSuppressions++;
-        continue;
-      }
-      suppressionInserts.push({
-        campaignId: newCampaign.id,
-        scope: s.scope,
-        channelId: s.channelId,
-        campaignTypeId: s.campaignTypeId,
-        touchId: remappedTouchId,
-        reasonCodeId: s.reasonCodeId,
-        reason: s.reason,
-        notes: s.notes,
-        donorIds: [],
-        createdByUserId: req.currentUser!.id,
-      });
-      copiedSuppressions++;
-    }
-    if (suppressionInserts.length > 0) {
-      await tx.insert(suppressionsTable).values(suppressionInserts);
+    if (plan.suppressions.length > 0) {
+      await tx.insert(suppressionsTable).values(
+        plan.suppressions.map((s) => ({
+          campaignId: newCampaign.id,
+          scope: s.scope,
+          channelId: s.channelId,
+          campaignTypeId: s.campaignTypeId,
+          touchId: null,
+          reasonCodeId: s.reasonCodeId,
+          reason: s.reason,
+          notes: s.notes,
+          donorIds: [],
+          createdByUserId: req.currentUser!.id,
+        })),
+      );
     }
 
-    // Seeds: copy as-is. Seed lists are typically a stable staff/test set
-    // that staff want to reuse cycle-over-cycle. Touch-scoped seeds remap
-    // their touchId; if the touch couldn't be remapped, skip that seed.
-    const sourceSeeds = await tx
-      .select()
-      .from(seedGroupsTable)
-      .where(eq(seedGroupsTable.campaignId, source.id));
+    // Seeds: remap touch ids via touchIdMap; drop any seed whose source
+    // touch unexpectedly has no remap (defensive — should not happen since
+    // we always copy every touch).
     let copiedSeeds = 0;
     const seedInserts: Array<typeof seedGroupsTable.$inferInsert> = [];
-    for (const sg of sourceSeeds) {
+    for (const ps of plan.seeds) {
       const remappedTouchId =
-        sg.touchId != null ? (touchIdMap.get(sg.touchId) ?? null) : null;
-      if (sg.touchId != null && remappedTouchId == null) continue;
+        ps.sourceTouchId != null ? (touchIdMap.get(ps.sourceTouchId) ?? null) : null;
+      if (ps.sourceTouchId != null && remappedTouchId == null) continue;
       seedInserts.push({
         campaignId: newCampaign.id,
-        scope: sg.scope,
-        channelId: sg.channelId,
+        scope: ps.scope,
+        channelId: ps.channelId,
         touchId: remappedTouchId,
-        donorIds: sg.donorIds,
+        donorIds: ps.donorIds,
         createdByUserId: req.currentUser!.id,
       });
       copiedSeeds++;
@@ -380,23 +387,21 @@ router.post("/campaigns/:id/clone", requireAuth, async (req, res): Promise<void>
       await tx.insert(seedGroupsTable).values(seedInserts);
     }
 
-    // Audit row written inside the transaction so a clone without an audit
-    // entry can never be committed.
     await audit({
       actor: req.currentUser!,
       action: "campaign_cloned",
       entityType: "campaign",
       entityId: newCampaign.id,
-      details: `Cloned from campaign ${source.id} ("${source.name}") shiftDays=${shiftDays} touches=${sourceTouches.length} thresholds=${sourceThresholds.length} suppressions=${copiedSuppressions}/${copiedSuppressions + skippedSuppressions} seeds=${copiedSeeds}`,
+      details: `Cloned from campaign ${source.id} ("${source.name}") shiftDays=${plan.shiftDays} touches=${plan.touches.length} thresholds=${plan.thresholds.length} suppressions=${plan.suppressions.length}/${plan.suppressions.length + plan.skippedSuppressions} seeds=${copiedSeeds}`,
       tx,
     });
 
     return {
       newCampaignId: newCampaign.id,
-      copiedTouches: sourceTouches.length,
-      copiedThresholds: sourceThresholds.length,
-      copiedSuppressions,
-      skippedSuppressions,
+      copiedTouches: plan.touches.length,
+      copiedThresholds: plan.thresholds.length,
+      copiedSuppressions: plan.suppressions.length,
+      skippedSuppressions: plan.skippedSuppressions,
       copiedSeeds,
     };
   });

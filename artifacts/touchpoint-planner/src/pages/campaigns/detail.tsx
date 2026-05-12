@@ -21,7 +21,7 @@ import { format } from "date-fns";
 import { useEffect, useState } from "react";
 import { ReauthDialog, isReauthRequired } from "@/components/ReauthDialog";
 import { useQueryClient } from "@tanstack/react-query";
-import { useGetMe } from "@workspace/api-client-react";
+import { useGetMe, ApiError } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function CampaignDetail() {
@@ -37,6 +37,16 @@ export default function CampaignDetail() {
   const { data: touches, isLoading: touchesLoading } = useListTouches(id, {
     query: { enabled: !!id, queryKey: getListTouchesQueryKey(id) }
   });
+
+  // Typed accessor for the JSON error body without falling back to `any`.
+  // Mirrors the helper used in SecuritySettings.tsx.
+  const cloneErrorMessage = (e: unknown): string => {
+    if (e instanceof ApiError) {
+      const data = e.data as { error?: string } | null;
+      if (data?.error) return data.error;
+    }
+    return "Failed to clone campaign.";
+  };
 
   const archiveMutation = useArchiveCampaign();
   const voidMutation = useVoidCampaign();
@@ -177,7 +187,7 @@ export default function CampaignDetail() {
           {cloneMutation.error ? (
             <div className="bg-destructive/10 text-destructive p-3 rounded-md text-sm flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 shrink-0" />
-              <span>{(cloneMutation.error as any)?.data?.error || (cloneMutation.error as any)?.response?.data?.error || "Failed to clone campaign."}</span>
+              <span>{cloneErrorMessage(cloneMutation.error)}</span>
             </div>
           ) : null}
           <div className="space-y-3">
