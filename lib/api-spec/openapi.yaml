@@ -57,10 +57,107 @@ paths:
             schema: { $ref: "#/components/schemas/LoginInput" }
       responses:
         "200":
+          description: |
+            OK. Returns a `SessionUser` when login completes in one step
+            (standard users, or admins who have already enrolled and supplied
+            a TOTP code via `/auth/login/totp`). Returns a `LoginTotpChallenge`
+            when the user's role mandates TOTP and a second step is required.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginOutcome" }
+  /auth/login/totp:
+    post:
+      operationId: loginTotp
+      tags: [auth]
+      summary: Complete a pending TOTP-required login by submitting a 6-digit code or a recovery code.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TotpVerifyInput" }
+      responses:
+        "200":
           description: OK
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SessionUser" }
+        "401": { description: Invalid code or no pending TOTP login. }
+        "429": { description: Account temporarily locked from too many failed attempts. }
+  /auth/totp/status:
+    get:
+      operationId: getTotpStatus
+      tags: [auth]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TotpStatus" }
+  /auth/totp/enroll/start:
+    post:
+      operationId: startTotpEnrollment
+      tags: [auth]
+      summary: |
+        Generate a candidate TOTP secret and QR code. Callable both during a
+        pending-TOTP login (to onboard a brand-new admin) and from settings
+        (to (re-)enroll). The secret is held in the session and not persisted
+        until `enrollTotpVerify` succeeds.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TotpEnrollStartResponse" }
+  /auth/totp/enroll/verify:
+    post:
+      operationId: verifyTotpEnrollment
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TotpEnrollVerifyInput" }
+      responses:
+        "200":
+          description: |
+            Enrollment confirmed. Returns the ten single-use recovery codes —
+            shown to the user exactly once.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TotpRecoveryCodes" }
+  /auth/totp/recovery-codes/regenerate:
+    post:
+      operationId: regenerateTotpRecoveryCodes
+      tags: [auth]
+      summary: Re-issue the user's ten recovery codes (re-auth required).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TotpRecoveryCodes" }
+  /auth/totp/disable:
+    post:
+      operationId: disableTotp
+      tags: [auth]
+      summary: |
+        Disable own TOTP. Forbidden when the caller's role mandates TOTP
+        (admin/super_admin) — they must first downgrade or have an admin reset.
+      responses:
+        "204": { description: Disabled. }
+        "403": { description: "Role requires TOTP, or re-auth required." }
+  /users/{id}/totp/reset:
+    post:
+      operationId: resetUserTotp
+      tags: [users]
+      summary: |
+        Super-admin-only. Clear another user's TOTP enrollment so they re-enroll
+        on next login. Re-auth required.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: Reset. }
+        "403": { description: "Forbidden, or re-auth required." }
   /auth/logout:
     post:
       operationId: logout
@@ -1332,7 +1429,7 @@ components:
 
     SessionUser:
       type: object
-      required: [id, email, name, role, active, piiAcknowledged, mustChangePassword]
+      required: [id, email, name, role, active, piiAcknowledged, mustChangePassword, totpEnrolled, totpRequired]
       properties:
         id: { type: integer }
         email: { type: string }
@@ -1341,6 +1438,67 @@ components:
         active: { type: boolean }
         piiAcknowledged: { type: boolean }
         mustChangePassword: { type: boolean }
+        totpEnrolled:
+          type: boolean
+          description: True when the user has a confirmed TOTP secret on file.
+        totpRequired:
+          type: boolean
+          description: True when the user's role mandates TOTP (admin/super_admin).
+
+    LoginOutcome:
+      oneOf:
+        - $ref: "#/components/schemas/SessionUser"
+        - $ref: "#/components/schemas/LoginTotpChallenge"
+    LoginTotpChallenge:
+      type: object
+      required: [requiresTotp, enrollmentRequired]
+      properties:
+        requiresTotp:
+          type: boolean
+          description: Always true on this branch — instructs the client to render the second-factor step.
+        enrollmentRequired:
+          type: boolean
+          description: True when the user has not yet enrolled a TOTP authenticator and must do so before completing login.
+
+    TotpVerifyInput:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+          description: Either a 6-digit TOTP code or a 10-character recovery code.
+    TotpEnrollStartResponse:
+      type: object
+      required: [otpauthUri, qrDataUrl, secret]
+      properties:
+        otpauthUri: { type: string }
+        qrDataUrl:
+          type: string
+          description: data:image/png;base64,... encoded QR code for the otpauth URI.
+        secret:
+          type: string
+          description: Base32-encoded shared secret. Shown beside the QR for manual entry; never persisted to the user row until enrollment is confirmed.
+    TotpEnrollVerifyInput:
+      type: object
+      required: [code]
+      properties:
+        code: { type: string, description: 6-digit code from the authenticator app. }
+    TotpRecoveryCodes:
+      type: object
+      required: [recoveryCodes]
+      properties:
+        recoveryCodes:
+          type: array
+          items: { type: string }
+          description: Ten single-use recovery codes shown exactly once.
+    TotpStatus:
+      type: object
+      required: [enrolled, required, unusedRecoveryCodes]
+      properties:
+        enrolled: { type: boolean }
+        required: { type: boolean }
+        enrolledAt: { type: ["string", "null"], format: date-time }
+        unusedRecoveryCodes: { type: integer }
 
     ReauthInput:
       type: object

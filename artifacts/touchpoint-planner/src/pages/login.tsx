@@ -1,38 +1,124 @@
-import { useLogin } from "@workspace/api-client-react";
+import {
+  useLogin,
+  useLoginTotp,
+  useStartTotpEnrollment,
+  useVerifyTotpEnrollment,
+  getGetMeQueryKey,
+} from "@workspace/api-client-react";
 import { Link, useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Form, FormControl, FormField, FormItem, FormMessage } from "@/components/ui/form";
-import { AlertTriangle, Loader2 } from "lucide-react";
+import { AlertTriangle, Loader2, Copy, Check, ShieldCheck } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { getGetMeQueryKey } from "@workspace/api-client-react";
 
 const loginSchema = z.object({
   email: z.string().email("Invalid email address"),
   password: z.string().min(1, "Password is required"),
 });
 
+const totpSchema = z.object({
+  code: z
+    .string()
+    .min(1, "Enter your authenticator code or recovery code")
+    .max(20, "Code is too long"),
+});
+
+type Step =
+  | { kind: "password" }
+  | { kind: "totp" }
+  | { kind: "enroll"; otpauthUri: string; qrDataUrl: string; secret: string }
+  | { kind: "recovery"; codes: string[] };
+
+function readErr(err: unknown): { status?: number; message?: string } {
+  const e = err as any;
+  return {
+    status: e?.status ?? e?.response?.status,
+    message: e?.data?.error ?? e?.response?.data?.error,
+  };
+}
+
 export default function Login() {
   const [, setLocation] = useLocation();
-  const loginMutation = useLogin();
   const queryClient = useQueryClient();
+  const [step, setStep] = useState<Step>({ kind: "password" });
 
-  const form = useForm<z.infer<typeof loginSchema>>({
+  const loginMutation = useLogin();
+  const loginTotpMutation = useLoginTotp();
+  const startEnroll = useStartTotpEnrollment();
+  const verifyEnroll = useVerifyTotpEnrollment();
+
+  const passwordForm = useForm<z.infer<typeof loginSchema>>({
     resolver: zodResolver(loginSchema),
     defaultValues: { email: "", password: "" },
   });
+  const totpForm = useForm<z.infer<typeof totpSchema>>({
+    resolver: zodResolver(totpSchema),
+    defaultValues: { code: "" },
+  });
+  const enrollForm = useForm<z.infer<typeof totpSchema>>({
+    resolver: zodResolver(totpSchema),
+    defaultValues: { code: "" },
+  });
 
-  const onSubmit = (data: z.infer<typeof loginSchema>) => {
-    loginMutation.mutate({ data }, {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() });
-        setLocation("/");
-      }
-    });
+  const finishLogin = () => {
+    queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() });
+    setLocation("/");
+  };
+
+  const onSubmitPassword = (data: z.infer<typeof loginSchema>) => {
+    loginMutation.mutate(
+      { data },
+      {
+        onSuccess: async (resp: any) => {
+          if (resp && resp.requiresTotp) {
+            if (resp.enrollmentRequired) {
+              // Kick off enrollment immediately for first-time admin login.
+              try {
+                const enroll = await startEnroll.mutateAsync();
+                setStep({
+                  kind: "enroll",
+                  otpauthUri: enroll.otpauthUri,
+                  qrDataUrl: enroll.qrDataUrl,
+                  secret: enroll.secret,
+                });
+              } catch {
+                // Fall through to manual entry; the next-step UI will surface
+                // the error from `startEnroll.error`.
+                setStep({ kind: "totp" });
+              }
+            } else {
+              setStep({ kind: "totp" });
+            }
+            return;
+          }
+          finishLogin();
+        },
+      },
+    );
+  };
+
+  const onSubmitTotp = (data: z.infer<typeof totpSchema>) => {
+    loginTotpMutation.mutate(
+      { data: { code: data.code.trim() } },
+      { onSuccess: () => finishLogin() },
+    );
+  };
+
+  const onSubmitEnrollVerify = (data: z.infer<typeof totpSchema>) => {
+    verifyEnroll.mutate(
+      { data: { code: data.code.trim() } },
+      {
+        onSuccess: (resp) => {
+          setStep({ kind: "recovery", codes: resp.recoveryCodes });
+        },
+      },
+    );
   };
 
   return (
@@ -48,70 +134,290 @@ export default function Login() {
           </p>
         </div>
 
-        {loginMutation.error && (() => {
-          const err = loginMutation.error as any;
-          const status = err?.status ?? err?.response?.status;
-          const serverMsg = err?.data?.error ?? err?.response?.data?.error;
-          const message =
-            status === 429
-              ? serverMsg ?? "Too many failed login attempts. Please try again later."
-              : serverMsg ?? "Failed to log in. Please check your credentials.";
-          return (
-            <div className="bg-destructive/10 text-destructive p-3 rounded-md text-sm flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 shrink-0" />
-              <span>{message}</span>
-            </div>
-          );
-        })()}
+        {step.kind === "password" && (
+          <PasswordStep
+            form={passwordForm}
+            onSubmit={onSubmitPassword}
+            error={loginMutation.error}
+            isPending={loginMutation.isPending}
+          />
+        )}
 
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="email"
-              render={({ field }) => (
-                <FormItem>
-                  <Label>Email</Label>
-                  <FormControl>
-                    <Input placeholder="Enter your email" type="email" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="password"
-              render={({ field }) => (
-                <FormItem>
-                  <Label>Password</Label>
-                  <FormControl>
-                    <Input placeholder="Enter your password" type="password" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <Button 
-              type="submit" 
-              className="w-full" 
-              size="lg"
-              disabled={loginMutation.isPending}
-            >
-              {loginMutation.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : "Sign In"}
-            </Button>
-            <p className="text-center text-sm">
-              <Link
-                href="/forgot-password"
-                className="text-primary hover:underline"
-                data-testid="link-forgot-password"
-              >
-                Forgot your password?
-              </Link>
-            </p>
-          </form>
-        </Form>
+        {step.kind === "totp" && (
+          <TotpStep
+            form={totpForm}
+            onSubmit={onSubmitTotp}
+            error={loginTotpMutation.error}
+            isPending={loginTotpMutation.isPending}
+            onBack={() => {
+              setStep({ kind: "password" });
+              loginMutation.reset();
+              loginTotpMutation.reset();
+              passwordForm.reset();
+            }}
+          />
+        )}
+
+        {step.kind === "enroll" && (
+          <EnrollStep
+            otpauthUri={step.otpauthUri}
+            qrDataUrl={step.qrDataUrl}
+            secret={step.secret}
+            form={enrollForm}
+            onSubmit={onSubmitEnrollVerify}
+            error={verifyEnroll.error}
+            isPending={verifyEnroll.isPending}
+          />
+        )}
+
+        {step.kind === "recovery" && (
+          <RecoveryCodesStep codes={step.codes} onContinue={finishLogin} />
+        )}
       </div>
     </div>
+  );
+}
+
+function ErrorBanner({ error, fallback }: { error: unknown; fallback: string }) {
+  if (!error) return null;
+  const { status, message } = readErr(error);
+  const text =
+    status === 429
+      ? message ?? "Too many failed attempts. Please try again later."
+      : message ?? fallback;
+  return (
+    <div className="bg-destructive/10 text-destructive p-3 rounded-md text-sm flex items-center gap-2">
+      <AlertTriangle className="h-4 w-4 shrink-0" />
+      <span>{text}</span>
+    </div>
+  );
+}
+
+function PasswordStep({
+  form,
+  onSubmit,
+  error,
+  isPending,
+}: {
+  form: ReturnType<typeof useForm<z.infer<typeof loginSchema>>>;
+  onSubmit: (d: z.infer<typeof loginSchema>) => void;
+  error: unknown;
+  isPending: boolean;
+}) {
+  return (
+    <>
+      <ErrorBanner error={error} fallback="Failed to log in. Please check your credentials." />
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <FormField
+            control={form.control}
+            name="email"
+            render={({ field }) => (
+              <FormItem>
+                <Label>Email</Label>
+                <FormControl>
+                  <Input placeholder="Enter your email" type="email" autoComplete="username" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="password"
+            render={({ field }) => (
+              <FormItem>
+                <Label>Password</Label>
+                <FormControl>
+                  <Input placeholder="Enter your password" type="password" autoComplete="current-password" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <Button type="submit" className="w-full" size="lg" disabled={isPending}>
+            {isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : "Sign In"}
+          </Button>
+          <p className="text-center text-sm">
+            <Link href="/forgot-password" className="text-primary hover:underline" data-testid="link-forgot-password">
+              Forgot your password?
+            </Link>
+          </p>
+        </form>
+      </Form>
+    </>
+  );
+}
+
+function TotpStep({
+  form,
+  onSubmit,
+  error,
+  isPending,
+  onBack,
+}: {
+  form: ReturnType<typeof useForm<z.infer<typeof totpSchema>>>;
+  onSubmit: (d: z.infer<typeof totpSchema>) => void;
+  error: unknown;
+  isPending: boolean;
+  onBack: () => void;
+}) {
+  return (
+    <>
+      <div className="text-center space-y-1">
+        <ShieldCheck className="h-6 w-6 text-primary mx-auto" />
+        <h2 className="text-lg font-semibold">Two-factor verification</h2>
+        <p className="text-xs text-muted-foreground">
+          Enter the 6-digit code from your authenticator app, or one of your recovery codes.
+        </p>
+      </div>
+      <ErrorBanner error={error} fallback="That code didn't work. Please try again." />
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <FormField
+            control={form.control}
+            name="code"
+            render={({ field }) => (
+              <FormItem>
+                <Label>Verification code</Label>
+                <FormControl>
+                  <Input
+                    placeholder="123 456"
+                    autoComplete="one-time-code"
+                    inputMode="text"
+                    autoFocus
+                    data-testid="input-totp-code"
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <Button type="submit" className="w-full" size="lg" disabled={isPending}>
+            {isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : "Verify"}
+          </Button>
+          <Button type="button" variant="ghost" className="w-full" onClick={onBack}>
+            Back
+          </Button>
+        </form>
+      </Form>
+    </>
+  );
+}
+
+function EnrollStep({
+  otpauthUri,
+  qrDataUrl,
+  secret,
+  form,
+  onSubmit,
+  error,
+  isPending,
+}: {
+  otpauthUri: string;
+  qrDataUrl: string;
+  secret: string;
+  form: ReturnType<typeof useForm<z.infer<typeof totpSchema>>>;
+  onSubmit: (d: z.infer<typeof totpSchema>) => void;
+  error: unknown;
+  isPending: boolean;
+}) {
+  return (
+    <>
+      <div className="text-center space-y-1">
+        <ShieldCheck className="h-6 w-6 text-primary mx-auto" />
+        <h2 className="text-lg font-semibold">Set up two-factor authentication</h2>
+        <p className="text-xs text-muted-foreground">
+          Your role requires a second factor. Scan this code with Google Authenticator,
+          1Password, Authy, or any compatible TOTP app, then enter the 6-digit code it shows.
+        </p>
+      </div>
+      <div className="flex justify-center">
+        <img
+          src={qrDataUrl}
+          alt="Authenticator QR code"
+          className="border rounded bg-white"
+          width={200}
+          height={200}
+        />
+      </div>
+      <details className="text-xs text-muted-foreground">
+        <summary className="cursor-pointer">Can't scan? Enter the secret manually</summary>
+        <div className="mt-2 space-y-2">
+          <code className="block break-all bg-muted p-2 rounded font-mono text-[11px]">{secret}</code>
+          <p className="break-all">
+            Or use this URL: <code className="break-all">{otpauthUri}</code>
+          </p>
+        </div>
+      </details>
+      <ErrorBanner error={error} fallback="That code didn't work. Please try again." />
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <FormField
+            control={form.control}
+            name="code"
+            render={({ field }) => (
+              <FormItem>
+                <Label>Code from your authenticator app</Label>
+                <FormControl>
+                  <Input
+                    placeholder="123 456"
+                    autoComplete="one-time-code"
+                    inputMode="numeric"
+                    autoFocus
+                    data-testid="input-totp-enroll-code"
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <Button type="submit" className="w-full" size="lg" disabled={isPending}>
+            {isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : "Verify and continue"}
+          </Button>
+        </form>
+      </Form>
+    </>
+  );
+}
+
+function RecoveryCodesStep({ codes, onContinue }: { codes: string[]; onContinue: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const text = codes.join("\n");
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* noop */
+    }
+  };
+  return (
+    <>
+      <div className="text-center space-y-1">
+        <ShieldCheck className="h-6 w-6 text-emerald-600 mx-auto" />
+        <h2 className="text-lg font-semibold">Save your recovery codes</h2>
+        <p className="text-xs text-muted-foreground">
+          Store these codes in a safe place — a password manager is ideal. Each
+          code can be used once if you lose access to your authenticator app. They
+          will <strong>not</strong> be shown again.
+        </p>
+      </div>
+      <div className="grid grid-cols-2 gap-2 bg-muted p-3 rounded font-mono text-sm" data-testid="recovery-codes">
+        {codes.map((c) => (
+          <div key={c}>{c}</div>
+        ))}
+      </div>
+      <Button type="button" variant="outline" className="w-full" onClick={copy}>
+        {copied ? <Check className="h-4 w-4 mr-2" /> : <Copy className="h-4 w-4 mr-2" />}
+        {copied ? "Copied!" : "Copy all codes"}
+      </Button>
+      <Button type="button" className="w-full" size="lg" onClick={onContinue}>
+        I've saved my codes — continue
+      </Button>
+    </>
   );
 }

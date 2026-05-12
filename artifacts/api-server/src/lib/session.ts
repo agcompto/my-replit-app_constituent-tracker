@@ -93,5 +93,16 @@ declare module "express-session" {
     /** Unix-ms of the last successful password authentication for this session.
      *  Used by `requireRecentAuth` to gate destructive/privileged operations. */
     lastAuthAt?: number;
+    /** Set after the password step of login when a second TOTP factor is
+     *  required. The session is NOT yet authenticated (`userId` is unset)
+     *  until the TOTP step completes. */
+    pendingTotpUserId?: number;
+    /** Unix-ms when the pending-TOTP state was created. Used to expire the
+     *  half-completed login if the user walks away from the second step. */
+    pendingTotpStartedAt?: number;
+    /** Encrypted candidate TOTP secret produced by `/auth/totp/enroll/start`.
+     *  Only persisted to the user row after the user proves possession by
+     *  completing `/auth/totp/enroll/verify` with a valid code. */
+    pendingTotpSecret?: string;
   }
 }

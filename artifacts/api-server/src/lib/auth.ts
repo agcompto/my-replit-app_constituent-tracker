@@ -12,6 +12,10 @@ export interface SessionUser {
   active: boolean;
   piiAcknowledged: boolean;
   mustChangePassword: boolean;
+  /** True when the user has a confirmed TOTP secret on file. */
+  totpEnrolled: boolean;
+  /** True when the user's role mandates TOTP (admin/super_admin). */
+  totpRequired: boolean;
 }
 
 declare global {
@@ -34,6 +38,8 @@ export async function loadUser(userId: number): Promise<SessionUser | null> {
     active: u.active,
     piiAcknowledged: u.piiAcknowledgedAt != null,
     mustChangePassword: u.mustChangePassword,
+    totpEnrolled: u.totpSecretEncrypted != null && u.totpEnrolledAt != null,
+    totpRequired: u.role === "admin" || u.role === "super_admin",
   };
 }
 

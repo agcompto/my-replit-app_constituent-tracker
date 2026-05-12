@@ -6,6 +6,7 @@ import {
   useResetUserPassword,
   useResendInvite,
   useDeleteUser,
+  useResetUserTotp,
   getListUsersQueryKey,
 } from "@workspace/api-client-react";
 import { useEffect, useState } from "react";
@@ -59,6 +60,7 @@ import {
   Check,
   Send,
   Trash2,
+  ShieldOff,
 } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -103,6 +105,7 @@ export default function Users() {
   const [resetting, setResetting] = useState<UserRow | null>(null);
   const [resending, setResending] = useState<UserRow | null>(null);
   const [deleting, setDeleting] = useState<UserRow | null>(null);
+  const [resettingTotp, setResettingTotp] = useState<UserRow | null>(null);
   const [invite, setInvite] = useState<InviteResult | null>(null);
 
   const isAdmin = me?.role === "admin" || me?.role === "super_admin";
@@ -220,6 +223,17 @@ export default function Users() {
                           <Button
                             variant="ghost"
                             size="icon"
+                            title="Reset two-factor authentication (forces re-enrollment)"
+                            onClick={() => setResettingTotp(user as UserRow)}
+                            data-testid={`button-reset-totp-${user.id}`}
+                          >
+                            <ShieldOff className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {isSuperAdmin && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             title={
                               isSelf
                                 ? "You cannot delete your own account."
@@ -264,6 +278,7 @@ export default function Users() {
         onResent={(c) => setInvite(c)}
       />
       <DeleteUserDialog user={deleting} onClose={() => setDeleting(null)} />
+      <ResetTotpDialog user={resettingTotp} onClose={() => setResettingTotp(null)} />
       <InviteResultDialog
         invite={invite}
         onClose={() => setInvite(null)}
@@ -917,6 +932,83 @@ function InviteResultDialog({
         <DialogFooter>
           <Button onClick={onClose} data-testid="button-close-credentials">
             Done
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ResetTotpDialog({
+  user,
+  onClose,
+}: {
+  user: UserRow | null;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const mutation = useResetUserTotp();
+  const [reauthOpen, setReauthOpen] = useState(false);
+  useEffect(() => {
+    if (isReauthRequired(mutation.error)) setReauthOpen(true);
+  }, [mutation.error]);
+  if (!user) return null;
+  const submit = () => {
+    mutation.mutate(
+      { id: user.id },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListUsersQueryKey() });
+          toast({
+            title: "Two-factor reset",
+            description: `${user.email} will be prompted to re-enroll on their next sign-in.`,
+          });
+          onClose();
+        },
+      },
+    );
+  };
+  return (
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Reset two-factor authentication?</DialogTitle>
+          <DialogDescription>
+            This clears the TOTP enrollment and recovery codes for{" "}
+            <strong>{user.email}</strong>. If their role still requires
+            two-factor (admin or super admin), they will be guided through
+            enrollment on their next sign-in. Otherwise their account will
+            sign in with password only until they choose to re-enroll.
+          </DialogDescription>
+        </DialogHeader>
+        {mutation.error && !isReauthRequired(mutation.error) && (
+          <ErrorBanner
+            error={mutation.error}
+            fallback="Failed to reset two-factor."
+          />
+        )}
+        <ReauthDialog
+          open={reauthOpen}
+          onClose={() => setReauthOpen(false)}
+          onSuccess={() => {
+            setReauthOpen(false);
+            mutation.reset();
+            submit();
+          }}
+          description="Resetting another user's two-factor requires confirming your password."
+        />
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose} disabled={mutation.isPending}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={submit}
+            disabled={mutation.isPending}
+            data-testid="button-confirm-reset-totp"
+          >
+            {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Reset two-factor"}
           </Button>
         </DialogFooter>
       </DialogContent>

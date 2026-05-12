@@ -19,7 +19,48 @@ export const LoginBody = zod.object({
   password: zod.string(),
 });
 
-export const LoginResponse = zod.object({
+export const LoginResponse = zod.union([
+  zod.object({
+    id: zod.number(),
+    email: zod.string(),
+    name: zod.string(),
+    role: zod.enum(["standard", "admin", "super_admin"]),
+    active: zod.boolean(),
+    piiAcknowledged: zod.boolean(),
+    mustChangePassword: zod.boolean(),
+    totpEnrolled: zod
+      .boolean()
+      .describe("True when the user has a confirmed TOTP secret on file."),
+    totpRequired: zod
+      .boolean()
+      .describe(
+        "True when the user's role mandates TOTP (admin\/super_admin).",
+      ),
+  }),
+  zod.object({
+    requiresTotp: zod
+      .boolean()
+      .describe(
+        "Always true on this branch — instructs the client to render the second-factor step.",
+      ),
+    enrollmentRequired: zod
+      .boolean()
+      .describe(
+        "True when the user has not yet enrolled a TOTP authenticator and must do so before completing login.",
+      ),
+  }),
+]);
+
+/**
+ * @summary Complete a pending TOTP-required login by submitting a 6-digit code or a recovery code.
+ */
+export const LoginTotpBody = zod.object({
+  code: zod
+    .string()
+    .describe("Either a 6-digit TOTP code or a 10-character recovery code."),
+});
+
+export const LoginTotpResponse = zod.object({
   id: zod.number(),
   email: zod.string(),
   name: zod.string(),
@@ -27,6 +68,68 @@ export const LoginResponse = zod.object({
   active: zod.boolean(),
   piiAcknowledged: zod.boolean(),
   mustChangePassword: zod.boolean(),
+  totpEnrolled: zod
+    .boolean()
+    .describe("True when the user has a confirmed TOTP secret on file."),
+  totpRequired: zod
+    .boolean()
+    .describe("True when the user's role mandates TOTP (admin\/super_admin)."),
+});
+
+export const GetTotpStatusResponse = zod.object({
+  enrolled: zod.boolean(),
+  required: zod.boolean(),
+  enrolledAt: zod.coerce.date().nullish(),
+  unusedRecoveryCodes: zod.number(),
+});
+
+/**
+ * @summary Generate a candidate TOTP secret and QR code. Callable both during a
+pending-TOTP login (to onboard a brand-new admin) and from settings
+(to (re-)enroll). The secret is held in the session and not persisted
+until `enrollTotpVerify` succeeds.
+
+ */
+export const StartTotpEnrollmentResponse = zod.object({
+  otpauthUri: zod.string(),
+  qrDataUrl: zod
+    .string()
+    .describe(
+      "data:image\/png;base64,... encoded QR code for the otpauth URI.",
+    ),
+  secret: zod
+    .string()
+    .describe(
+      "Base32-encoded shared secret. Shown beside the QR for manual entry; never persisted to the user row until enrollment is confirmed.",
+    ),
+});
+
+export const VerifyTotpEnrollmentBody = zod.object({
+  code: zod.string().describe("6-digit code from the authenticator app."),
+});
+
+export const VerifyTotpEnrollmentResponse = zod.object({
+  recoveryCodes: zod
+    .array(zod.string())
+    .describe("Ten single-use recovery codes shown exactly once."),
+});
+
+/**
+ * @summary Re-issue the user's ten recovery codes (re-auth required).
+ */
+export const RegenerateTotpRecoveryCodesResponse = zod.object({
+  recoveryCodes: zod
+    .array(zod.string())
+    .describe("Ten single-use recovery codes shown exactly once."),
+});
+
+/**
+ * @summary Super-admin-only. Clear another user's TOTP enrollment so they re-enroll
+on next login. Re-auth required.
+
+ */
+export const ResetUserTotpParams = zod.object({
+  id: zod.coerce.number(),
 });
 
 export const GetMeResponse = zod.object({
@@ -37,6 +140,12 @@ export const GetMeResponse = zod.object({
   active: zod.boolean(),
   piiAcknowledged: zod.boolean(),
   mustChangePassword: zod.boolean(),
+  totpEnrolled: zod
+    .boolean()
+    .describe("True when the user has a confirmed TOTP secret on file."),
+  totpRequired: zod
+    .boolean()
+    .describe("True when the user's role mandates TOTP (admin\/super_admin)."),
 });
 
 export const AcknowledgePiiResponse = zod.object({
@@ -47,6 +156,12 @@ export const AcknowledgePiiResponse = zod.object({
   active: zod.boolean(),
   piiAcknowledged: zod.boolean(),
   mustChangePassword: zod.boolean(),
+  totpEnrolled: zod
+    .boolean()
+    .describe("True when the user has a confirmed TOTP secret on file."),
+  totpRequired: zod
+    .boolean()
+    .describe("True when the user's role mandates TOTP (admin\/super_admin)."),
 });
 
 /**
@@ -83,6 +198,12 @@ export const ChangeOwnPasswordResponse = zod.object({
   active: zod.boolean(),
   piiAcknowledged: zod.boolean(),
   mustChangePassword: zod.boolean(),
+  totpEnrolled: zod
+    .boolean()
+    .describe("True when the user has a confirmed TOTP secret on file."),
+  totpRequired: zod
+    .boolean()
+    .describe("True when the user's role mandates TOTP (admin\/super_admin)."),
 });
 
 export const ListUsersResponseItem = zod.object({

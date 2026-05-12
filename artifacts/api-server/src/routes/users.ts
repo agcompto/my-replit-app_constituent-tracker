@@ -9,9 +9,11 @@ import {
   ResetUserPasswordParams,
   DeleteUserParams,
   ResendInviteParams,
+  ResetUserTotpParams,
 } from "@workspace/api-zod";
 import { requireRole, audit } from "../lib/auth";
 import { requireRecentAuth, RECENT_AUTH_WINDOW_MS } from "../lib/recentAuth";
+import { deleteAllRecoveryCodes } from "../lib/totp";
 import { generateTempPassword } from "../lib/password";
 import { issueSetupToken } from "../lib/passwordSetupTokens";
 import { buildSetupPasswordUrl } from "../lib/appUrl";
@@ -403,6 +405,47 @@ router.delete(
       `);
 
       await tx.delete(usersTable).where(eq(usersTable.id, targetId));
+    });
+    res.status(204).end();
+  },
+);
+
+/**
+ * Super-admin-only: clear another user's TOTP enrollment. The target user
+ * is forced to re-enroll on their next login (when role still mandates
+ * TOTP) or simply continues with password-only login (standard role).
+ * Re-auth gated like other privileged actions.
+ */
+router.post(
+  "/users/:id/totp/reset",
+  requireRole("super_admin"),
+  requireRecentAuth,
+  async (req, res): Promise<void> => {
+    const params = ResetUserTotpParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const targetId = params.data.id;
+    const [target] = await db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.id, targetId));
+    if (!target) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+    await db
+      .update(usersTable)
+      .set({ totpSecretEncrypted: null, totpEnrolledAt: null })
+      .where(eq(usersTable.id, targetId));
+    await deleteAllRecoveryCodes(targetId);
+    await audit({
+      actor: req.currentUser!,
+      action: "totp_reset_by_admin",
+      entityType: "user",
+      entityId: targetId,
+      details: `Cleared TOTP enrollment for ${target.email}`,
     });
     res.status(204).end();
   },

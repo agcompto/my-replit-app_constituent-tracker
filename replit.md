@@ -42,6 +42,20 @@ Admins never see, type, or transmit user passwords. Creating a user (`POST /user
 
 Responses to `POST /users`, `POST /users/:id/reset-password`, and `POST /users/:id/resend-invite` always return `{ setupUrl, expiresAt }` (plus `user` on create). The admin UI displays the URL with a copy button so the admin can deliver it to the user through a secure channel.
 
+## Two-factor authentication (TOTP)
+
+Admin and super-admin roles **must** complete a TOTP second factor at sign-in; standard users may opt in from `Settings → My Security`. The flow:
+
+- `POST /auth/login` returns `{ requiresTotp: true, enrollmentRequired: bool }` for admin/super_admin instead of the SessionUser. The session has `pendingTotpUserId` parked but **no** `userId` — the user is not yet logged in. Pending state expires after 5 minutes.
+- `POST /auth/login/totp { code }` accepts a 6-digit TOTP **or** a 10-character recovery code (`XXXXX-XXXXX`). On success the session is regenerated, `userId` set, and the SessionUser body returned. Failures count toward the same per-user lockout as `/auth/login` (10 / 15min).
+- First-time required users go through enrollment in the same flow: the frontend calls `POST /auth/totp/enroll/start` (returns `otpauthUri`, `qrDataUrl`, `secret`; secret is held only in the session as an encrypted candidate). After scanning the QR, `POST /auth/totp/enroll/verify { code }` persists the secret, mints 10 single-use recovery codes, and — when called during pending login — completes the login automatically.
+- Settings: `GET /auth/totp/status`, `POST /auth/totp/recovery-codes/regenerate` (re-auth gated), `POST /auth/totp/disable` (re-auth gated; admin/super_admin cannot self-disable — they must downgrade or have a super_admin reset).
+- Super-admin recovery: `POST /users/:id/totp/reset` (re-auth gated) clears the target's enrollment and recovery codes, forcing re-enrollment on their next sign-in.
+
+Storage & crypto: `users.totpSecretEncrypted` (AES-256-GCM, key = scrypt(SESSION_SECRET, "ctp-totp-v1", 32)) and `users.totpEnrolledAt`. Recovery codes live in `totp_recovery_codes` (SHA-256 hex of normalized code; raw codes shown exactly once). otplib v13 functional API with `period=30s`, `epochTolerance=30s` (±1 step ≈ 90s drift). Rotating `SESSION_SECRET` invalidates every enrolled secret — operator must reset all enrollments.
+
+Audit actions: `totp_enrolled`, `totp_disabled`, `totp_recovery_codes_regenerated`, `totp_reset_by_admin`, `login_with_recovery_code`.
+
 ## Login lockout
 
 - Failed sign-ins are tracked persistently per user (`users.failed_login_attempts`, `users.locked_until`) via `lib/lockout.ts`. After **10 consecutive failures** the account is locked for **15 minutes**; successful sign-in clears the counters. The login route returns `429` with a `Retry-After` header while locked. Pre-auth IP-based rate limiting in `lib/rateLimit.ts` still applies.

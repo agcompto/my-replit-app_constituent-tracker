@@ -31,6 +31,50 @@ export interface SessionUser {
   active: boolean;
   piiAcknowledged: boolean;
   mustChangePassword: boolean;
+  /** True when the user has a confirmed TOTP secret on file. */
+  totpEnrolled: boolean;
+  /** True when the user's role mandates TOTP (admin/super_admin). */
+  totpRequired: boolean;
+}
+
+export interface LoginTotpChallenge {
+  /** Always true on this branch — instructs the client to render the second-factor step. */
+  requiresTotp: boolean;
+  /** True when the user has not yet enrolled a TOTP authenticator and must do so before completing login. */
+  enrollmentRequired: boolean;
+}
+
+export type LoginOutcome = SessionUser | LoginTotpChallenge;
+
+export interface TotpVerifyInput {
+  /** Either a 6-digit TOTP code or a 10-character recovery code. */
+  code: string;
+}
+
+export interface TotpEnrollStartResponse {
+  otpauthUri: string;
+  /** data:image/png;base64,... encoded QR code for the otpauth URI. */
+  qrDataUrl: string;
+  /** Base32-encoded shared secret. Shown beside the QR for manual entry; never persisted to the user row until enrollment is confirmed. */
+  secret: string;
+}
+
+export interface TotpEnrollVerifyInput {
+  /** 6-digit code from the authenticator app. */
+  code: string;
+}
+
+export interface TotpRecoveryCodes {
+  /** Ten single-use recovery codes shown exactly once. */
+  recoveryCodes: string[];
+}
+
+export interface TotpStatus {
+  enrolled: boolean;
+  required: boolean;
+  /** @nullable */
+  enrolledAt?: string | null;
+  unusedRecoveryCodes: number;
 }
 
 export interface ReauthInput {

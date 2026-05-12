@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Pencil } from "lucide-react";
+import { SecuritySettings } from "@/components/SecuritySettings";
 
 export default function Settings() {
   const { data: me } = useGetMe();
@@ -96,7 +97,17 @@ export default function Settings() {
   };
 
   if (!isAdmin) {
-    return <div className="p-8 text-center text-muted-foreground">Access denied.</div>;
+    // Standard users still need access to their own security tab so they
+    // can opt into TOTP. Render a minimal page with only that tab.
+    return (
+      <div className="space-y-6 max-w-5xl">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Account Security</h1>
+          <p className="text-muted-foreground text-sm">Manage your two-factor authentication.</p>
+        </div>
+        <SecuritySettings />
+      </div>
+    );
   }
 
   const handleUpdateSetting = (key: string, value: any) => {
@@ -189,8 +200,13 @@ export default function Settings() {
           <TabsTrigger value="taxonomy">Taxonomy</TabsTrigger>
           <TabsTrigger value="templates">Threshold Templates</TabsTrigger>
           <TabsTrigger value="system">System Parameters</TabsTrigger>
+          <TabsTrigger value="security">My Security</TabsTrigger>
           {isSuperAdmin && <TabsTrigger value="retention" className="text-destructive data-[state=active]:text-destructive">Data Retention</TabsTrigger>}
         </TabsList>
+
+        <TabsContent value="security" className="space-y-6">
+          <SecuritySettings />
+        </TabsContent>
 
         <TabsContent value="templates" className="space-y-6">
           <ThresholdTemplatesPanel isSuperAdmin={isSuperAdmin} />

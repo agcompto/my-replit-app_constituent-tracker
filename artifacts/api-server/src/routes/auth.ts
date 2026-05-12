@@ -4,12 +4,28 @@ import { eq } from "drizzle-orm";
 import { db, usersTable } from "@workspace/db";
 import {
   LoginBody,
+  LoginTotpBody,
   ChangeOwnPasswordBody,
   ReauthBody,
   ForgotPasswordBody,
+  VerifyTotpEnrollmentBody,
 } from "@workspace/api-zod";
-import { loadUser, requireAuth, audit } from "../lib/auth";
+import { loadUser, requireAuth, audit, type SessionUser } from "../lib/auth";
 import { revokeOtherSessionsForUser } from "../lib/session";
+import {
+  isTotpRequiredForRole,
+  generateTotpSecret,
+  buildOtpauthUri,
+  buildQrDataUrl,
+  encryptSecret,
+  verifyTotpCode,
+  consumeRecoveryCode,
+  regenerateRecoveryCodes,
+  unusedRecoveryCodeCount,
+  deleteAllRecoveryCodes,
+  looksLikeRecoveryCode,
+} from "../lib/totp";
+import { requireRecentAuth } from "../lib/recentAuth";
 import {
   checkLoginRate,
   recordLoginFailure,
@@ -123,20 +139,73 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   }
 
   recordLoginSuccess(rateKey);
-  await clearLoginFailures(u.id);
+  // NOTE: do NOT clear per-user lockout failures here. For TOTP-required
+  // roles we are only halfway through authentication — clearing the counter
+  // on a correct password would let an attacker who has phished the password
+  // reset the lockout window between every batch of failed TOTP guesses
+  // simply by re-running `/auth/login`. The clear happens only on full
+  // success (`/auth/login/totp` or the enroll/verify completion path). For
+  // the password-only path (standard role) we clear after the TOTP branch
+  // below.
   const sessionUser = await loadUser(u.id);
   if (!sessionUser) {
     res.status(401).json({ error: "Invalid credentials" });
     return;
   }
 
-  // Regenerate the session ID across the unauth → auth boundary to defeat
-  // session fixation. Then write the new userId/lastAuthAt and apply the
-  // per-role TTL.
+  // ── TOTP-required roles split here ──────────────────────────────────
+  // Admin/super_admin must complete a second factor. We regenerate the
+  // session ID (defence in depth: even half-completed login crosses the
+  // unauth → pending-totp boundary) but DO NOT set `userId`. Instead we
+  // park the userId in `pendingTotpUserId` so the second-step endpoint
+  // can complete the login. `loadUser` would not have returned an
+  // unenrolled-but-required user differently, so we branch on whether
+  // an encrypted secret is on file.
+  if (isTotpRequiredForRole(sessionUser.role)) {
+    await new Promise<void>((resolve, reject) => {
+      req.session.regenerate((err) => (err ? reject(err) : resolve()));
+    });
+    req.session.pendingTotpUserId = u.id;
+    req.session.pendingTotpStartedAt = Date.now();
+    delete req.session.pendingTotpSecret;
+    await new Promise<void>((resolve, reject) => {
+      req.session.save((err) => (err ? reject(err) : resolve()));
+    });
+    res.json({
+      requiresTotp: true,
+      enrollmentRequired: !sessionUser.totpEnrolled,
+    });
+    return;
+  }
+
+  // Password-only path: full authentication is complete, safe to clear
+  // the per-user failure counter now.
+  await clearLoginFailures(u.id);
+  await completeLogin(req, res, sessionUser);
+});
+
+/** Maximum age of a `pendingTotpUserId` session before the half-completed
+ *  login is abandoned and the user is forced back to the password step. */
+const PENDING_TOTP_TTL_MS = 5 * 60 * 1000;
+/** Constant base32 secret used to equalize timing on the
+ *  no-pending-login / wrong-code paths. Never matched against real input. */
+const DUMMY_TOTP_SECRET = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP";
+
+/**
+ * Shared finalize-login routine. Regenerates the session id, writes
+ * `userId`/`lastAuthAt`, applies the per-role TTL, audits, and replies with
+ * the SessionUser body.
+ */
+async function completeLogin(
+  req: import("express").Request,
+  res: import("express").Response,
+  sessionUser: SessionUser,
+  opts?: { auditAction?: string; auditDetails?: string | null },
+): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     req.session.regenerate((err) => (err ? reject(err) : resolve()));
   });
-  req.session.userId = u.id;
+  req.session.userId = sessionUser.id;
   req.session.lastAuthAt = Date.now();
   const ttl =
     sessionUser.role === "super_admin"
@@ -146,15 +215,303 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   await new Promise<void>((resolve, reject) => {
     req.session.save((err) => (err ? reject(err) : resolve()));
   });
-
   await audit({
     actor: sessionUser,
-    action: "login",
+    action: opts?.auditAction ?? "login",
     entityType: "user",
-    entityId: u.id,
+    entityId: sessionUser.id,
+    details: opts?.auditDetails ?? null,
   });
   res.json(sessionUser);
+}
+
+/**
+ * Step 2 of TOTP-required login. Accepts either a 6-digit TOTP code or a
+ * 10-character recovery code. Failures count toward the same persistent
+ * per-user lockout as `/auth/login` so an attacker with a stolen pending
+ * session cannot grind codes here.
+ *
+ * Timing parity: when there is no pending-TOTP session we still perform a
+ * dummy `verifyTotpCode` against a constant secret so the no-session path
+ * runs in roughly the same time as the wrong-code path on a real session.
+ */
+router.post("/auth/login/totp", async (req, res): Promise<void> => {
+  const parsed = LoginTotpBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const pendingId = req.session?.pendingTotpUserId;
+  const startedAt = req.session?.pendingTotpStartedAt ?? 0;
+  const expired = Date.now() - startedAt > PENDING_TOTP_TTL_MS;
+  if (!pendingId || expired) {
+    // Burn comparable CPU before responding so we don't leak whether a
+    // pending session existed.
+    verifyTotpCode({ encryptedSecret: encryptSecret(DUMMY_TOTP_SECRET), code: "000000" });
+    if (req.session) {
+      delete req.session.pendingTotpUserId;
+      delete req.session.pendingTotpStartedAt;
+      delete req.session.pendingTotpSecret;
+    }
+    res.status(401).json({ error: "Invalid or expired login. Please sign in again." });
+    return;
+  }
+
+  // Per-account lockout still applies to the second factor.
+  const lock = await getLockoutState(pendingId);
+  if (lock.locked) {
+    res
+      .status(429)
+      .setHeader("Retry-After", String(lock.retryAfterSec))
+      .json({
+        error: `This account is temporarily locked due to too many failed login attempts. Try again in ${Math.ceil(lock.retryAfterSec / 60)} minutes.`,
+      });
+    return;
+  }
+
+  const [u] = await db.select().from(usersTable).where(eq(usersTable.id, pendingId));
+  if (!u || !u.active || !u.totpSecretEncrypted) {
+    // Either the account vanished, was deactivated, or hasn't enrolled yet.
+    // The frontend should have routed the un-enrolled user through the
+    // enrollment flow instead. Burn dummy CPU and reject.
+    verifyTotpCode({ encryptedSecret: encryptSecret(DUMMY_TOTP_SECRET), code: "000000" });
+    res.status(401).json({ error: "Invalid or expired login. Please sign in again." });
+    return;
+  }
+
+  const raw = parsed.data.code.trim();
+  let ok = false;
+  let usedRecovery = false;
+  if (looksLikeRecoveryCode(raw)) {
+    ok = await consumeRecoveryCode(u.id, raw);
+    usedRecovery = ok;
+    // Even on TOTP-shaped input we still want roughly comparable CPU; the
+    // verify call below is cheap and skipped when `ok` already true.
+    if (!ok) {
+      verifyTotpCode({ encryptedSecret: u.totpSecretEncrypted, code: "000000" });
+    }
+  } else {
+    ok = verifyTotpCode({ encryptedSecret: u.totpSecretEncrypted, code: raw });
+  }
+
+  if (!ok) {
+    const accountLock = await recordLoginFailureForUser(u.id);
+    if (accountLock.locked) {
+      res
+        .status(429)
+        .setHeader("Retry-After", String(accountLock.retryAfterSec))
+        .json({
+          error: `This account is temporarily locked due to too many failed login attempts. Try again in ${Math.ceil(accountLock.retryAfterSec / 60)} minutes.`,
+        });
+      return;
+    }
+    res.status(401).json({ error: "Invalid code." });
+    return;
+  }
+
+  await clearLoginFailures(u.id);
+  delete req.session.pendingTotpUserId;
+  delete req.session.pendingTotpStartedAt;
+  delete req.session.pendingTotpSecret;
+
+  const sessionUser = await loadUser(u.id);
+  if (!sessionUser) {
+    res.status(401).json({ error: "Invalid credentials" });
+    return;
+  }
+  await completeLogin(req, res, sessionUser, {
+    auditAction: usedRecovery ? "login_with_recovery_code" : "login",
+    auditDetails: usedRecovery
+      ? `Used a TOTP recovery code (${await unusedRecoveryCodeCount(u.id)} left)`
+      : null,
+  });
 });
+
+// ───────────────────────── TOTP enrollment + management ─────────────────────────
+
+/**
+ * Resolve the user this TOTP enrollment/management request is acting on.
+ * During pending-TOTP login we use the unauthenticated `pendingTotpUserId`
+ * so a brand-new admin can enroll on first sign-in. After login completes
+ * we use the authenticated `currentUser`.
+ */
+async function resolveTotpActor(
+  req: import("express").Request,
+): Promise<{ userId: number; loggedIn: boolean } | null> {
+  if (req.currentUser) return { userId: req.currentUser.id, loggedIn: true };
+  const pid = req.session?.pendingTotpUserId;
+  const startedAt = req.session?.pendingTotpStartedAt ?? 0;
+  if (pid && Date.now() - startedAt <= PENDING_TOTP_TTL_MS) {
+    return { userId: pid, loggedIn: false };
+  }
+  return null;
+}
+
+router.get("/auth/totp/status", requireAuth, async (req, res): Promise<void> => {
+  const u = req.currentUser!;
+  const remaining = u.totpEnrolled ? await unusedRecoveryCodeCount(u.id) : 0;
+  const [row] = await db
+    .select({ enrolledAt: usersTable.totpEnrolledAt })
+    .from(usersTable)
+    .where(eq(usersTable.id, u.id));
+  res.json({
+    enrolled: u.totpEnrolled,
+    required: u.totpRequired,
+    enrolledAt: row?.enrolledAt ? row.enrolledAt.toISOString() : null,
+    unusedRecoveryCodes: remaining,
+  });
+});
+
+router.post("/auth/totp/enroll/start", async (req, res): Promise<void> => {
+  const actor = await resolveTotpActor(req);
+  if (!actor) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  // From settings we require recent auth to (re-)enroll. Pending-login
+  // enrollment has just completed the password step, so it counts.
+  if (actor.loggedIn) {
+    const last = req.session?.lastAuthAt ?? 0;
+    if (Date.now() - last > 5 * 60 * 1000) {
+      res.status(403).json({
+        error: "Please re-enter your password to confirm this action.",
+        code: "reauth_required",
+      });
+      return;
+    }
+  }
+  const [u] = await db.select().from(usersTable).where(eq(usersTable.id, actor.userId));
+  if (!u) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+  const secret = generateTotpSecret();
+  const otpauthUri = buildOtpauthUri({ secret, accountEmail: u.email });
+  const qrDataUrl = await buildQrDataUrl(otpauthUri);
+  // Park encrypted candidate in the session — never persisted to the user
+  // row until the user proves possession by completing /enroll/verify.
+  req.session.pendingTotpSecret = encryptSecret(secret);
+  await new Promise<void>((resolve, reject) => {
+    req.session.save((err) => (err ? reject(err) : resolve()));
+  });
+  res.json({ otpauthUri, qrDataUrl, secret });
+});
+
+router.post("/auth/totp/enroll/verify", async (req, res): Promise<void> => {
+  const parsed = VerifyTotpEnrollmentBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const actor = await resolveTotpActor(req);
+  if (!actor) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  const candidate = req.session?.pendingTotpSecret;
+  if (!candidate) {
+    res.status(400).json({ error: "No enrollment in progress." });
+    return;
+  }
+  const ok = verifyTotpCode({ encryptedSecret: candidate, code: parsed.data.code });
+  if (!ok) {
+    res.status(401).json({ error: "Invalid code. Please try again." });
+    return;
+  }
+
+  await db
+    .update(usersTable)
+    .set({ totpSecretEncrypted: candidate, totpEnrolledAt: new Date() })
+    .where(eq(usersTable.id, actor.userId));
+  delete req.session.pendingTotpSecret;
+  const codes = await regenerateRecoveryCodes(actor.userId);
+
+  const sessionUser = await loadUser(actor.userId);
+  if (sessionUser) {
+    await audit({
+      actor: sessionUser,
+      action: "totp_enrolled",
+      entityType: "user",
+      entityId: actor.userId,
+    });
+  }
+
+  // If this was the second factor of a pending login, finish the login now
+  // so the client doesn't need a second round-trip. The codes are returned
+  // in the same response — the SessionUser is implied (the next /auth/me
+  // call will reflect the new state). Clear per-user lockout failures here
+  // for the same reason as `/auth/login/totp`: full authentication is now
+  // complete.
+  if (!actor.loggedIn && sessionUser) {
+    await clearLoginFailures(actor.userId);
+    await new Promise<void>((resolve, reject) => {
+      req.session.regenerate((err) => (err ? reject(err) : resolve()));
+    });
+    req.session.userId = sessionUser.id;
+    req.session.lastAuthAt = Date.now();
+    req.session.cookie.maxAge =
+      sessionUser.role === "super_admin"
+        ? SESSION_TTL_MS.super_admin
+        : SESSION_TTL_MS.default;
+    await new Promise<void>((resolve, reject) => {
+      req.session.save((err) => (err ? reject(err) : resolve()));
+    });
+  }
+
+  res.json({ recoveryCodes: codes });
+});
+
+router.post(
+  "/auth/totp/recovery-codes/regenerate",
+  requireAuth,
+  requireRecentAuth,
+  async (req, res): Promise<void> => {
+    const u = req.currentUser!;
+    if (!u.totpEnrolled) {
+      res.status(400).json({ error: "TOTP is not enrolled." });
+      return;
+    }
+    const codes = await regenerateRecoveryCodes(u.id);
+    await audit({
+      actor: u,
+      action: "totp_recovery_codes_regenerated",
+      entityType: "user",
+      entityId: u.id,
+    });
+    res.json({ recoveryCodes: codes });
+  },
+);
+
+router.post(
+  "/auth/totp/disable",
+  requireAuth,
+  requireRecentAuth,
+  async (req, res): Promise<void> => {
+    const u = req.currentUser!;
+    // Admin/super_admin cannot self-disable — that would silently weaken
+    // the org-wide guarantee that elevated accounts have a second factor.
+    // They must downgrade first, or have a super_admin reset (which forces
+    // re-enrollment on next login but keeps the requirement).
+    if (isTotpRequiredForRole(u.role)) {
+      res.status(403).json({
+        error: "Your role requires TOTP. Ask a super admin to reset your authenticator if needed.",
+      });
+      return;
+    }
+    await db
+      .update(usersTable)
+      .set({ totpSecretEncrypted: null, totpEnrolledAt: null })
+      .where(eq(usersTable.id, u.id));
+    await deleteAllRecoveryCodes(u.id);
+    await audit({
+      actor: u,
+      action: "totp_disabled",
+      entityType: "user",
+      entityId: u.id,
+    });
+    res.status(204).end();
+  },
+);
 
 /**
  * Re-authentication endpoint. Used by the frontend when the server returns

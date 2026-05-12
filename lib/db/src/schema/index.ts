@@ -26,6 +26,13 @@ export const usersTable = pgTable("users", {
   // so that a credential-stuffing attacker rotating IPs still gets locked out.
   failedLoginAttempts: integer("failed_login_attempts").notNull().default(0),
   lockedUntil: timestamp("locked_until", { withTimezone: true }),
+  // TOTP second factor. `totpSecretEncrypted` stores the AES-256-GCM
+  // ciphertext (iv:tag:ciphertext, base64url) of the user's shared secret.
+  // The plaintext secret never leaves the application — it is only used
+  // transiently inside `verifyTotpCode` to recompute the expected code.
+  // A user is considered "enrolled" when both columns are non-null.
+  totpSecretEncrypted: text("totp_secret_encrypted"),
+  totpEnrolledAt: timestamp("totp_enrolled_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
@@ -55,6 +62,31 @@ export const passwordSetupTokensTable = pgTable(
   (t) => ({
     userIdx: index("password_setup_tokens_user_idx").on(t.userId),
     expiresIdx: index("password_setup_tokens_expires_idx").on(t.expiresAt),
+  }),
+);
+
+// ─────── TOTP recovery codes
+//
+// Ten single-use codes are minted at TOTP enrollment and on explicit
+// regeneration. Only the SHA-256 hash is stored — the raw codes are
+// returned to the user exactly once. Codes are bound to the user; on
+// `usedAt != null` they are spent. Reset/regeneration deletes prior rows
+// so an attacker who learns an old recovery sheet cannot use it after the
+// user has rotated.
+export const totpRecoveryCodesTable = pgTable(
+  "totp_recovery_codes",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => usersTable.id, { onDelete: "cascade" }),
+    codeHash: text("code_hash").notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    userIdx: index("totp_recovery_codes_user_idx").on(t.userId),
+    hashIdx: index("totp_recovery_codes_hash_idx").on(t.codeHash),
   }),
 );
 
