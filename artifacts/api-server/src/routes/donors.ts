@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db, touchpointsTable, campaignsTable, channelsTable, campaignTypesTable } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
 import { normalizeDonorId } from "../lib/donor";
@@ -21,8 +21,12 @@ router.get("/donors/:donorId/touchpoints", requireAuth, async (req, res): Promis
   const channels = await db.select().from(channelsTable);
   const types = await db.select().from(campaignTypesTable);
   const campaignIds = Array.from(new Set(rows.map((r) => r.campaignId)));
+  // Filter to ONLY the campaigns referenced by this donor's touchpoints.
+  // Without `inArray` this used to scan/transfer the entire campaigns table
+  // on every donor lookup, which an authenticated user could trivially
+  // amplify into a sustained DB load.
   const campaigns = campaignIds.length
-    ? await db.select().from(campaignsTable)
+    ? await db.select().from(campaignsTable).where(inArray(campaignsTable.id, campaignIds))
     : [];
   res.json({
     donorId,

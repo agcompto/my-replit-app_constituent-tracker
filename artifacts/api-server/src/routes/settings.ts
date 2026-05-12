@@ -15,6 +15,15 @@ async function loadSettings() {
   return s;
 }
 
+// GET is intentionally readable by every authenticated user. The exposed
+// fields are operational configuration that the entire app depends on for
+// rendering: fiscal-year boundaries (date displays everywhere), and feature
+// flags (`googleSheetImportEnabled`, `aiAssistEnabled`, `globalThresholdsEnabled`,
+// `retentionDeleteEnabled`) that the wizard, suppressions/seeds, audience,
+// reports filter, and campaign detail pages all read to know which UI
+// affordances to render. None of these are secrets — they are public-by-design
+// product flags. Mutating settings (`PATCH /settings`) and acting on them
+// (`POST /retention/delete`) remain admin/super-admin only.
 router.get("/settings", requireAuth, async (_req, res): Promise<void> => {
   const s = await loadSettings();
   res.json({

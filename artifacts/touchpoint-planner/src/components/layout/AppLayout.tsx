@@ -141,10 +141,14 @@ function Sidebar({ userRole }: { userRole?: string }) {
     { href: "/donors", label: "Constituent Lookup", icon: Search },
     { href: "/reports", label: "Reports", icon: BarChart3 },
     { href: "/exports", label: "Exports & Uploads", icon: Download },
-    { href: "/audit", label: "Audit Log", icon: History },
   ];
 
+  // Audit log lives under Administration: it exposes actor names, roles, and
+  // the full timeline of admin actions (invites, resets, deletes, settings
+  // changes), which is privileged operational data — server enforces
+  // admin/super-admin on `GET /audit-log` and the nav reflects that.
   const adminItems = [
+    { href: "/audit", label: "Audit Log", icon: History },
     { href: "/settings", label: "Settings", icon: Settings },
     { href: "/users", label: "Users", icon: Users },
   ];

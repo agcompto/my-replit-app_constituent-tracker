@@ -74,6 +74,8 @@ Responses to `POST /users`, `POST /users/:id/reset-password`, and `POST /users/:
 - **Session table pruning** — `connect-pg-simple` is configured with `pruneSessionInterval: 3600` so expired session rows are swept hourly. Without this the `session` table grows unbounded.
 - **Setup-link redaction in logs** — `pino-http` request serializer redacts `/password-setup/:token` paths to `/password-setup/[REDACTED]` so a single info log line can't leak a live token.
 - **Per-export row cap** — `POST /campaigns/:id/export` rejects (HTTP 413, `code: "export_row_cap_exceeded"`) any export whose total rows across touches exceed `MAX_EXPORT_ROWS` (default 500,000). Layered on top of the 20/hour quota so neither rate nor volume alone yields a near-total dump.
+- **Audit-log access gating** — `GET /audit-log` is `admin`/`super_admin` only (was `requireAuth`). The audit feed exposes staff names, roles, and the full timeline of admin actions; it is not safe to expose to standard users. The frontend nav groups "Audit Log" with the other Administration items.
+- **Donor-lookup query bounding** — `GET /donors/:donorId/touchpoints` filters its campaign-name resolution with `inArray(campaignsTable.id, campaignIds)` instead of `select().from(campaignsTable)`. Without the filter an authenticated user could amplify a single lookup into a full campaigns-table scan on every call.
 
 ## Architecture decisions
 

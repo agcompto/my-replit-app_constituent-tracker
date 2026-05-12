@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { and, desc, gte, ilike, lt, sql, type SQL } from "drizzle-orm";
 import { db, auditLogTable } from "@workspace/db";
-import { requireAuth } from "../lib/auth";
+import { requireRole } from "../lib/auth";
 
 const router: IRouter = Router();
 
@@ -20,7 +20,11 @@ function isValidIsoDate(s: string): boolean {
   );
 }
 
-router.get("/audit-log", requireAuth, async (req, res): Promise<void> => {
+// Audit log exposes actor names, roles, and the full timeline of administrative
+// actions (user invites, password resets, deletes, settings changes, retention
+// runs). That is privileged operational data and must not be readable by
+// standard staff users — only admins/super-admins.
+router.get("/audit-log", requireRole("admin", "super_admin"), async (req, res): Promise<void> => {
   const parts: SQL[] = [];
 
   const actor = typeof req.query.actor === "string" ? req.query.actor.trim() : "";
