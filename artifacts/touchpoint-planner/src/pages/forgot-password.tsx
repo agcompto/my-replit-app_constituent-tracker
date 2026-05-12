@@ -16,19 +16,15 @@ import {
 import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 
 interface ApiErrorShape {
-  status?: number;
   data?: { error?: string };
-  response?: { status?: number; data?: { error?: string } };
+  response?: { data?: { error?: string } };
   message?: string;
 }
 
-function readApiError(err: unknown): { status?: number; message?: string } {
-  if (!err || typeof err !== "object") return {};
+function readApiErrorMessage(err: unknown): string | undefined {
+  if (!err || typeof err !== "object") return undefined;
   const e = err as ApiErrorShape;
-  return {
-    status: e.status ?? e.response?.status,
-    message: e.data?.error ?? e.response?.data?.error ?? e.message,
-  };
+  return e.data?.error ?? e.response?.data?.error ?? e.message;
 }
 
 const schema = z.object({
@@ -87,22 +83,18 @@ export default function ForgotPassword() {
           </div>
         ) : (
           <>
-            {mutation.error && (() => {
-              const { status, message: serverMsg } = readApiError(
-                mutation.error,
-              );
-              const message =
-                status === 429
-                  ? serverMsg ??
-                    "Too many requests. Please try again in a few minutes."
-                  : serverMsg ?? "Something went wrong. Please try again.";
-              return (
-                <div className="bg-destructive/10 text-destructive p-3 rounded-md text-sm flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4 shrink-0" />
-                  <span>{message}</span>
-                </div>
-              );
-            })()}
+            {mutation.error && (
+              // The server intentionally always returns 200 here (enumeration
+              // safety) so reaching this branch means the network/transport
+              // itself failed, not that the server rejected the request.
+              <div className="bg-destructive/10 text-destructive p-3 rounded-md text-sm flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                <span>
+                  {readApiErrorMessage(mutation.error) ??
+                    "Could not reach the server. Please check your connection and try again."}
+                </span>
+              </div>
+            )}
 
             <Form {...form}>
               <form

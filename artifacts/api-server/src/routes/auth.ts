@@ -249,33 +249,38 @@ const GENERIC_FORGOT_BODY = {
     "If an account exists for that email, a password reset link has been sent.",
 };
 
-router.post("/auth/forgot-password", async (req, res): Promise<void> => {
-  // Schedule the minimum response time before any branching so that fast
-  // paths (rate-limited, validation failure, no-such-user) and slow paths
-  // (token insert + outbound email) all converge on the same response
-  // latency floor + small random jitter.
+router.post("/auth/forgot-password", (req, res): void => {
+  // Decouple work from the HTTP response. The response is *only* gated on
+  // a fixed floor + small jitter so its latency is independent of any
+  // matched-branch work (DB insert, outbound Resend round-trip, audit
+  // write). Without this decoupling, an attacker could measure whether
+  // Resend was called by observing whether matched requests run longer
+  // than the floor — turning the latency itself into an enumeration
+  // oracle, especially when the upstream provider is slow or rate-limiting
+  // us. The matched-branch promise runs in the background; its rejections
+  // are swallowed (logged) and never reach the client.
   const jitter = Math.floor(Math.random() * FORGOT_PASSWORD_JITTER_MS);
-  const floor = new Promise<void>((resolve) =>
-    setTimeout(resolve, FORGOT_PASSWORD_FLOOR_MS + jitter),
-  );
+  setTimeout(() => {
+    res.status(200).json(GENERIC_FORGOT_BODY);
+  }, FORGOT_PASSWORD_FLOOR_MS + jitter);
 
-  try {
-    const ip = req.ip ?? "unknown";
-    const limit = checkForgotPasswordPerIp(ip);
-    if (!limit.allowed) return;
+  const ip = req.ip ?? "unknown";
+  const limit = checkForgotPasswordPerIp(ip);
+  if (!limit.allowed) return;
 
-    const parsed = ForgotPasswordBody.safeParse(req.body);
-    if (!parsed.success) return;
-    const normalizedEmail = parsed.data.email.toLowerCase().trim();
+  const parsed = ForgotPasswordBody.safeParse(req.body);
+  if (!parsed.success) return;
+  const normalizedEmail = parsed.data.email.toLowerCase().trim();
 
-    const [u] = await db
-      .select()
-      .from(usersTable)
-      .where(eq(usersTable.email, normalizedEmail));
-
-    if (!u || !u.active) return;
-
+  // Background work — never awaited from the response path.
+  void (async () => {
     try {
+      const [u] = await db
+        .select()
+        .from(usersTable)
+        .where(eq(usersTable.email, normalizedEmail));
+      if (!u || !u.active) return;
+
       const { rawToken, expiresAt } = await issueSetupToken({
         userId: u.id,
         kind: "reset",
@@ -308,10 +313,7 @@ router.post("/auth/forgot-password", async (req, res): Promise<void> => {
         "forgot-password: failed to issue/send reset for matched user",
       );
     }
-  } finally {
-    await floor;
-    res.status(200).json(GENERIC_FORGOT_BODY);
-  }
+  })();
 });
 
 router.post("/auth/logout", (req, res): void => {
