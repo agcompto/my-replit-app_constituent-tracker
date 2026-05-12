@@ -260,7 +260,7 @@ export default function CampaignDetail() {
                         title: "Campaign cloned",
                         description:
                           `Created "${res.campaign.name}" with ${res.copiedTouches} touches, ${res.copiedThresholds} thresholds, ${res.copiedSuppressions} suppressions, ${res.copiedSeeds} seed groups.` +
-                          (skipped ? ` ${skipped} donor-ID-specific suppression${skipped === 1 ? "" : "s"} skipped.` : ""),
+                          (skipped ? ` ${skipped} suppression${skipped === 1 ? "" : "s"} skipped (donor-ID-specific or touch-scoped).` : ""),
                       });
                       setCloneOpen(false);
                       setLocation(`/campaigns/${newId}`);

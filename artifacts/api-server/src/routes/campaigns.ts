@@ -196,6 +196,17 @@ router.post("/campaigns/:id/clone", requireAuth, async (req, res): Promise<void>
     res.status(400).json({ error: body.error.message });
     return;
   }
+  // OpenAPI declares dateShiftDays as integer but Orval emits zod.number();
+  // guard against fractional day offsets here so a 1.5-day shift can't slip
+  // through and produce a non-date when added to a `YYYY-MM-DD`.
+  if (
+    body.data.dateShiftDays !== undefined &&
+    body.data.dateShiftDays !== null &&
+    !Number.isInteger(body.data.dateShiftDays)
+  ) {
+    res.status(400).json({ error: "dateShiftDays must be an integer" });
+    return;
+  }
   const source = await loadCampaignFull(params.data.id);
   if (!source) {
     res.status(404).json({ error: "Not found" });
