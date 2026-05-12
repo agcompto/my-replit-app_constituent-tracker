@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq, ilike, or } from "drizzle-orm";
-import { db, campaignsTable, campaignTypeLinksTable, campaignTypesTable, channelsTable, owningUnitsTable, touchesTable, usersTable } from "@workspace/db";
+import { db, campaignsTable, campaignTypeLinksTable, campaignTypesTable, channelsTable, owningUnitsTable, touchesTable, usersTable, thresholdsTable, suppressionsTable, suppressionReasonCodesTable, seedGroupsTable } from "@workspace/db";
 import {
   CreateCampaignBody,
   GetCampaignParams,
@@ -292,6 +292,65 @@ router.get(
       .where(eq(touchesTable.campaignId, params.data.id))
       .orderBy(touchesTable.sendDate);
 
+    const thresholdRows = await db
+      .select({
+        id: thresholdsTable.id,
+        name: thresholdsTable.name,
+        maxTouchpoints: thresholdsTable.maxTouchpoints,
+        windowDays: thresholdsTable.windowDays,
+        scope: thresholdsTable.scope,
+        actionMode: thresholdsTable.actionMode,
+        channelLabel: channelsTable.name,
+        campaignTypeLabel: campaignTypesTable.name,
+      })
+      .from(thresholdsTable)
+      .leftJoin(channelsTable, eq(channelsTable.id, thresholdsTable.channelId))
+      .leftJoin(
+        campaignTypesTable,
+        eq(campaignTypesTable.id, thresholdsTable.campaignTypeId),
+      )
+      .where(eq(thresholdsTable.campaignId, params.data.id))
+      .orderBy(thresholdsTable.createdAt);
+
+    const suppressionRows = await db
+      .select({
+        id: suppressionsTable.id,
+        scope: suppressionsTable.scope,
+        reason: suppressionsTable.reason,
+        donorIds: suppressionsTable.donorIds,
+        channelLabel: channelsTable.name,
+        campaignTypeLabel: campaignTypesTable.name,
+        touchLabel: touchesTable.touchName,
+        reasonCodeName: suppressionReasonCodesTable.name,
+      })
+      .from(suppressionsTable)
+      .leftJoin(channelsTable, eq(channelsTable.id, suppressionsTable.channelId))
+      .leftJoin(
+        campaignTypesTable,
+        eq(campaignTypesTable.id, suppressionsTable.campaignTypeId),
+      )
+      .leftJoin(touchesTable, eq(touchesTable.id, suppressionsTable.touchId))
+      .leftJoin(
+        suppressionReasonCodesTable,
+        eq(suppressionReasonCodesTable.id, suppressionsTable.reasonCodeId),
+      )
+      .where(eq(suppressionsTable.campaignId, params.data.id))
+      .orderBy(suppressionsTable.createdAt);
+
+    const seedRows = await db
+      .select({
+        id: seedGroupsTable.id,
+        scope: seedGroupsTable.scope,
+        donorIds: seedGroupsTable.donorIds,
+        channelLabel: channelsTable.name,
+        touchLabel: touchesTable.touchName,
+      })
+      .from(seedGroupsTable)
+      .leftJoin(channelsTable, eq(channelsTable.id, seedGroupsTable.channelId))
+      .leftJoin(touchesTable, eq(touchesTable.id, seedGroupsTable.touchId))
+      .where(eq(seedGroupsTable.campaignId, params.data.id))
+      .orderBy(seedGroupsTable.createdAt);
+
     const safeName =
       campaign.name.replace(/[^A-Za-z0-9_-]+/g, "_").slice(0, 60) ||
       `campaign_${campaign.id}`;
@@ -504,6 +563,220 @@ router.get(
       }
     }
 
+    const ACTION_MODE_LABELS: Record<string, string> = {
+      track: "Track Only",
+      flag: "Flag",
+      remove: "Remove Flagged",
+      manual: "Manual Review",
+    };
+    const thresholdScopeLabel = (
+      scope: string,
+      channel: string | null,
+      type: string | null,
+    ): string => {
+      if (scope === "all") return "All communications";
+      if (scope === "channel") return `Channel: ${channel ?? "-"}`;
+      if (scope === "campaign_type") return `Type: ${type ?? "-"}`;
+      if (scope === "channel_and_type")
+        return `${channel ?? "-"} \u00b7 ${type ?? "-"}`;
+      return scope;
+    };
+    const suppressionScopeLabel = (
+      scope: string,
+      channel: string | null,
+      type: string | null,
+      touch: string | null,
+    ): string => {
+      if (scope === "all") return "All touches";
+      if (scope === "channel") return `Channel: ${channel ?? "-"}`;
+      if (scope === "campaign_type") return `Type: ${type ?? "-"}`;
+      if (scope === "touch") return `Touch: ${touch ?? "-"}`;
+      return scope;
+    };
+    const seedScopeLabel = (
+      scope: string,
+      channel: string | null,
+      touch: string | null,
+    ): string => {
+      if (scope === "all") return "All touches";
+      if (scope === "channel") return `Channel: ${channel ?? "-"}`;
+      if (scope === "touch") return `Touch: ${touch ?? "-"}`;
+      return scope;
+    };
+
+    const ensureSpace = (needed: number) => {
+      if (doc.y + needed > doc.page.height - doc.page.margins.bottom) {
+        doc.addPage();
+      }
+    };
+
+    const drawSimpleTable = (
+      cols: Array<{ label: string; w: number; align?: "left" | "right" }>,
+      rows: string[][],
+    ) => {
+      const colWidths = cols.map((c) => c.w * usableWidth);
+      const colX = (i: number) =>
+        doc.page.margins.left + colWidths.slice(0, i).reduce((a, b) => a + b, 0);
+      const drawHeader = () => {
+        const y = doc.y;
+        doc.font("Helvetica-Bold").fontSize(9).fillColor("black");
+        cols.forEach((c, i) => {
+          doc.text(c.label, colX(i), y, {
+            width: colWidths[i],
+            align: c.align ?? "left",
+          });
+        });
+        doc.y = y + 14;
+        doc
+          .moveTo(doc.page.margins.left, doc.y)
+          .lineTo(doc.page.width - doc.page.margins.right, doc.y)
+          .strokeColor("#cccccc")
+          .lineWidth(0.5)
+          .stroke();
+        doc.y += 4;
+      };
+      drawHeader();
+      for (const values of rows) {
+        const rowY = doc.y;
+        doc.font("Helvetica").fontSize(10).fillColor("black");
+        const rowHeights = values.map((v, i) =>
+          doc.heightOfString(v, {
+            width: colWidths[i],
+            align: cols[i].align ?? "left",
+          }),
+        );
+        const rowHeight = Math.max(...rowHeights) + 6;
+        if (rowY + rowHeight > doc.page.height - doc.page.margins.bottom) {
+          doc.addPage();
+          drawHeader();
+        }
+        const yy = doc.y;
+        values.forEach((v, i) => {
+          doc.text(v, colX(i), yy, {
+            width: colWidths[i],
+            align: cols[i].align ?? "left",
+          });
+        });
+        doc.y = yy + rowHeight - 6;
+        doc
+          .moveTo(doc.page.margins.left, doc.y + 2)
+          .lineTo(doc.page.width - doc.page.margins.right, doc.y + 2)
+          .strokeColor("#eeeeee")
+          .lineWidth(0.5)
+          .stroke();
+        doc.y += 6;
+      }
+    };
+
+    doc.x = doc.page.margins.left;
+    doc.moveDown(0.5);
+    ensureSpace(60);
+    sectionTitle("Thresholds");
+    if (thresholdRows.length === 0) {
+      doc
+        .font("Helvetica")
+        .fontSize(10)
+        .fillColor("#666")
+        .text("None.");
+    } else {
+      drawSimpleTable(
+        [
+          { label: "Name", w: 0.28 },
+          { label: "Scope", w: 0.32 },
+          { label: "Max Touches", w: 0.14, align: "right" },
+          { label: "Window (days)", w: 0.14, align: "right" },
+          { label: "Action", w: 0.12 },
+        ],
+        thresholdRows.map((t) => [
+          t.name,
+          thresholdScopeLabel(t.scope, t.channelLabel, t.campaignTypeLabel),
+          String(t.maxTouchpoints),
+          String(t.windowDays),
+          ACTION_MODE_LABELS[t.actionMode] ?? t.actionMode,
+        ]),
+      );
+    }
+
+    doc.x = doc.page.margins.left;
+    doc.moveDown(0.5);
+    ensureSpace(60);
+    sectionTitle("Suppressions");
+    if (suppressionRows.length === 0) {
+      doc
+        .font("Helvetica")
+        .fontSize(10)
+        .fillColor("#666")
+        .text("None.");
+    } else {
+      const totalSuppressed = suppressionRows.reduce(
+        (sum, s) => sum + (s.donorIds?.length ?? 0),
+        0,
+      );
+      doc
+        .font("Helvetica")
+        .fontSize(10)
+        .fillColor("black")
+        .text(
+          `${suppressionRows.length} suppression${suppressionRows.length === 1 ? "" : "s"} covering ${fmtNum(totalSuppressed)} constituent ID${totalSuppressed === 1 ? "" : "s"}.`,
+        );
+      doc.moveDown(0.4);
+
+      const byReason = new Map<string, number>();
+      for (const s of suppressionRows) {
+        const key = s.reasonCodeName ?? s.reason ?? "Unspecified";
+        byReason.set(key, (byReason.get(key) ?? 0) + (s.donorIds?.length ?? 0));
+      }
+      if (byReason.size > 0) {
+        doc
+          .font("Helvetica-Bold")
+          .fontSize(8)
+          .fillColor("#666")
+          .text("BY REASON");
+        doc.font("Helvetica").fontSize(10).fillColor("black");
+        for (const [reason, count] of byReason) {
+          doc.text(`  \u2022 ${reason}: ${fmtNum(count)}`);
+        }
+        doc.moveDown(0.4);
+      }
+
+      drawSimpleTable(
+        [
+          { label: "Scope", w: 0.45 },
+          { label: "Reason", w: 0.40 },
+          { label: "IDs", w: 0.15, align: "right" },
+        ],
+        suppressionRows.map((s) => [
+          suppressionScopeLabel(s.scope, s.channelLabel, s.campaignTypeLabel, s.touchLabel),
+          s.reasonCodeName ?? s.reason ?? "Unspecified",
+          fmtNum(s.donorIds?.length ?? 0),
+        ]),
+      );
+    }
+
+    doc.x = doc.page.margins.left;
+    doc.moveDown(0.5);
+    ensureSpace(60);
+    sectionTitle("Seeds");
+    if (seedRows.length === 0) {
+      doc
+        .font("Helvetica")
+        .fontSize(10)
+        .fillColor("#666")
+        .text("None.");
+    } else {
+      drawSimpleTable(
+        [
+          { label: "Scope", w: 0.80 },
+          { label: "Seed IDs", w: 0.20, align: "right" },
+        ],
+        seedRows.map((s) => [
+          seedScopeLabel(s.scope, s.channelLabel, s.touchLabel),
+          fmtNum(s.donorIds?.length ?? 0),
+        ]),
+      );
+    }
+
+    doc.x = doc.page.margins.left;
     doc.moveDown(1);
     doc
       .font("Helvetica")
