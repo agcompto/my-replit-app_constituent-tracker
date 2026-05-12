@@ -57,6 +57,7 @@ import type {
   HealthStatus,
   HighVolumeDonor,
   InviteResponse,
+  LastAiDateShift,
   ListCampaignsParams,
   ListSavedReportViewsParams,
   LoginInput,
@@ -6252,6 +6253,172 @@ export const useApplyAiDateShift = <
   TContext
 > => {
   return useMutation(getApplyAiDateShiftMutationOptions(options));
+};
+
+export const getGetLastAiDateShiftUrl = (id: number, touchId: number) => {
+  return `/api/campaigns/${id}/touches/${touchId}/last-ai-date-shift`;
+};
+
+export const getLastAiDateShift = async (
+  id: number,
+  touchId: number,
+  options?: RequestInit,
+): Promise<LastAiDateShift> => {
+  return customFetch<LastAiDateShift>(getGetLastAiDateShiftUrl(id, touchId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetLastAiDateShiftQueryKey = (id: number, touchId: number) => {
+  return [
+    `/api/campaigns/${id}/touches/${touchId}/last-ai-date-shift`,
+  ] as const;
+};
+
+export const getGetLastAiDateShiftQueryOptions = <
+  TData = Awaited<ReturnType<typeof getLastAiDateShift>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  touchId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getLastAiDateShift>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetLastAiDateShiftQueryKey(id, touchId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getLastAiDateShift>>
+  > = ({ signal }) =>
+    getLastAiDateShift(id, touchId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!(id && touchId),
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getLastAiDateShift>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetLastAiDateShiftQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getLastAiDateShift>>
+>;
+export type GetLastAiDateShiftQueryError = ErrorType<unknown>;
+
+export function useGetLastAiDateShift<
+  TData = Awaited<ReturnType<typeof getLastAiDateShift>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  touchId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getLastAiDateShift>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetLastAiDateShiftQueryOptions(id, touchId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getUndoAiDateShiftUrl = (id: number, touchId: number) => {
+  return `/api/campaigns/${id}/touches/${touchId}/undo-ai-date-shift`;
+};
+
+export const undoAiDateShift = async (
+  id: number,
+  touchId: number,
+  options?: RequestInit,
+): Promise<Touch> => {
+  return customFetch<Touch>(getUndoAiDateShiftUrl(id, touchId), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getUndoAiDateShiftMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof undoAiDateShift>>,
+    TError,
+    { id: number; touchId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof undoAiDateShift>>,
+  TError,
+  { id: number; touchId: number },
+  TContext
+> => {
+  const mutationKey = ["undoAiDateShift"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof undoAiDateShift>>,
+    { id: number; touchId: number }
+  > = (props) => {
+    const { id, touchId } = props ?? {};
+
+    return undoAiDateShift(id, touchId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UndoAiDateShiftMutationResult = NonNullable<
+  Awaited<ReturnType<typeof undoAiDateShift>>
+>;
+
+export type UndoAiDateShiftMutationError = ErrorType<unknown>;
+
+export const useUndoAiDateShift = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof undoAiDateShift>>,
+    TError,
+    { id: number; touchId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof undoAiDateShift>>,
+  TError,
+  { id: number; touchId: number },
+  TContext
+> => {
+  return useMutation(getUndoAiDateShiftMutationOptions(options));
 };
 
 export const getAiClassifySuppressionReasonUrl = () => {

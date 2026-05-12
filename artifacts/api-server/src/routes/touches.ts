@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { and, eq } from "drizzle-orm";
-import { db, touchesTable, channelsTable, campaignTypesTable, touchAudienceDonorsTable, appSettingsTable } from "@workspace/db";
+import { and, desc, eq } from "drizzle-orm";
+import { db, touchesTable, channelsTable, campaignTypesTable, touchAudienceDonorsTable, appSettingsTable, auditLogTable } from "@workspace/db";
 import {
   ListTouchesParams,
   CreateTouchParams,
@@ -13,6 +13,8 @@ import {
   ClearTouchAudienceParams,
   ApplyAiDateShiftParams,
   ApplyAiDateShiftBody,
+  GetLastAiDateShiftParams,
+  UndoAiDateShiftParams,
 } from "@workspace/api-zod";
 import { requireAuth, audit, canMutateCampaign } from "../lib/auth";
 import { resolveAudienceSource } from "../lib/audienceSource";
@@ -251,6 +253,136 @@ router.post(
       entityType: "touch",
       entityId: row.id,
       details: `source=ai_suggestion from=${previousISO} to=${proposed}`,
+    });
+    res.json(await shapeTouch(row));
+  },
+);
+
+// Look up the most recent AI-applied date shift on a touch that the user can
+// still undo. "Undoable" means: an `touch_date_shift_applied` audit row exists
+// for this touch that is newer than any `touch_date_shift_undone` row, the
+// touch's current `sendDate` still matches that audit row's `to=` value (so
+// nothing has been changed since), and the campaign is still mutable.
+const UNDO_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+async function findLastUndoableShift(touchId: number): Promise<
+  { from: string; to: string; appliedAt: string } | null
+> {
+  const rows = await db
+    .select()
+    .from(auditLogTable)
+    .where(and(
+      eq(auditLogTable.entityType, "touch"),
+      eq(auditLogTable.entityId, touchId),
+    ))
+    .orderBy(desc(auditLogTable.createdAt))
+    .limit(50);
+  let applied: { from: string; to: string; appliedAt: string } | null = null;
+  for (const r of rows) {
+    if (r.action === "touch_date_shift_undone") return null;
+    if (r.action === "touch_date_shift_applied") {
+      const m = /from=(\d{4}-\d{2}-\d{2}) to=(\d{4}-\d{2}-\d{2})/.exec(r.details ?? "");
+      if (!m) return null;
+      applied = { from: m[1], to: m[2], appliedAt: r.createdAt.toISOString() };
+      break;
+    }
+  }
+  if (!applied) return null;
+  if (Date.now() - new Date(applied.appliedAt).getTime() > UNDO_WINDOW_MS) return null;
+  return applied;
+}
+
+router.get(
+  "/campaigns/:id/touches/:touchId/last-ai-date-shift",
+  requireAuth,
+  async (req, res): Promise<void> => {
+    const params = GetLastAiDateShiftParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const access = await canMutateCampaign(params.data.id, req.currentUser!);
+    if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
+    if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
+    if (access === "voided") { res.json({ available: false }); return; }
+    const [touch] = await db
+      .select()
+      .from(touchesTable)
+      .where(and(
+        eq(touchesTable.id, params.data.touchId),
+        eq(touchesTable.campaignId, params.data.id),
+      ));
+    if (!touch) { res.status(404).json({ error: "Not found" }); return; }
+    const currentISO = typeof touch.sendDate === "string"
+      ? touch.sendDate
+      : (touch.sendDate as Date).toISOString().slice(0, 10);
+    const last = await findLastUndoableShift(params.data.touchId);
+    if (!last || last.to !== currentISO) {
+      res.json({ available: false });
+      return;
+    }
+    res.json({ available: true, from: last.from, to: last.to, appliedAt: last.appliedAt });
+  },
+);
+
+router.post(
+  "/campaigns/:id/touches/:touchId/undo-ai-date-shift",
+  requireAuth,
+  async (req, res): Promise<void> => {
+    const params = UndoAiDateShiftParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const access = await canMutateCampaign(params.data.id, req.currentUser!);
+    if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
+    if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
+    if (access === "voided") { res.status(403).json({ error: "Cannot modify a voided campaign" }); return; }
+
+    const [existing] = await db
+      .select()
+      .from(touchesTable)
+      .where(and(
+        eq(touchesTable.id, params.data.touchId),
+        eq(touchesTable.campaignId, params.data.id),
+      ));
+    if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+    const currentISO = typeof existing.sendDate === "string"
+      ? existing.sendDate
+      : (existing.sendDate as Date).toISOString().slice(0, 10);
+
+    const last = await findLastUndoableShift(params.data.touchId);
+    if (!last) {
+      res.status(409).json({ error: "No recent AI date shift to undo" });
+      return;
+    }
+    if (last.to !== currentISO) {
+      res.status(409).json({ error: "Touch has changed since the AI shift was applied; cannot undo" });
+      return;
+    }
+
+    const [row] = await db
+      .update(touchesTable)
+      .set({ sendDate: last.from })
+      .where(and(
+        eq(touchesTable.id, params.data.touchId),
+        eq(touchesTable.campaignId, params.data.id),
+      ))
+      .returning();
+    if (!row) { res.status(404).json({ error: "Not found" }); return; }
+
+    await audit({
+      actor: req.currentUser!,
+      action: "update_touch",
+      entityType: "touch",
+      entityId: row.id,
+    });
+    await audit({
+      actor: req.currentUser!,
+      action: "touch_date_shift_undone",
+      entityType: "touch",
+      entityId: row.id,
+      details: `source=ai_suggestion_undo from=${last.to} to=${last.from}`,
     });
     res.json(await shapeTouch(row));
   },

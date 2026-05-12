@@ -1108,6 +1108,32 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Touch" }
+  /campaigns/{id}/touches/{touchId}/last-ai-date-shift:
+    get:
+      operationId: getLastAiDateShift
+      tags: [touches]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: touchId, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LastAiDateShift" }
+  /campaigns/{id}/touches/{touchId}/undo-ai-date-shift:
+    post:
+      operationId: undoAiDateShift
+      tags: [touches]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: touchId, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Touch" }
   /ai/classify-suppression-reason:
     post:
       operationId: aiClassifySuppressionReason
@@ -1991,6 +2017,14 @@ components:
       required: [proposedSendDate]
       properties:
         proposedSendDate: { type: string, format: date }
+    LastAiDateShift:
+      type: object
+      required: [available]
+      properties:
+        available: { type: boolean }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        appliedAt: { type: string, format: date-time }
     AiClassifyInput:
       type: object
       required: [text]

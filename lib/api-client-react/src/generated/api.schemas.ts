@@ -942,6 +942,13 @@ export interface ApplyAiDateShiftInput {
   proposedSendDate: string;
 }
 
+export interface LastAiDateShift {
+  available: boolean;
+  from?: string;
+  to?: string;
+  appliedAt?: string;
+}
+
 export interface AiClassifyInput {
   /**
    * @minLength 3

@@ -5,10 +5,13 @@ import {
   useGetCampaignHealthCheck,
   useAiSuggestDateShifts,
   useApplyAiDateShift,
+  useGetLastAiDateShift,
+  useUndoAiDateShift,
   useGetSettings,
   getGetCampaignQueryKey,
   getGetCampaignPreviewQueryKey,
   getGetCampaignHealthCheckQueryKey,
+  getGetLastAiDateShiftQueryKey,
   getListTouchesQueryKey,
   getListThresholdsQueryKey,
 } from "@workspace/api-client-react";
@@ -16,13 +19,83 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Download, AlertTriangle, AlertOctagon, Send, FileText, Sparkles, ArrowRight } from "lucide-react";
+import { Loader2, Download, AlertTriangle, AlertOctagon, Send, FileText, Sparkles, ArrowRight, Undo2 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { useState } from "react";
 import { HealthCheckPanel } from "@/components/health-check-panel";
+
+function UndoableShiftRow({
+  campaignId,
+  touchId,
+  touchName,
+  disabled,
+  onUndone,
+}: {
+  campaignId: number;
+  touchId: number;
+  touchName: string;
+  disabled: boolean;
+  onUndone: () => void;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { data } = useGetLastAiDateShift(campaignId, touchId, {
+    query: {
+      queryKey: getGetLastAiDateShiftQueryKey(campaignId, touchId),
+      enabled: !!campaignId && !!touchId,
+    },
+  });
+  const undo = useUndoAiDateShift();
+  if (!data?.available) return null;
+
+  const handleClick = () => {
+    undo.mutate(
+      { id: campaignId, touchId },
+      {
+        onSuccess: () => {
+          toast({
+            title: "Date shift undone",
+            description: `${touchName}: ${data.to} → ${data.from}`,
+          });
+          queryClient.invalidateQueries({ queryKey: getGetLastAiDateShiftQueryKey(campaignId, touchId) });
+          queryClient.invalidateQueries({ queryKey: getGetCampaignPreviewQueryKey(campaignId) });
+          queryClient.invalidateQueries({ queryKey: getListTouchesQueryKey(campaignId) });
+          queryClient.invalidateQueries({ queryKey: getListThresholdsQueryKey(campaignId) });
+          queryClient.invalidateQueries({ queryKey: getGetCampaignHealthCheckQueryKey(campaignId) });
+          onUndone();
+        },
+        onError: (err: any) => toast({
+          title: "Could not undo shift",
+          description: err?.response?.data?.error || err?.message || "Unknown error",
+          variant: "destructive",
+        }),
+      },
+    );
+  };
+
+  return (
+    <div className="flex items-center justify-between gap-3 flex-wrap border rounded-md p-3 bg-amber-50 border-amber-200">
+      <div className="flex items-center gap-2 text-sm flex-wrap">
+        <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/30">
+          <Sparkles className="h-3 w-3 mr-1" /> Recently applied
+        </Badge>
+        <span className="font-semibold">{touchName}</span>
+        <span className="font-mono">{data.from}</span>
+        <ArrowRight className="h-4 w-4 text-muted-foreground" />
+        <span className="font-mono font-semibold">{data.to}</span>
+      </div>
+      <Button size="sm" variant="outline" onClick={handleClick} disabled={disabled || undo.isPending}>
+        {undo.isPending
+          ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+          : <Undo2 className="h-4 w-4 mr-2" />}
+        Undo
+      </Button>
+    </div>
+  );
+}
 
 interface DateShiftSuggestion {
   touchId: number;
@@ -70,6 +143,7 @@ export default function PreviewStep({ campaign }: { campaign: any }) {
   // when there are zero flagged donors there can't be anyone to optimize.
   const flaggedCount = preview?.thresholdFlaggedDonors ?? 0;
   const aiPanelEnabled = !!settings?.aiAssistEnabled && !wizardLocked && flaggedCount > 0;
+  const undoAffordancesEnabled = !!settings?.aiAssistEnabled && !wizardLocked;
 
   const fetchDateShifts = () => {
     setShiftPanelOpen(true);
@@ -98,6 +172,7 @@ export default function PreviewStep({ campaign }: { campaign: any }) {
           queryClient.invalidateQueries({ queryKey: getListTouchesQueryKey(campaign.id) });
           queryClient.invalidateQueries({ queryKey: getListThresholdsQueryKey(campaign.id) });
           queryClient.invalidateQueries({ queryKey: getGetCampaignHealthCheckQueryKey(campaign.id) });
+          queryClient.invalidateQueries({ queryKey: getGetLastAiDateShiftQueryKey(campaign.id, s.touchId) });
           // Re-run the suggestion call so the next round shows up automatically.
           suggestDateShifts.mutate({ id: campaign.id }, {
             onSuccess: (res) => setDateShifts({
@@ -320,6 +395,23 @@ export default function PreviewStep({ campaign }: { campaign: any }) {
       </Card>
 
       <HealthCheckPanel campaignId={campaign.id} />
+
+      {undoAffordancesEnabled && preview?.perTouch && preview.perTouch.length > 0 && (
+        <div className="space-y-2">
+          {preview.perTouch.map((t: any) => (
+            <UndoableShiftRow
+              key={t.touchId}
+              campaignId={campaign.id}
+              touchId={t.touchId}
+              touchName={t.touchName ?? t.fileName ?? `Touch #${t.touchId}`}
+              disabled={applyingTouchId !== null}
+              onUndone={() => {
+                queryClient.invalidateQueries({ queryKey: getGetCampaignPreviewQueryKey(campaign.id) });
+              }}
+            />
+          ))}
+        </div>
+      )}
 
       {aiPanelEnabled && (
         <Card>

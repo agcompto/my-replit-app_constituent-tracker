@@ -1340,6 +1340,44 @@ export const ApplyAiDateShiftResponse = zod.object({
   customDuplicateSamples: zod.array(zod.string()).optional(),
 });
 
+export const GetLastAiDateShiftParams = zod.object({
+  id: zod.coerce.number(),
+  touchId: zod.coerce.number(),
+});
+
+export const GetLastAiDateShiftResponse = zod.object({
+  available: zod.boolean(),
+  from: zod.coerce.date().optional(),
+  to: zod.coerce.date().optional(),
+  appliedAt: zod.coerce.date().optional(),
+});
+
+export const UndoAiDateShiftParams = zod.object({
+  id: zod.coerce.number(),
+  touchId: zod.coerce.number(),
+});
+
+export const UndoAiDateShiftResponse = zod.object({
+  id: zod.number(),
+  campaignId: zod.number(),
+  touchName: zod.string(),
+  channelId: zod.number(),
+  channelLabel: zod.string(),
+  campaignTypeId: zod.number(),
+  campaignTypeLabel: zod.string(),
+  sendDate: zod.coerce.date(),
+  notes: zod.string().nullish(),
+  audienceMode: zod.enum(["campaign", "custom"]),
+  customValidIdCount: zod.number().optional(),
+  customUniqueIdCount: zod.number().optional(),
+  customDuplicateIdCount: zod.number().optional(),
+  customRejectedIdCount: zod.number().optional(),
+  customOriginalRowCount: zod.number().optional(),
+  customExtraColumnsIgnored: zod.boolean().optional(),
+  customRejectedSamples: zod.array(zod.string()).optional(),
+  customDuplicateSamples: zod.array(zod.string()).optional(),
+});
+
 export const aiClassifySuppressionReasonBodyTextMin = 3;
 export const aiClassifySuppressionReasonBodyTextMax = 4000;
 
