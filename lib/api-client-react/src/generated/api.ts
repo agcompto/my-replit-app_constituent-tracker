@@ -56,6 +56,7 @@ import type {
   GetCohortAnalysisParams,
   GetDashboardParams,
   GetHighVolumeDonorsParams,
+  GetSaturationReportParams,
   GetUpcomingVolumeParams,
   GetYoyVolumeParams,
   HealthStatus,
@@ -76,6 +77,7 @@ import type {
   ReauthInput,
   RetentionInput,
   RetentionResult,
+  SaturationReport,
   SavedReportView,
   SavedReportViewInput,
   SeedGroup,
@@ -7766,6 +7768,116 @@ export function useGetCohortAnalysis<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetCohortAnalysisQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Channel × week saturation heatmap. Returns one row per active channel
+with a cell per ISO week (Monday-anchored) over the requested horizon,
+showing planned touchpoint count and contributing campaigns. Intensity
+is rendered client-side as count / capacity (per-channel weekly cap
+configured in app settings).
+
+ */
+export const getGetSaturationReportUrl = (
+  params?: GetSaturationReportParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/reports/saturation?${stringifiedParams}`
+    : `/api/reports/saturation`;
+};
+
+export const getSaturationReport = async (
+  params?: GetSaturationReportParams,
+  options?: RequestInit,
+): Promise<SaturationReport> => {
+  return customFetch<SaturationReport>(getGetSaturationReportUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetSaturationReportQueryKey = (
+  params?: GetSaturationReportParams,
+) => {
+  return [`/api/reports/saturation`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetSaturationReportQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSaturationReport>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetSaturationReportParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getSaturationReport>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetSaturationReportQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getSaturationReport>>
+  > = ({ signal }) =>
+    getSaturationReport(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSaturationReport>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetSaturationReportQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSaturationReport>>
+>;
+export type GetSaturationReportQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Channel × week saturation heatmap. Returns one row per active channel
+with a cell per ISO week (Monday-anchored) over the requested horizon,
+showing planned touchpoint count and contributing campaigns. Intensity
+is rendered client-side as count / capacity (per-channel weekly cap
+configured in app settings).
+
+ */
+
+export function useGetSaturationReport<
+  TData = Awaited<ReturnType<typeof getSaturationReport>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetSaturationReportParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getSaturationReport>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetSaturationReportQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

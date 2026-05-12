@@ -200,6 +200,7 @@ export default function Settings() {
           <TabsTrigger value="taxonomy">Taxonomy</TabsTrigger>
           <TabsTrigger value="templates">Threshold Templates</TabsTrigger>
           <TabsTrigger value="system">System Parameters</TabsTrigger>
+          <TabsTrigger value="reports">Reports</TabsTrigger>
           <TabsTrigger value="security">My Security</TabsTrigger>
           {isSuperAdmin && <TabsTrigger value="retention" className="text-destructive data-[state=active]:text-destructive">Data Retention</TabsTrigger>}
         </TabsList>
@@ -432,6 +433,10 @@ export default function Settings() {
           </Card>
         </TabsContent>
 
+        <TabsContent value="reports" className="space-y-6">
+          <ChannelCapacityPanel />
+        </TabsContent>
+
         {isSuperAdmin && (
           <TabsContent value="retention" className="space-y-6">
             <Card className="border-destructive">
@@ -473,6 +478,120 @@ export default function Settings() {
         )}
       </Tabs>
     </div>
+  );
+}
+
+function ChannelCapacityPanel() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const { data: settings, isLoading } = useGetSettings();
+  const { data: channels } = useListChannels();
+  const updateSettings = useUpdateSettings();
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [dirty, setDirty] = useState(false);
+
+  // Seed the editor from settings the first time both load.
+  const seedKey = settings ? Object.keys(settings.channelCapacity ?? {}).sort().join(",") : "";
+  if (settings && !dirty && Object.keys(draft).length === 0 && seedKey !== "") {
+    // No-op: rely on user-driven edits. We initialize per-row via the input value fallback below.
+  }
+
+  const handleChange = (channelId: number, value: string) => {
+    setDirty(true);
+    setDraft((prev) => ({ ...prev, [String(channelId)]: value }));
+  };
+
+  const handleSave = () => {
+    const next: Record<string, number> = { ...(settings?.channelCapacity ?? {}) };
+    for (const [k, v] of Object.entries(draft)) {
+      const n = v.trim() === "" ? 0 : Number(v);
+      if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n) || n > 10_000_000) {
+        toast({ title: `Invalid capacity for channel ${k}`, description: "Enter a non-negative whole number ≤ 10,000,000.", variant: "destructive" });
+        return;
+      }
+      if (n === 0) delete next[k];
+      else next[k] = n;
+    }
+    updateSettings.mutate(
+      { data: { channelCapacity: next } },
+      {
+        onSuccess: () => {
+          toast({ title: "Channel capacities saved" });
+          setDirty(false);
+          setDraft({});
+          queryClient.invalidateQueries({ queryKey: getGetSettingsQueryKey() });
+        },
+        onError: (err: any) => toast({
+          title: "Could not save capacities",
+          description: err?.response?.data?.error || err?.message || "Unknown error",
+          variant: "destructive",
+        }),
+      },
+    );
+  };
+
+  const activeChannels = (channels ?? []).filter((c) => c.active);
+  const stored = settings?.channelCapacity ?? {};
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Channel Saturation Capacities</CardTitle>
+        <CardDescription>
+          Per-channel weekly volume capacity used by the Channel Saturation report.
+          Leave blank or 0 for "no capacity defined" — the heatmap will use a relative
+          shading for that channel instead of capacity ratios.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {isLoading ? <Loader2 className="animate-spin h-5 w-5" /> : (
+          <>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Channel</TableHead>
+                  <TableHead className="w-[200px] text-right">Touchpoints / week (max)</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {activeChannels.length === 0 ? (
+                  <TableRow><TableCell colSpan={2} className="text-center text-muted-foreground py-6">No active channels.</TableCell></TableRow>
+                ) : activeChannels.map((c) => {
+                  const key = String(c.id);
+                  const stagedRaw = draft[key];
+                  const value = stagedRaw !== undefined
+                    ? stagedRaw
+                    : stored[key] !== undefined ? String(stored[key]) : "";
+                  return (
+                    <TableRow key={c.id}>
+                      <TableCell className="font-medium">{c.name}</TableCell>
+                      <TableCell className="text-right">
+                        <Input
+                          type="number"
+                          min={0}
+                          step={1}
+                          value={value}
+                          onChange={(e) => handleChange(c.id, e.target.value)}
+                          placeholder="—"
+                          className="text-right max-w-[160px] ml-auto"
+                          data-testid={`capacity-input-${c.id}`}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+            <div className="flex justify-end">
+              <Button onClick={handleSave} disabled={!dirty || updateSettings.isPending}>
+                {updateSettings.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                Save capacities
+              </Button>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

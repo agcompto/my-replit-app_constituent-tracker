@@ -5,6 +5,7 @@
  * Constituent Touchpoint Planner API
  * OpenAPI spec version: 0.1.0
  */
+import type { SettingsUpdateChannelCapacity } from "./settingsUpdateChannelCapacity";
 
 export interface SettingsUpdate {
   /**
@@ -21,4 +22,5 @@ export interface SettingsUpdate {
   retentionDeleteEnabled?: boolean;
   globalThresholdsEnabled?: boolean;
   aiAssistEnabled?: boolean;
+  channelCapacity?: SettingsUpdateChannelCapacity;
 }

@@ -5,6 +5,7 @@
  * Constituent Touchpoint Planner API
  * OpenAPI spec version: 0.1.0
  */
+import type { AppSettingsChannelCapacity } from "./appSettingsChannelCapacity";
 
 export interface AppSettings {
   /**
@@ -21,4 +22,6 @@ export interface AppSettings {
   retentionDeleteEnabled: boolean;
   globalThresholdsEnabled: boolean;
   aiAssistEnabled: boolean;
+  /** Per-channel weekly volume capacity (channel ID → max touchpoints/week). Used by the saturation heatmap report. */
+  channelCapacity: AppSettingsChannelCapacity;
 }

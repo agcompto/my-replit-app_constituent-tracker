@@ -17,6 +17,7 @@ const ALLOWED_VIEW_TYPES = new Set([
   "high-volume",
   "cohort",
   "yoy",
+  "saturation",
 ]);
 
 type ViewRow = typeof savedReportViewsTable.$inferSelect;

@@ -12,6 +12,7 @@ import {
 } from "@workspace/db";
 import { requireRole } from "../lib/auth";
 import { loadCampaignSummary } from "../lib/campaigns";
+import { computeSaturation } from "../lib/saturation";
 
 const router: IRouter = Router();
 
@@ -454,6 +455,37 @@ router.get("/reports/yoy-volume", requireRole("admin", "super_admin"), async (re
     byChannel,
     byMonth,
   });
+});
+
+router.get("/reports/saturation", requireRole("admin", "super_admin"), async (req, res): Promise<void> => {
+  let weeks = 12;
+  const wRaw = req.query.weeks;
+  if (typeof wRaw === "string" && wRaw.trim()) {
+    const n = parseInt(wRaw, 10);
+    if (!Number.isFinite(n) || n < 1 || n > 26) {
+      res.status(400).json({ message: "weeks must be an integer between 1 and 26" });
+      return;
+    }
+    weeks = n;
+  }
+  let start: string | undefined;
+  const sRaw = req.query.start;
+  if (typeof sRaw === "string" && sRaw.trim()) {
+    const parsed = parseIsoDate(sRaw.trim());
+    if (!parsed) { res.status(400).json({ message: "Invalid start (expected YYYY-MM-DD)" }); return; }
+    start = parsed;
+  }
+  const ouRaw = req.query.owningUnit;
+  const owningUnit = typeof ouRaw === "string" && ouRaw.trim() ? ouRaw.trim() : undefined;
+  const chRaw = req.query.channelId;
+  let channelId: number | undefined;
+  if (typeof chRaw === "string" && chRaw.trim()) {
+    const n = parseInt(chRaw, 10);
+    if (!Number.isFinite(n)) { res.status(400).json({ message: "Invalid channelId" }); return; }
+    channelId = n;
+  }
+  const report = await computeSaturation({ weeks, start, owningUnit, channelId });
+  res.json(report);
 });
 
 router.get("/reports/upload-history", requireRole("admin", "super_admin"), async (_req, res): Promise<void> => {

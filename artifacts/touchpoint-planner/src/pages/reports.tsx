@@ -4,13 +4,18 @@ import {
   useGetHighVolumeDonors,
   useGetCohortAnalysis,
   useGetYoyVolume,
+  useGetSaturationReport,
   useListSavedReportViews,
   useCreateSavedReportView,
   useDeleteSavedReportView,
   getListSavedReportViewsQueryKey,
   getGetYoyVolumeQueryKey,
+  getGetSaturationReportQueryKey,
+  type SaturationReport,
 } from "@workspace/api-client-react";
-import { useState } from "react";
+import { Link } from "wouter";
+import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { useState, type CSSProperties } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -27,13 +32,28 @@ import { ReportsFilterBar, type ReportFilters } from "@/components/reports-filte
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
-const VIEW_TYPES = ["channels", "types", "upcoming", "high-volume", "cohort", "yoy"] as const;
+const VIEW_TYPES = ["channels", "types", "upcoming", "high-volume", "cohort", "yoy", "saturation"] as const;
 type ViewType = (typeof VIEW_TYPES)[number];
 
 export default function Reports() {
   const [tab, setTab] = useState<ViewType>("channels");
   const [filters, setFilters] = useState<ReportFilters>({});
   const [cohortMonths, setCohortMonths] = useState(12);
+  const [saturationWeeks, setSaturationWeeks] = useState(12);
+  const saturationParams = {
+    weeks: saturationWeeks,
+    ...(filters.owningUnit ? { owningUnit: filters.owningUnit } : {}),
+    ...(filters.channelId ? { channelId: filters.channelId } : {}),
+  };
+  const { data: saturation, isLoading: saturationLoading } = useGetSaturationReport(
+    saturationParams,
+    {
+      query: {
+        enabled: tab === "saturation",
+        queryKey: getGetSaturationReportQueryKey(saturationParams),
+      },
+    },
+  );
 
   const { data: dashboard, isLoading: dashLoading } = useGetDashboard(filters);
   const { data: upcoming, isLoading: upcomingLoading } = useGetUpcomingVolume(filters);
@@ -75,11 +95,20 @@ export default function Reports() {
         <SavedViews
           viewType={tab}
           filters={filters}
-          config={tab === "cohort" ? { months: cohortMonths } : undefined}
+          config={
+            tab === "cohort"
+              ? { months: cohortMonths }
+              : tab === "saturation"
+                ? { weeks: saturationWeeks }
+                : undefined
+          }
           onLoad={(v) => {
             setFilters((v.filters as ReportFilters) || {});
             if (v.viewType === "cohort" && v.config && typeof (v.config as any).months === "number") {
               setCohortMonths((v.config as any).months);
+            }
+            if (v.viewType === "saturation" && v.config && typeof (v.config as any).weeks === "number") {
+              setSaturationWeeks((v.config as any).weeks);
             }
             if ((VIEW_TYPES as readonly string[]).includes(v.viewType)) setTab(v.viewType as ViewType);
           }}
@@ -96,6 +125,7 @@ export default function Reports() {
           <TabsTrigger value="high-volume">High-Volume Constituents</TabsTrigger>
           <TabsTrigger value="cohort">Cohort Analysis</TabsTrigger>
           <TabsTrigger value="yoy">Year-over-Year</TabsTrigger>
+          <TabsTrigger value="saturation">Channel Saturation</TabsTrigger>
         </TabsList>
 
         <TabsContent value="channels" className="space-y-4">
@@ -381,8 +411,155 @@ export default function Reports() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="saturation" className="space-y-4">
+          <Card>
+            <CardHeader className="flex flex-row justify-between items-center gap-3 flex-wrap">
+              <div>
+                <CardTitle>Channel Saturation Heatmap</CardTitle>
+                <CardDescription>
+                  Planned touchpoints per channel × week (Monday-anchored). Cell intensity is volume ÷ the per-channel weekly capacity configured in Settings → Reports. Hover a cell for contributing campaigns.
+                </CardDescription>
+              </div>
+              <div className="flex items-end gap-2">
+                <div className="flex flex-col gap-1.5 w-32">
+                  <Label className="text-xs text-muted-foreground">Horizon (weeks)</Label>
+                  <Select value={String(saturationWeeks)} onValueChange={(v) => setSaturationWeeks(Number(v))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {[4, 8, 12, 16, 20, 26].map((w) => <SelectItem key={w} value={String(w)}>{w}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (!saturation) return;
+                    const rows: Record<string, string | number>[] = [];
+                    for (const c of saturation.channels) {
+                      const row: Record<string, string | number> = {
+                        Channel: c.channelLabel,
+                        Capacity: c.capacity ?? "",
+                      };
+                      for (const cell of c.cells) row[cell.weekStart] = cell.touchpointCount;
+                      rows.push(row);
+                    }
+                    downloadCSV("channel-saturation", rows);
+                  }}
+                >
+                  <Download className="h-4 w-4 mr-2" /> Download CSV
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {saturationLoading ? <LoaderBlock /> : !saturation ? null : (
+                <SaturationHeatmap data={saturation} />
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+function SaturationHeatmap({ data }: { data: SaturationReport }) {
+  if (data.channels.length === 0) {
+    return <div className="text-center py-8 text-sm text-muted-foreground">No active channels to display.</div>;
+  }
+  // Compute a single intensity for each cell. With capacity, intensity =
+  // count / capacity, clamped at [0, 1.5] so over-capacity weeks still pop.
+  // Without capacity, fall back to a per-row max so the row reads relatively.
+  const cellStyle = (count: number, capacity: number | null, rowMax: number): CSSProperties => {
+    if (count === 0) return { backgroundColor: "hsl(var(--muted) / 0.4)" };
+    let pct: number;
+    if (capacity && capacity > 0) {
+      pct = Math.min(count / capacity, 1.5);
+    } else {
+      pct = rowMax > 0 ? count / rowMax : 0;
+    }
+    // Hue 12 (warm orange/red) for over-capacity; primary blue otherwise.
+    if (capacity && count > capacity) {
+      const a = 0.4 + Math.min(0.5, (pct - 1) * 0.8);
+      return { backgroundColor: `hsl(12 80% 55% / ${a.toFixed(2)})` };
+    }
+    const a = 0.15 + Math.min(0.7, pct * 0.7);
+    return { backgroundColor: `hsl(var(--primary) / ${a.toFixed(2)})` };
+  };
+
+  return (
+    <TooltipProvider delayDuration={150}>
+      <div className="overflow-x-auto" data-testid="saturation-heatmap">
+        <table className="text-xs border-collapse">
+          <thead>
+            <tr>
+              <th className="sticky left-0 bg-background text-left p-2 font-medium border-b">Channel</th>
+              <th className="text-right p-2 font-medium border-b">Cap / wk</th>
+              {data.weeks.map((w) => (
+                <th key={w.weekStart} className="p-2 font-normal text-muted-foreground border-b text-center min-w-[60px]">
+                  {format(new Date(w.weekStart + "T00:00:00"), "MMM d")}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {data.channels.map((row) => {
+              const rowMax = Math.max(0, ...row.cells.map((c) => c.touchpointCount));
+              return (
+                <tr key={row.channelId}>
+                  <td className="sticky left-0 bg-background font-medium p-2 border-b whitespace-nowrap">{row.channelLabel}</td>
+                  <td className="text-right p-2 border-b text-muted-foreground">{row.capacity ?? "—"}</td>
+                  {row.cells.map((cell) => {
+                    const over = row.capacity && cell.touchpointCount > row.capacity;
+                    const pctText = row.capacity && row.capacity > 0
+                      ? ` (${Math.round((cell.touchpointCount / row.capacity) * 100)}% of cap)`
+                      : "";
+                    return (
+                      <UITooltip key={cell.weekStart}>
+                        <TooltipTrigger asChild>
+                          <td
+                            className="p-0 border-b text-center"
+                            style={cellStyle(cell.touchpointCount, row.capacity, rowMax)}
+                            data-testid={`sat-cell-${row.channelId}-${cell.weekStart}`}
+                          >
+                            <div className={`px-2 py-2 ${over ? "font-semibold" : ""}`}>
+                              {cell.touchpointCount > 0 ? cell.touchpointCount.toLocaleString() : ""}
+                            </div>
+                          </td>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-xs">
+                          <div className="text-xs">
+                            <div className="font-medium">{row.channelLabel} · week of {cell.weekStart}</div>
+                            <div className="text-muted-foreground mb-1">
+                              {cell.touchpointCount.toLocaleString()} touchpoints{pctText}
+                            </div>
+                            {cell.campaigns.length === 0 ? (
+                              <div className="text-muted-foreground">No campaigns scheduled.</div>
+                            ) : (
+                              <ul className="space-y-0.5">
+                                {cell.campaigns.slice(0, 8).map((c) => (
+                                  <li key={c.id}>
+                                    <Link href={`/campaigns/${c.id}`} className="underline hover:text-primary">{c.name}</Link>
+                                  </li>
+                                ))}
+                                {cell.campaigns.length > 8 ? (
+                                  <li className="text-muted-foreground">…and {cell.campaigns.length - 8} more</li>
+                                ) : null}
+                              </ul>
+                            )}
+                          </div>
+                        </TooltipContent>
+                      </UITooltip>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </TooltipProvider>
   );
 }
 

@@ -1362,6 +1362,27 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/CohortAnalysis" }
+  /reports/saturation:
+    get:
+      operationId: getSaturationReport
+      tags: [reports]
+      summary: |
+        Channel × week saturation heatmap. Returns one row per active channel
+        with a cell per ISO week (Monday-anchored) over the requested horizon,
+        showing planned touchpoint count and contributing campaigns. Intensity
+        is rendered client-side as count / capacity (per-channel weekly cap
+        configured in app settings).
+      parameters:
+        - { name: weeks, in: query, schema: { type: integer, minimum: 1, maximum: 26 } }
+        - { name: start, in: query, schema: { type: string, format: date }, description: "Anchor date; the report begins at the Monday of this date's ISO week. Defaults to today." }
+        - { name: owningUnit, in: query, schema: { type: string } }
+        - { name: channelId, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SaturationReport" }
   /reports/yoy-volume:
     get:
       operationId: getYoyVolume
@@ -2174,7 +2195,7 @@ components:
 
     AppSettings:
       type: object
-      required: [fiscalYearStartMonth, fiscalYearStartDay, googleSheetImportEnabled, retentionDeleteEnabled, globalThresholdsEnabled, aiAssistEnabled]
+      required: [fiscalYearStartMonth, fiscalYearStartDay, googleSheetImportEnabled, retentionDeleteEnabled, globalThresholdsEnabled, aiAssistEnabled, channelCapacity]
       properties:
         fiscalYearStartMonth: { type: integer, minimum: 1, maximum: 12 }
         fiscalYearStartDay: { type: integer, minimum: 1, maximum: 31 }
@@ -2182,6 +2203,10 @@ components:
         retentionDeleteEnabled: { type: boolean }
         globalThresholdsEnabled: { type: boolean }
         aiAssistEnabled: { type: boolean }
+        channelCapacity:
+          type: object
+          description: Per-channel weekly volume capacity (channel ID → max touchpoints/week). Used by the saturation heatmap report.
+          additionalProperties: { type: integer, minimum: 0, maximum: 10000000 }
     SettingsUpdate:
       type: object
       properties:
@@ -2191,6 +2216,9 @@ components:
         retentionDeleteEnabled: { type: boolean }
         globalThresholdsEnabled: { type: boolean }
         aiAssistEnabled: { type: boolean }
+        channelCapacity:
+          type: object
+          additionalProperties: { type: integer, minimum: 0, maximum: 10000000 }
 
     RetentionInput:
       type: object
@@ -2413,6 +2441,46 @@ components:
               monthOffset: { type: integer }
               current: { type: integer }
               prior: { type: integer }
+
+    SaturationReport:
+      type: object
+      required: [generatedAt, startDate, weeks, channels]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        startDate: { type: string, format: date }
+        weeks:
+          type: array
+          items:
+            type: object
+            required: [weekStart, weekEnd]
+            properties:
+              weekStart: { type: string, format: date }
+              weekEnd: { type: string, format: date }
+        channels:
+          type: array
+          items:
+            type: object
+            required: [channelId, channelLabel, capacity, cells]
+            properties:
+              channelId: { type: integer }
+              channelLabel: { type: string }
+              capacity: { type: ["integer", "null"] }
+              cells:
+                type: array
+                items:
+                  type: object
+                  required: [weekStart, touchpointCount, campaigns]
+                  properties:
+                    weekStart: { type: string, format: date }
+                    touchpointCount: { type: integer }
+                    campaigns:
+                      type: array
+                      items:
+                        type: object
+                        required: [id, name]
+                        properties:
+                          id: { type: integer }
+                          name: { type: string }
 
     SavedReportView:
       type: object

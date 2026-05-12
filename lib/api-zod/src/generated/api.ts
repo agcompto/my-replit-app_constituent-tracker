@@ -1295,6 +1295,9 @@ export const getSettingsResponseFiscalYearStartMonthMax = 12;
 
 export const getSettingsResponseFiscalYearStartDayMax = 31;
 
+export const getSettingsResponseChannelCapacityMinOne = 0;
+export const getSettingsResponseChannelCapacityMaxOne = 10000000;
+
 export const GetSettingsResponse = zod.object({
   fiscalYearStartMonth: zod
     .number()
@@ -1308,11 +1311,25 @@ export const GetSettingsResponse = zod.object({
   retentionDeleteEnabled: zod.boolean(),
   globalThresholdsEnabled: zod.boolean(),
   aiAssistEnabled: zod.boolean(),
+  channelCapacity: zod
+    .record(
+      zod.string(),
+      zod
+        .number()
+        .min(getSettingsResponseChannelCapacityMinOne)
+        .max(getSettingsResponseChannelCapacityMaxOne),
+    )
+    .describe(
+      "Per-channel weekly volume capacity (channel ID → max touchpoints\/week). Used by the saturation heatmap report.",
+    ),
 });
 
 export const updateSettingsBodyFiscalYearStartMonthMax = 12;
 
 export const updateSettingsBodyFiscalYearStartDayMax = 31;
+
+export const updateSettingsBodyChannelCapacityMinOne = 0;
+export const updateSettingsBodyChannelCapacityMaxOne = 10000000;
 
 export const UpdateSettingsBody = zod.object({
   fiscalYearStartMonth: zod
@@ -1329,11 +1346,23 @@ export const UpdateSettingsBody = zod.object({
   retentionDeleteEnabled: zod.boolean().optional(),
   globalThresholdsEnabled: zod.boolean().optional(),
   aiAssistEnabled: zod.boolean().optional(),
+  channelCapacity: zod
+    .record(
+      zod.string(),
+      zod
+        .number()
+        .min(updateSettingsBodyChannelCapacityMinOne)
+        .max(updateSettingsBodyChannelCapacityMaxOne),
+    )
+    .optional(),
 });
 
 export const updateSettingsResponseFiscalYearStartMonthMax = 12;
 
 export const updateSettingsResponseFiscalYearStartDayMax = 31;
+
+export const updateSettingsResponseChannelCapacityMinOne = 0;
+export const updateSettingsResponseChannelCapacityMaxOne = 10000000;
 
 export const UpdateSettingsResponse = zod.object({
   fiscalYearStartMonth: zod
@@ -1348,6 +1377,17 @@ export const UpdateSettingsResponse = zod.object({
   retentionDeleteEnabled: zod.boolean(),
   globalThresholdsEnabled: zod.boolean(),
   aiAssistEnabled: zod.boolean(),
+  channelCapacity: zod
+    .record(
+      zod.string(),
+      zod
+        .number()
+        .min(updateSettingsResponseChannelCapacityMinOne)
+        .max(updateSettingsResponseChannelCapacityMaxOne),
+    )
+    .describe(
+      "Per-channel weekly volume capacity (channel ID → max touchpoints\/week). Used by the saturation heatmap report.",
+    ),
 });
 
 export const RunRetentionDeleteBody = zod.object({
@@ -1676,6 +1716,62 @@ export const GetCohortAnalysisResponse = zod.object({
       cohortSize: zod.number(),
       totalTouchpoints: zod.number(),
       avgTouchpointsPerDonor: zod.number(),
+    }),
+  ),
+});
+
+/**
+ * @summary Channel × week saturation heatmap. Returns one row per active channel
+with a cell per ISO week (Monday-anchored) over the requested horizon,
+showing planned touchpoint count and contributing campaigns. Intensity
+is rendered client-side as count / capacity (per-channel weekly cap
+configured in app settings).
+
+ */
+export const getSaturationReportQueryWeeksMax = 26;
+
+export const GetSaturationReportQueryParams = zod.object({
+  weeks: zod.coerce
+    .number()
+    .min(1)
+    .max(getSaturationReportQueryWeeksMax)
+    .optional(),
+  start: zod
+    .date()
+    .optional()
+    .describe(
+      "Anchor date; the report begins at the Monday of this date's ISO week. Defaults to today.",
+    ),
+  owningUnit: zod.coerce.string().optional(),
+  channelId: zod.coerce.number().optional(),
+});
+
+export const GetSaturationReportResponse = zod.object({
+  generatedAt: zod.coerce.date(),
+  startDate: zod.coerce.date(),
+  weeks: zod.array(
+    zod.object({
+      weekStart: zod.coerce.date(),
+      weekEnd: zod.coerce.date(),
+    }),
+  ),
+  channels: zod.array(
+    zod.object({
+      channelId: zod.number(),
+      channelLabel: zod.string(),
+      capacity: zod.number().nullable(),
+      cells: zod.array(
+        zod.object({
+          weekStart: zod.coerce.date(),
+          touchpointCount: zod.number(),
+          campaigns: zod.array(
+            zod.object({
+              id: zod.number(),
+              name: zod.string(),
+            }),
+          ),
+        }),
+      ),
     }),
   ),
 });

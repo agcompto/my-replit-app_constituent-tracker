@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db, appSettingsTable, campaignsTable } from "@workspace/db";
 import { UpdateSettingsBody, RunRetentionDeleteBody } from "@workspace/api-zod";
 import { requireAuth, requireRole, audit } from "../lib/auth";
+import { validateChannelCapacity } from "../lib/saturation";
 
 const router: IRouter = Router();
 
@@ -33,6 +34,7 @@ router.get("/settings", requireAuth, async (_req, res): Promise<void> => {
     retentionDeleteEnabled: s.retentionDeleteEnabled,
     globalThresholdsEnabled: s.globalThresholdsEnabled,
     aiAssistEnabled: s.aiAssistEnabled,
+    channelCapacity: s.channelCapacity ?? {},
   });
 });
 
@@ -45,10 +47,26 @@ router.patch(
       res.status(400).json({ error: parsed.error.message });
       return;
     }
+    // The generated zod accepts any object for `channelCapacity`; re-validate
+    // shape (keys = positive integer channel IDs, values = non-negative ints)
+    // and normalize zero values out so the stored map only contains real caps.
+    let channelCapacity: Record<string, number> | undefined;
+    if (parsed.data.channelCapacity !== undefined) {
+      try {
+        channelCapacity = validateChannelCapacity(parsed.data.channelCapacity);
+      } catch (e) {
+        res.status(400).json({ error: e instanceof Error ? e.message : "Invalid channelCapacity" });
+        return;
+      }
+    }
     const s = await loadSettings();
+    const updateValues: Partial<typeof appSettingsTable.$inferInsert> = {
+      ...parsed.data,
+      ...(channelCapacity !== undefined ? { channelCapacity } : {}),
+    };
     const [updated] = await db
       .update(appSettingsTable)
-      .set(parsed.data)
+      .set(updateValues)
       .where(eq(appSettingsTable.id, s.id))
       .returning();
     await audit({
@@ -65,6 +83,7 @@ router.patch(
       retentionDeleteEnabled: updated.retentionDeleteEnabled,
       globalThresholdsEnabled: updated.globalThresholdsEnabled,
       aiAssistEnabled: updated.aiAssistEnabled,
+      channelCapacity: updated.channelCapacity ?? {},
     });
   },
 );

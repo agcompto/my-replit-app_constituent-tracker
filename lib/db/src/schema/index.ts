@@ -458,6 +458,13 @@ export const appSettingsTable = pgTable("app_settings", {
   retentionDeleteEnabled: boolean("retention_delete_enabled").notNull().default(false),
   globalThresholdsEnabled: boolean("global_thresholds_enabled").notNull().default(false),
   aiAssistEnabled: boolean("ai_assist_enabled").notNull().default(false),
+  // Per-channel weekly volume capacity (channel ID → max touchpoints/week).
+  // Used by the saturation heatmap report; an unset/zero value means
+  // "no capacity defined" and the report renders a neutral cell.
+  channelCapacity: jsonb("channel_capacity")
+    .$type<Record<string, number>>()
+    .notNull()
+    .default({}),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .defaultNow()

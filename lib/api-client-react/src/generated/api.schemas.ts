@@ -814,6 +814,11 @@ export interface AuditEntry {
   createdAt: string;
 }
 
+/**
+ * Per-channel weekly volume capacity (channel ID → max touchpoints/week). Used by the saturation heatmap report.
+ */
+export type AppSettingsChannelCapacity = { [key: string]: number };
+
 export interface AppSettings {
   /**
    * @minimum 1
@@ -829,7 +834,11 @@ export interface AppSettings {
   retentionDeleteEnabled: boolean;
   globalThresholdsEnabled: boolean;
   aiAssistEnabled: boolean;
+  /** Per-channel weekly volume capacity (channel ID → max touchpoints/week). Used by the saturation heatmap report. */
+  channelCapacity: AppSettingsChannelCapacity;
 }
+
+export type SettingsUpdateChannelCapacity = { [key: string]: number };
 
 export interface SettingsUpdate {
   /**
@@ -846,6 +855,7 @@ export interface SettingsUpdate {
   retentionDeleteEnabled?: boolean;
   globalThresholdsEnabled?: boolean;
   aiAssistEnabled?: boolean;
+  channelCapacity?: SettingsUpdateChannelCapacity;
 }
 
 export interface RetentionInput {
@@ -1128,6 +1138,37 @@ export interface YoyVolume {
   byMonth: YoyVolumeByMonthItem[];
 }
 
+export type SaturationReportWeeksItem = {
+  weekStart: string;
+  weekEnd: string;
+};
+
+export type SaturationReportChannelsItemCellsItemCampaignsItem = {
+  id: number;
+  name: string;
+};
+
+export type SaturationReportChannelsItemCellsItem = {
+  weekStart: string;
+  touchpointCount: number;
+  campaigns: SaturationReportChannelsItemCellsItemCampaignsItem[];
+};
+
+export type SaturationReportChannelsItem = {
+  channelId: number;
+  channelLabel: string;
+  /** @nullable */
+  capacity: number | null;
+  cells: SaturationReportChannelsItemCellsItem[];
+};
+
+export interface SaturationReport {
+  generatedAt: string;
+  startDate: string;
+  weeks: SaturationReportWeeksItem[];
+  channels: SaturationReportChannelsItem[];
+}
+
 export type SavedReportViewVisibility =
   (typeof SavedReportViewVisibility)[keyof typeof SavedReportViewVisibility];
 
@@ -1231,6 +1272,20 @@ export type GetCohortAnalysisParams = {
    * @maximum 36
    */
   months?: number;
+  owningUnit?: string;
+  channelId?: number;
+};
+
+export type GetSaturationReportParams = {
+  /**
+   * @minimum 1
+   * @maximum 26
+   */
+  weeks?: number;
+  /**
+   * Anchor date; the report begins at the Monday of this date's ISO week. Defaults to today.
+   */
+  start?: string;
   owningUnit?: string;
   channelId?: number;
 };
