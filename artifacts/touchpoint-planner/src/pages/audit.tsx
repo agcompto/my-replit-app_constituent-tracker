@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { X } from "lucide-react";
+import { X, Sparkles } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format } from "date-fns";
 
@@ -20,6 +20,26 @@ type AuditFilters = {
 
 function hasAny(f: AuditFilters): boolean {
   return !!(f.actor || f.action || f.entityType || f.startDate || f.endDate);
+}
+
+const AI_DATE_SHIFT_ACTION = "touch_date_shift_applied";
+
+function parseAiDateShiftDetails(
+  details: string | null | undefined,
+): { source: string | null; from: string | null; to: string | null } | null {
+  if (!details) return null;
+  const parts = details.split(/\s+/);
+  const out: Record<string, string> = {};
+  for (const p of parts) {
+    const eq = p.indexOf("=");
+    if (eq > 0) out[p.slice(0, eq)] = p.slice(eq + 1);
+  }
+  if (!out.from && !out.to && !out.source) return null;
+  return {
+    source: out.source ?? null,
+    from: out.from ?? null,
+    to: out.to ?? null,
+  };
 }
 
 export default function Audit() {
@@ -86,6 +106,21 @@ export default function Audit() {
             className="w-[160px]"
           />
         </div>
+        <Button
+          variant={filters.action === AI_DATE_SHIFT_ACTION ? "default" : "outline"}
+          size="sm"
+          onClick={() =>
+            setFilters((prev) =>
+              prev.action === AI_DATE_SHIFT_ACTION
+                ? { ...prev, action: undefined }
+                : { ...prev, action: AI_DATE_SHIFT_ACTION },
+            )
+          }
+          className="self-end"
+          aria-pressed={filters.action === AI_DATE_SHIFT_ACTION}
+        >
+          <Sparkles className="h-3.5 w-3.5 mr-1" /> AI actions only
+        </Button>
         {hasAny(filters) && (
           <Button variant="ghost" size="sm" onClick={() => setFilters({})} className="self-end">
             <X className="h-3.5 w-3.5 mr-1" /> Clear
@@ -128,26 +163,52 @@ export default function Audit() {
                   </TableCell>
                 </TableRow>
               ) : (
-                auditLogs?.map(log => (
-                  <TableRow key={log.id}>
-                    <TableCell className="pl-6 whitespace-nowrap text-muted-foreground text-sm">
-                      {format(new Date(log.createdAt), "MMM d, yyyy HH:mm")}
-                    </TableCell>
-                    <TableCell className="font-medium text-sm">{log.actorName}</TableCell>
-                    <TableCell>
-                      {log.actorRole && <Badge variant="outline" className="text-[10px] uppercase">{log.actorRole.replace('_', ' ')}</Badge>}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="secondary" className="font-mono text-xs">{log.action}</Badge>
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {log.entityType} {log.entityId ? `#${log.entityId}` : ''}
-                    </TableCell>
-                    <TableCell className="pr-6 text-sm text-muted-foreground max-w-md truncate" title={log.details || ""}>
-                      {log.details || "-"}
-                    </TableCell>
-                  </TableRow>
-                ))
+                auditLogs?.map(log => {
+                  const isAiDateShift = log.action === AI_DATE_SHIFT_ACTION;
+                  const shift = isAiDateShift ? parseAiDateShiftDetails(log.details) : null;
+                  const isAi = isAiDateShift && shift?.source === "ai_suggestion";
+                  return (
+                    <TableRow key={log.id}>
+                      <TableCell className="pl-6 whitespace-nowrap text-muted-foreground text-sm">
+                        {format(new Date(log.createdAt), "MMM d, yyyy HH:mm")}
+                      </TableCell>
+                      <TableCell className="font-medium text-sm">{log.actorName}</TableCell>
+                      <TableCell>
+                        {log.actorRole && <Badge variant="outline" className="text-[10px] uppercase">{log.actorRole.replace('_', ' ')}</Badge>}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1.5">
+                          {isAiDateShift ? (
+                            <Badge variant="secondary" className="font-mono text-xs">date shift applied</Badge>
+                          ) : (
+                            <Badge variant="secondary" className="font-mono text-xs">{log.action}</Badge>
+                          )}
+                          {isAi && (
+                            <Badge
+                              variant="default"
+                              className="text-[10px] uppercase gap-1"
+                              title="Applied from an AI date-shift suggestion"
+                            >
+                              <Sparkles className="h-3 w-3" /> AI
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {log.entityType} {log.entityId ? `#${log.entityId}` : ''}
+                      </TableCell>
+                      <TableCell className="pr-6 text-sm text-muted-foreground max-w-md truncate" title={log.details || ""}>
+                        {shift && (shift.from || shift.to) ? (
+                          <span className="font-mono text-xs text-foreground">
+                            {shift.from ?? "?"} <span className="text-muted-foreground">→</span> {shift.to ?? "?"}
+                          </span>
+                        ) : (
+                          log.details || "-"
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
