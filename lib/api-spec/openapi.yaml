@@ -87,6 +87,20 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SessionUser" }
+  /auth/reauth:
+    post:
+      operationId: reauth
+      tags: [auth]
+      summary: Re-verify the current user's password to satisfy `requireRecentAuth`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReauthInput" }
+      responses:
+        "204": { description: Re-auth recorded; the gated request can be retried. }
+        "401": { description: Incorrect password. }
+        "429": { description: Account temporarily locked from too many failed attempts. }
   /auth/change-password:
     post:
       operationId: changeOwnPassword
@@ -1215,6 +1229,12 @@ components:
         active: { type: boolean }
         piiAcknowledged: { type: boolean }
         mustChangePassword: { type: boolean }
+
+    ReauthInput:
+      type: object
+      required: [password]
+      properties:
+        password: { type: string, minLength: 1 }
 
     ChangePasswordInput:
       type: object

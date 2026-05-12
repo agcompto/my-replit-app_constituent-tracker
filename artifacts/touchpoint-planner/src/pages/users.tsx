@@ -8,7 +8,7 @@ import {
   useDeleteUser,
   getListUsersQueryKey,
 } from "@workspace/api-client-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -64,6 +64,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { ReauthDialog, isReauthRequired } from "@/components/ReauthDialog";
 
 type Role = "standard" | "admin" | "super_admin";
 type UserRow = {
@@ -434,17 +435,31 @@ function EditUserDialog({
 
   if (!user) return null;
 
-  const onSubmit = (data: z.infer<typeof editSchema>) => {
+  const [reauthOpen, setReauthOpen] = useState(false);
+  const [pendingData, setPendingData] = useState<z.infer<typeof editSchema> | null>(null);
+  // Granting super_admin requires recent password auth. If the server says
+  // so, queue the form values, prompt for the password, then re-submit.
+  useEffect(() => {
+    if (isReauthRequired(mutation.error)) setReauthOpen(true);
+  }, [mutation.error]);
+
+  const submit = (data: z.infer<typeof editSchema>) => {
     mutation.mutate(
       { id: user.id, data },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListUsersQueryKey() });
           toast({ title: "User updated" });
+          setPendingData(null);
           onClose();
         },
       },
     );
+  };
+
+  const onSubmit = (data: z.infer<typeof editSchema>) => {
+    setPendingData(data);
+    submit(data);
   };
 
   return (
@@ -454,9 +469,19 @@ function EditUserDialog({
           <DialogTitle>Edit User</DialogTitle>
           <DialogDescription>{user.email}</DialogDescription>
         </DialogHeader>
-        {mutation.error && (
+        {mutation.error && !isReauthRequired(mutation.error) && (
           <ErrorBanner error={mutation.error} fallback="Failed to update user." />
         )}
+        <ReauthDialog
+          open={reauthOpen}
+          onClose={() => setReauthOpen(false)}
+          onSuccess={() => {
+            setReauthOpen(false);
+            mutation.reset();
+            if (pendingData) submit(pendingData);
+          }}
+          description="Granting super-admin requires confirming your password."
+        />
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <FormField
@@ -694,6 +719,14 @@ function DeleteUserDialog({
   const { toast } = useToast();
   const mutation = useDeleteUser();
   const [confirm, setConfirm] = useState("");
+  const [reauthOpen, setReauthOpen] = useState(false);
+  // The server gates DELETE /users/:id on `requireRecentAuth`. If the
+  // session's last password-auth is stale, the API returns 403 with
+  // `code: "reauth_required"`. Pop the ReauthDialog and retry the delete
+  // once the user re-enters their password.
+  useEffect(() => {
+    if (isReauthRequired(mutation.error)) setReauthOpen(true);
+  }, [mutation.error]);
   if (!user) return null;
   const onConfirm = () => {
     mutation.mutate(
@@ -731,9 +764,19 @@ function DeleteUserDialog({
             you. This cannot be undone.
           </DialogDescription>
         </DialogHeader>
-        {mutation.error && (
+        {mutation.error && !isReauthRequired(mutation.error) && (
           <ErrorBanner error={mutation.error} fallback="Failed to delete user." />
         )}
+        <ReauthDialog
+          open={reauthOpen}
+          onClose={() => setReauthOpen(false)}
+          onSuccess={() => {
+            setReauthOpen(false);
+            mutation.reset();
+            onConfirm();
+          }}
+          description="Deleting a user is permanent. Re-enter your password to confirm."
+        />
         <div className="space-y-2">
           <Label>
             Type <code className="font-mono">{user.email}</code> to confirm

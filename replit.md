@@ -68,6 +68,12 @@ Responses to `POST /users` and `POST /users/:id/reset-password` return `{ invite
 - **Pre-auth rate limits** — `POST /auth/forgot-password` adds a per-IP cap (10 / 15min) on top of the per-(email,ip) bucket; `GET /password-setup/:token` adds a per-IP cap (30 / 15min). Both still respond 204/404 either way to avoid leaking throttle state.
 - **Export quota** — `POST /campaigns/:id/export` is capped at 20 / hour / user via `checkExportQuota`. Returns 429 with `code: "export_quota_exceeded"` when exceeded.
 - **Audit-log integrity** — Postgres triggers `audit_log_no_update` and `audit_log_no_delete` block `UPDATE`/`DELETE` on `audit_log` even at the DB layer. Installed by `installAuditLogAppendOnlyTrigger()` on every boot (idempotent).
+- **Re-auth endpoint** — `POST /auth/reauth { password }` re-verifies the current user's password and bumps `req.session.lastAuthAt`. The frontend's `<ReauthDialog>` is shown automatically when a destructive mutation responds with `code: "reauth_required"`, then retries the original action on success. Failed attempts feed the same per-user lockout as `/auth/login`.
+- **Session invalidation on password change** — `POST /auth/change-password` and `POST /password-setup/:token/complete` call `revokeOtherSessionsForUser`, deleting every other session row for that user from the `session` table. A stolen session cookie stops working as soon as the legitimate owner sets a new password.
+- **Login enumeration timing parity** — `POST /auth/login` runs a dummy `bcrypt.compare` against a constant hash on the no-such-user / inactive path so response time matches the real-user/wrong-password path. Combined with the existing identical 401/429 message, the endpoint does not leak account existence.
+- **Session table pruning** — `connect-pg-simple` is configured with `pruneSessionInterval: 3600` so expired session rows are swept hourly. Without this the `session` table grows unbounded.
+- **Setup-link redaction in logs** — `pino-http` request serializer redacts `/password-setup/:token` paths to `/password-setup/[REDACTED]` so a single info log line can't leak a live token.
+- **Per-export row cap** — `POST /campaigns/:id/export` rejects (HTTP 413, `code: "export_row_cap_exceeded"`) any export whose total rows across touches exceed `MAX_EXPORT_ROWS` (default 500,000). Layered on top of the 20/hour quota so neither rate nor volume alone yields a near-total dump.
 
 ## Architecture decisions
 

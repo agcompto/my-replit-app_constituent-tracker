@@ -1,6 +1,7 @@
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
-import { pool } from "@workspace/db";
+import { sql } from "drizzle-orm";
+import { db, pool } from "@workspace/db";
 import type { RequestHandler } from "express";
 
 const PgStore = connectPgSimple(session);
@@ -20,6 +21,10 @@ export const sessionMiddleware: RequestHandler = session({
     pool,
     tableName: "session",
     createTableIfMissing: false,
+    // Sweep expired session rows once an hour. Without this the `session`
+    // table grows unbounded — every login adds a row that connect-pg-simple
+    // never reaps automatically.
+    pruneSessionInterval: 60 * 60,
   }),
   secret,
   resave: false,
@@ -53,6 +58,34 @@ export const applyRoleSessionTtl: RequestHandler = (req, _res, next) => {
   }
   next();
 };
+
+/**
+ * Delete every server-side session row for the given user EXCEPT the one
+ * identified by `keepSid` (typically the caller's current session). Used
+ * after a password change/setup so that any previously stolen session
+ * cookie stops working immediately, instead of surviving until its TTL
+ * expires.
+ *
+ * `connect-pg-simple` stores the session payload as JSONB in `session.sess`,
+ * so we filter on `sess->>'userId'`. The session id column is `sid`.
+ */
+export async function revokeOtherSessionsForUser(
+  userId: number,
+  keepSid: string | null | undefined,
+): Promise<void> {
+  if (keepSid) {
+    await db.execute(sql`
+      DELETE FROM session
+      WHERE (sess->>'userId')::int = ${userId}
+        AND sid <> ${keepSid}
+    `);
+  } else {
+    await db.execute(sql`
+      DELETE FROM session
+      WHERE (sess->>'userId')::int = ${userId}
+    `);
+  }
+}
 
 declare module "express-session" {
   interface SessionData {

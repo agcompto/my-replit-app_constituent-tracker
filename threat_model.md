@@ -85,7 +85,27 @@ The API ships strict HTTP security headers via `helmet`: `Content-Security-Polic
 
 ### Re-Authentication for Destructive Actions
 
-Hard deletes (`DELETE /users/:id`, `DELETE /campaigns/:id`) and grants of `super_admin` (via `PATCH /users/:id`) require a fresh password authentication within the last 5 minutes (`requireRecentAuth`, tracked via `req.session.lastAuthAt`). Blocked requests return HTTP 403 with `code: "reauth_required"` so the frontend can prompt the user to re-enter their password. This raises the bar for an attacker with a stolen session cookie or unattended workstation: even with a valid session, they cannot escalate or destroy data without also producing the user's password.
+Hard deletes (`DELETE /users/:id`, `DELETE /campaigns/:id`) and grants of `super_admin` (via `PATCH /users/:id`) require a fresh password authentication within the last 5 minutes (`requireRecentAuth`, tracked via `req.session.lastAuthAt`). Blocked requests return HTTP 403 with `code: "reauth_required"` so the frontend can prompt the user to re-enter their password. The frontend ships a `<ReauthDialog>` that POSTs to `POST /auth/reauth`, which verifies the current user's bcrypt hash and bumps `lastAuthAt` on success; failed attempts feed the same per-user lockout as the login route, so an attacker with a stolen session cannot grind passwords here. This raises the bar for an attacker with a stolen session cookie or unattended workstation: even with a valid session, they cannot escalate or destroy data without also producing the user's password.
+
+### Session Invalidation on Credential Change
+
+Whenever a user's password changes — via `POST /auth/change-password` or via the token-driven `POST /password-setup/:token/complete` — the server calls `revokeOtherSessionsForUser` to delete every other session row for that user from the `session` table. The current session is preserved on `change-password` so the user isn't logged out of the tab they just used; on token completion no session is preserved. This guarantees that an attacker who stole a session cookie loses access the moment the legitimate user resets their password, instead of surviving until the cookie's TTL.
+
+### Login Enumeration Timing
+
+`POST /auth/login` returns the same status/body for "unknown email", "inactive user", and "wrong password". To prevent timing-based enumeration, the no-user / inactive path runs a dummy `bcrypt.compare` against a constant hash so response time roughly matches the path where a real user exists and the password is wrong. Pre-auth per-IP rate limiting and per-account lockout further constrain the attack rate.
+
+### Per-Export Volume Cap
+
+The 20/hour per-user export quota limits frequency, but a single export against a giant audience would still constitute a near-total leak. `POST /campaigns/:id/export` therefore also caps total rows across all touches in the batch at `MAX_EXPORT_ROWS` (default 500,000) and rejects with HTTP 413 + `code: "export_row_cap_exceeded"`.
+
+### Logged Token Exposure
+
+Password-setup tokens are bearer credentials in the URL path (`GET /password-setup/:token`). The `pino-http` request serializer redacts these paths to `/password-setup/[REDACTED]` so a single info-level access log line can't leak a live token. Bootstrap `seed.ts` intentionally logs the full setup URL once at warn level **only** when no email provider is configured; this is the documented escape hatch for fresh-DB local installs and is acceptable because it fires once per cold-start with an empty DB and the operator is the only intended log reader.
+
+### Session Store Hygiene
+
+`connect-pg-simple` is configured with `pruneSessionInterval: 3600` so expired session rows are swept hourly. Without this the `session` table grows unbounded as every login adds a row that is never reaped automatically.
 
 ### Elevation of Privilege
 

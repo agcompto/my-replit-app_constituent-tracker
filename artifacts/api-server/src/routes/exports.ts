@@ -129,6 +129,25 @@ router.post("/campaigns/:id/export", requireAuth, async (req, res): Promise<void
     res.status(400).json({ error: "No touches to export" });
     return;
   }
+  // Per-export volume cap. The 20/hour quota above limits frequency, but a
+  // single export against a giant audience is still a near-total leak in
+  // one shot. Cap total rows across all touches in this batch and reject
+  // the entire export if it would exceed the limit. Operators can raise
+  // the cap via MAX_EXPORT_ROWS but should think hard before doing so.
+  const MAX_EXPORT_ROWS = Math.max(
+    1000,
+    Number.parseInt(process.env.MAX_EXPORT_ROWS ?? "500000", 10) || 500_000,
+  );
+  const totalRows = perTouch.reduce((s, p) => s + p.totalRowsInExport, 0);
+  if (totalRows > MAX_EXPORT_ROWS) {
+    res.status(413).json({
+      error: `This export would produce ${totalRows.toLocaleString()} rows, which exceeds the per-export cap of ${MAX_EXPORT_ROWS.toLocaleString()}. Split the audience or raise MAX_EXPORT_ROWS.`,
+      code: "export_row_cap_exceeded",
+      totalRows,
+      maxRows: MAX_EXPORT_ROWS,
+    });
+    return;
+  }
   const exportedAt = new Date();
   await snapshotHealthCheck(params.data.id, health, req.currentUser!.id);
   // Save touchpoints to history + record export jobs

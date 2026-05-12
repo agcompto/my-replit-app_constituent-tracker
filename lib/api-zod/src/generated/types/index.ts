@@ -69,6 +69,7 @@ export * from "./passwordResetResponse";
 export * from "./passwordSetupTokenInfo";
 export * from "./passwordSetupTokenInfoKind";
 export * from "./perTouchPreview";
+export * from "./reauthInput";
 export * from "./retentionInput";
 export * from "./retentionResult";
 export * from "./savedReportView";

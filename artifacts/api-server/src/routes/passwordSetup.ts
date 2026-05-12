@@ -6,6 +6,7 @@ import { ValidatePasswordSetupTokenParams, CompletePasswordSetupParams, Complete
 import { validateSetupToken } from "../lib/passwordSetupTokens";
 import { validatePasswordPolicy } from "../lib/passwordPolicy";
 import { checkPasswordSetupGetPerIp } from "../lib/rateLimit";
+import { revokeOtherSessionsForUser } from "../lib/session";
 
 const router: IRouter = Router();
 
@@ -116,6 +117,20 @@ router.post(
     if (!ok) {
       res.status(404).json({ error: "This link is invalid or has expired." });
       return;
+    }
+
+    // Revoke every existing session for this user. Setting a new password
+    // (whether after invite or password reset) MUST invalidate any
+    // pre-existing session for that account — otherwise an attacker who
+    // had stolen the user's old session cookie keeps access even after
+    // the legitimate owner resets their password. We pass `null` for
+    // keepSid because the caller of this route is unauthenticated (they
+    // just used a link from email), so there's no current session worth
+    // preserving.
+    try {
+      await revokeOtherSessionsForUser(t.userId, null);
+    } catch {
+      // Non-fatal — the password change itself succeeded.
     }
 
     // Regenerate any in-flight session to defeat fixation, then mark the

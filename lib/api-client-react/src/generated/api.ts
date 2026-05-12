@@ -65,6 +65,7 @@ import type {
   OwningUnitUpdate,
   PasswordResetInput,
   PasswordSetupTokenInfo,
+  ReauthInput,
   RetentionInput,
   RetentionResult,
   SavedReportView,
@@ -462,6 +463,92 @@ export const useAcknowledgePii = <
   TContext
 > => {
   return useMutation(getAcknowledgePiiMutationOptions(options));
+};
+
+/**
+ * @summary Re-verify the current user's password to satisfy `requireRecentAuth`.
+ */
+export const getReauthUrl = () => {
+  return `/api/auth/reauth`;
+};
+
+export const reauth = async (
+  reauthInput: ReauthInput,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getReauthUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(reauthInput),
+  });
+};
+
+export const getReauthMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reauth>>,
+    TError,
+    { data: BodyType<ReauthInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof reauth>>,
+  TError,
+  { data: BodyType<ReauthInput> },
+  TContext
+> => {
+  const mutationKey = ["reauth"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof reauth>>,
+    { data: BodyType<ReauthInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return reauth(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReauthMutationResult = NonNullable<
+  Awaited<ReturnType<typeof reauth>>
+>;
+export type ReauthMutationBody = BodyType<ReauthInput>;
+export type ReauthMutationError = ErrorType<void>;
+
+/**
+ * @summary Re-verify the current user's password to satisfy `requireRecentAuth`.
+ */
+export const useReauth = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reauth>>,
+    TError,
+    { data: BodyType<ReauthInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof reauth>>,
+  TError,
+  { data: BodyType<ReauthInput> },
+  TContext
+> => {
+  return useMutation(getReauthMutationOptions(options));
 };
 
 export const getChangeOwnPasswordUrl = () => {

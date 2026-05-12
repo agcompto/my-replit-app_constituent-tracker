@@ -33,6 +33,11 @@ export interface SessionUser {
   mustChangePassword: boolean;
 }
 
+export interface ReauthInput {
+  /** @minLength 1 */
+  password: string;
+}
+
 export interface ChangePasswordInput {
   currentPassword: string;
   /** @minLength 8 */

@@ -27,10 +27,23 @@ app.use(
     logger,
     serializers: {
       req(req) {
+        // Strip query string AND redact bearer-style path tokens so
+        // password-setup links never appear verbatim in request logs.
+        // The full token is enough to take over an account, so a single
+        // log line capturing it is enough to compromise a user.
+        const rawUrl = req.url?.split("?")[0] ?? "";
+        // Routes are mounted under /api, so live request URLs are
+        // /api/password-setup/:token[/complete] — the regex must match
+        // both the bare and /api-prefixed forms or the redaction is a
+        // no-op and tokens leak verbatim into access logs.
+        const url = rawUrl.replace(
+          /^(\/api)?\/password-setup\/[^/]+(\/complete)?$/,
+          "$1/password-setup/[REDACTED]$2",
+        );
         return {
           id: req.id,
           method: req.method,
-          url: req.url?.split("?")[0],
+          url,
         };
       },
       res(res) {

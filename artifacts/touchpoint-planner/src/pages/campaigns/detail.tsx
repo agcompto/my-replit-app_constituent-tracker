@@ -16,7 +16,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, ArrowLeft, Edit, Archive, Ban, Sparkles, RefreshCw, Trash2, AlertTriangle } from "lucide-react";
 import { format } from "date-fns";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { ReauthDialog, isReauthRequired } from "@/components/ReauthDialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { useGetMe } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
@@ -37,6 +38,22 @@ export default function CampaignDetail() {
   const deleteMutation = useDeleteCampaign();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [reauthOpen, setReauthOpen] = useState(false);
+  // Server gates DELETE /campaigns/:id on requireRecentAuth — if it
+  // responds with code "reauth_required", pop the password prompt and
+  // retry the delete on success.
+  useEffect(() => {
+    if (isReauthRequired(deleteMutation.error)) setReauthOpen(true);
+  }, [deleteMutation.error]);
+  const runDelete = () =>
+    deleteMutation.mutate({ id }, {
+      onSuccess: () => {
+        toast({ title: "Campaign deleted", description: `"${campaign?.name ?? ""}" has been permanently removed.` });
+        setDeleteOpen(false);
+        setDeleteConfirm("");
+        setLocation("/campaigns");
+      },
+    });
   const { data: settings } = useGetSettings();
   const aiSummaryMutation = useAiAudienceSummary();
   const { toast } = useToast();
@@ -129,12 +146,22 @@ export default function CampaignDetail() {
               instead.
             </DialogDescription>
           </DialogHeader>
-          {deleteMutation.error ? (
+          {deleteMutation.error && !isReauthRequired(deleteMutation.error) ? (
             <div className="bg-destructive/10 text-destructive p-3 rounded-md text-sm flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 shrink-0" />
-              <span>{(deleteMutation.error as any)?.data?.error || "Failed to delete campaign."}</span>
+              <span>{(deleteMutation.error as any)?.data?.error || (deleteMutation.error as any)?.response?.data?.error || "Failed to delete campaign."}</span>
             </div>
           ) : null}
+          <ReauthDialog
+            open={reauthOpen}
+            onClose={() => setReauthOpen(false)}
+            onSuccess={() => {
+              setReauthOpen(false);
+              deleteMutation.reset();
+              runDelete();
+            }}
+            description="Deleting a campaign is permanent. Re-enter your password to confirm."
+          />
           <div className="space-y-2">
             <Label>Type the campaign name to confirm</Label>
             <Input
@@ -149,14 +176,7 @@ export default function CampaignDetail() {
             <Button
               variant="destructive"
               disabled={deleteMutation.isPending || deleteConfirm !== campaign.name}
-              onClick={() => deleteMutation.mutate({ id }, {
-                onSuccess: () => {
-                  toast({ title: "Campaign deleted", description: `"${campaign.name}" has been permanently removed.` });
-                  setDeleteOpen(false);
-                  setDeleteConfirm("");
-                  setLocation("/campaigns");
-                },
-              })}
+              onClick={runDelete}
               data-testid="button-confirm-delete-campaign"
             >
               {deleteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Delete Permanently"}

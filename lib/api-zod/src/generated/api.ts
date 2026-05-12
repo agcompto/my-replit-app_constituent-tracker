@@ -49,6 +49,14 @@ export const AcknowledgePiiResponse = zod.object({
   mustChangePassword: zod.boolean(),
 });
 
+/**
+ * @summary Re-verify the current user's password to satisfy `requireRecentAuth`.
+ */
+
+export const ReauthBody = zod.object({
+  password: zod.string().min(1),
+});
+
 export const changeOwnPasswordBodyNewPasswordMin = 8;
 
 export const ChangeOwnPasswordBody = zod.object({
