@@ -1134,6 +1134,32 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Touch" }
+  /campaigns/{id}/touches/{touchId}/last-manual-date-edit:
+    get:
+      operationId: getLastManualDateEdit
+      tags: [touches]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: touchId, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LastManualDateEdit" }
+  /campaigns/{id}/touches/{touchId}/undo-manual-date-edit:
+    post:
+      operationId: undoManualDateEdit
+      tags: [touches]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: touchId, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Touch" }
   /ai/classify-suppression-reason:
     post:
       operationId: aiClassifySuppressionReason
@@ -2025,6 +2051,14 @@ components:
         from: { type: string, format: date }
         to: { type: string, format: date }
         appliedAt: { type: string, format: date-time }
+    LastManualDateEdit:
+      type: object
+      required: [available]
+      properties:
+        available: { type: boolean }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        editedAt: { type: string, format: date-time }
     AiClassifyInput:
       type: object
       required: [text]

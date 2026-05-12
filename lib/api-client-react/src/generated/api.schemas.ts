@@ -949,6 +949,13 @@ export interface LastAiDateShift {
   appliedAt?: string;
 }
 
+export interface LastManualDateEdit {
+  available: boolean;
+  from?: string;
+  to?: string;
+  editedAt?: string;
+}
+
 export interface AiClassifyInput {
   /**
    * @minLength 3

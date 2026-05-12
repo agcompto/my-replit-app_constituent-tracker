@@ -60,6 +60,7 @@ export * from "./highVolumeDonor";
 export * from "./highVolumeDonorByChannelItem";
 export * from "./inviteResponse";
 export * from "./lastAiDateShift";
+export * from "./lastManualDateEdit";
 export * from "./listCampaignsParams";
 export * from "./listSavedReportViewsParams";
 export * from "./loginInput";

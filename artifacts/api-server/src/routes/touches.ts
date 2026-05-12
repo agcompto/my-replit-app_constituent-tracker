@@ -15,6 +15,8 @@ import {
   ApplyAiDateShiftBody,
   GetLastAiDateShiftParams,
   UndoAiDateShiftParams,
+  GetLastManualDateEditParams,
+  UndoManualDateEditParams,
 } from "@workspace/api-zod";
 import { requireAuth, audit, canMutateCampaign } from "../lib/auth";
 import { resolveAudienceSource } from "../lib/audienceSource";
@@ -133,6 +135,23 @@ router.patch(
     if (updates.sendDate instanceof Date) {
       updates.sendDate = updates.sendDate.toISOString().slice(0, 10);
     }
+    // Read the existing row so we can detect a manual send-date change and
+    // record the from→to in the audit row that powers the wizard's "Undo"
+    // affordance on the touches step.
+    const [prior] = await db
+      .select()
+      .from(touchesTable)
+      .where(and(
+        eq(touchesTable.id, params.data.touchId),
+        eq(touchesTable.campaignId, params.data.id),
+      ));
+    if (!prior) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    const priorISO = typeof prior.sendDate === "string"
+      ? prior.sendDate
+      : (prior.sendDate as Date).toISOString().slice(0, 10);
     const [row] = await db
       .update(touchesTable)
       .set(updates)
@@ -147,11 +166,19 @@ router.patch(
       res.status(404).json({ error: "Not found" });
       return;
     }
+    const newISO = typeof row.sendDate === "string"
+      ? row.sendDate
+      : (row.sendDate as Date).toISOString().slice(0, 10);
+    const sendDateChanged =
+      typeof updates.sendDate === "string" && newISO !== priorISO;
     await audit({
       actor: req.currentUser!,
       action: "update_touch",
       entityType: "touch",
       entityId: row.id,
+      details: sendDateChanged
+        ? `source=manual_edit from=${priorISO} to=${newISO}`
+        : undefined,
     });
     res.json(await shapeTouch(row));
   },
@@ -383,6 +410,135 @@ router.post(
       entityType: "touch",
       entityId: row.id,
       details: `source=ai_suggestion_undo from=${last.to} to=${last.from}`,
+    });
+    res.json(await shapeTouch(row));
+  },
+);
+
+// Manual send-date edit undo. Walks `entityType=touch entityId=touchId` audit
+// rows newest-to-oldest looking for the most recent `update_touch` row whose
+// details match `source=manual_edit from=X to=Y`. If we hit a
+// `touch_date_manual_undone` first, the latest manual edit was already undone.
+// We do NOT short-circuit on `update_touch` rows without a manual-edit detail
+// (e.g. a name-only change), since those should not block undoing an earlier
+// date change.
+async function findLastUndoableManualDateEdit(touchId: number): Promise<
+  { from: string; to: string; editedAt: string } | null
+> {
+  const rows = await db
+    .select()
+    .from(auditLogTable)
+    .where(and(
+      eq(auditLogTable.entityType, "touch"),
+      eq(auditLogTable.entityId, touchId),
+    ))
+    .orderBy(desc(auditLogTable.createdAt))
+    .limit(50);
+  for (const r of rows) {
+    if (r.action === "touch_date_manual_undone") return null;
+    if (r.action === "update_touch") {
+      const m = /source=manual_edit from=(\d{4}-\d{2}-\d{2}) to=(\d{4}-\d{2}-\d{2})/.exec(r.details ?? "");
+      if (m) {
+        const editedAt = r.createdAt.toISOString();
+        if (Date.now() - new Date(editedAt).getTime() > UNDO_WINDOW_MS) return null;
+        return { from: m[1], to: m[2], editedAt };
+      }
+    }
+  }
+  return null;
+}
+
+router.get(
+  "/campaigns/:id/touches/:touchId/last-manual-date-edit",
+  requireAuth,
+  async (req, res): Promise<void> => {
+    const params = GetLastManualDateEditParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const access = await canMutateCampaign(params.data.id, req.currentUser!);
+    if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
+    if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
+    if (access === "voided") { res.json({ available: false }); return; }
+    const [touch] = await db
+      .select()
+      .from(touchesTable)
+      .where(and(
+        eq(touchesTable.id, params.data.touchId),
+        eq(touchesTable.campaignId, params.data.id),
+      ));
+    if (!touch) { res.status(404).json({ error: "Not found" }); return; }
+    const currentISO = typeof touch.sendDate === "string"
+      ? touch.sendDate
+      : (touch.sendDate as Date).toISOString().slice(0, 10);
+    const last = await findLastUndoableManualDateEdit(params.data.touchId);
+    if (!last || last.to !== currentISO) {
+      res.json({ available: false });
+      return;
+    }
+    res.json({ available: true, from: last.from, to: last.to, editedAt: last.editedAt });
+  },
+);
+
+router.post(
+  "/campaigns/:id/touches/:touchId/undo-manual-date-edit",
+  requireAuth,
+  async (req, res): Promise<void> => {
+    const params = UndoManualDateEditParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const access = await canMutateCampaign(params.data.id, req.currentUser!);
+    if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
+    if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
+    if (access === "voided") { res.status(403).json({ error: "Cannot modify a voided campaign" }); return; }
+
+    const [existing] = await db
+      .select()
+      .from(touchesTable)
+      .where(and(
+        eq(touchesTable.id, params.data.touchId),
+        eq(touchesTable.campaignId, params.data.id),
+      ));
+    if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+    const currentISO = typeof existing.sendDate === "string"
+      ? existing.sendDate
+      : (existing.sendDate as Date).toISOString().slice(0, 10);
+
+    const last = await findLastUndoableManualDateEdit(params.data.touchId);
+    if (!last) {
+      res.status(409).json({ error: "No recent manual date change to undo" });
+      return;
+    }
+    if (last.to !== currentISO) {
+      res.status(409).json({ error: "Touch has changed since the manual edit; cannot undo" });
+      return;
+    }
+
+    const [row] = await db
+      .update(touchesTable)
+      .set({ sendDate: last.from })
+      .where(and(
+        eq(touchesTable.id, params.data.touchId),
+        eq(touchesTable.campaignId, params.data.id),
+      ))
+      .returning();
+    if (!row) { res.status(404).json({ error: "Not found" }); return; }
+
+    await audit({
+      actor: req.currentUser!,
+      action: "update_touch",
+      entityType: "touch",
+      entityId: row.id,
+    });
+    await audit({
+      actor: req.currentUser!,
+      action: "touch_date_manual_undone",
+      entityType: "touch",
+      entityId: row.id,
+      details: `source=manual_undo from=${last.to} to=${last.from}`,
     });
     res.json(await shapeTouch(row));
   },

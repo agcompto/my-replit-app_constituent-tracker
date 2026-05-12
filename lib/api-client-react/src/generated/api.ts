@@ -58,6 +58,7 @@ import type {
   HighVolumeDonor,
   InviteResponse,
   LastAiDateShift,
+  LastManualDateEdit,
   ListCampaignsParams,
   ListSavedReportViewsParams,
   LoginInput,
@@ -6419,6 +6420,182 @@ export const useUndoAiDateShift = <
   TContext
 > => {
   return useMutation(getUndoAiDateShiftMutationOptions(options));
+};
+
+export const getGetLastManualDateEditUrl = (id: number, touchId: number) => {
+  return `/api/campaigns/${id}/touches/${touchId}/last-manual-date-edit`;
+};
+
+export const getLastManualDateEdit = async (
+  id: number,
+  touchId: number,
+  options?: RequestInit,
+): Promise<LastManualDateEdit> => {
+  return customFetch<LastManualDateEdit>(
+    getGetLastManualDateEditUrl(id, touchId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetLastManualDateEditQueryKey = (
+  id: number,
+  touchId: number,
+) => {
+  return [
+    `/api/campaigns/${id}/touches/${touchId}/last-manual-date-edit`,
+  ] as const;
+};
+
+export const getGetLastManualDateEditQueryOptions = <
+  TData = Awaited<ReturnType<typeof getLastManualDateEdit>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  touchId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getLastManualDateEdit>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetLastManualDateEditQueryKey(id, touchId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getLastManualDateEdit>>
+  > = ({ signal }) =>
+    getLastManualDateEdit(id, touchId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!(id && touchId),
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getLastManualDateEdit>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetLastManualDateEditQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getLastManualDateEdit>>
+>;
+export type GetLastManualDateEditQueryError = ErrorType<unknown>;
+
+export function useGetLastManualDateEdit<
+  TData = Awaited<ReturnType<typeof getLastManualDateEdit>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  touchId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getLastManualDateEdit>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetLastManualDateEditQueryOptions(
+    id,
+    touchId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getUndoManualDateEditUrl = (id: number, touchId: number) => {
+  return `/api/campaigns/${id}/touches/${touchId}/undo-manual-date-edit`;
+};
+
+export const undoManualDateEdit = async (
+  id: number,
+  touchId: number,
+  options?: RequestInit,
+): Promise<Touch> => {
+  return customFetch<Touch>(getUndoManualDateEditUrl(id, touchId), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getUndoManualDateEditMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof undoManualDateEdit>>,
+    TError,
+    { id: number; touchId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof undoManualDateEdit>>,
+  TError,
+  { id: number; touchId: number },
+  TContext
+> => {
+  const mutationKey = ["undoManualDateEdit"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof undoManualDateEdit>>,
+    { id: number; touchId: number }
+  > = (props) => {
+    const { id, touchId } = props ?? {};
+
+    return undoManualDateEdit(id, touchId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UndoManualDateEditMutationResult = NonNullable<
+  Awaited<ReturnType<typeof undoManualDateEdit>>
+>;
+
+export type UndoManualDateEditMutationError = ErrorType<unknown>;
+
+export const useUndoManualDateEdit = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof undoManualDateEdit>>,
+    TError,
+    { id: number; touchId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof undoManualDateEdit>>,
+  TError,
+  { id: number; touchId: number },
+  TContext
+> => {
+  return useMutation(getUndoManualDateEditMutationOptions(options));
 };
 
 export const getAiClassifySuppressionReasonUrl = () => {

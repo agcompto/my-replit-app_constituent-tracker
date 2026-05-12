@@ -9,7 +9,10 @@ import {
   useClearTouchAudience,
   useGetSettings,
   useAiSuggestCadence,
+  useGetLastManualDateEdit,
+  useUndoManualDateEdit,
   getListTouchesQueryKey,
+  getGetLastManualDateEditQueryKey,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -23,12 +26,77 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { PiiWarning } from "@/components/ui/PiiWarning";
-import { Loader2, Plus, Edit2, Trash2, AlertTriangle, Info, Users, Upload, FileText, X, Download, Sparkles } from "lucide-react";
+import { Loader2, Plus, Edit2, Trash2, AlertTriangle, Info, Users, Upload, FileText, X, Download, Sparkles, Undo2, ArrowRight } from "lucide-react";
 import { format, isBefore, startOfDay } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { downloadCSV } from "@/lib/utils";
+
+function UndoableManualDateEdit({
+  campaignId,
+  touchId,
+  touchName,
+  wizardLocked,
+}: {
+  campaignId: number;
+  touchId: number;
+  touchName: string;
+  wizardLocked: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const { data } = useGetLastManualDateEdit(campaignId, touchId, {
+    query: {
+      queryKey: getGetLastManualDateEditQueryKey(campaignId, touchId),
+      enabled: !!campaignId && !!touchId && !wizardLocked,
+    },
+  });
+  const undo = useUndoManualDateEdit();
+  if (!data?.available) return null;
+
+  const handleClick = () => {
+    undo.mutate(
+      { id: campaignId, touchId },
+      {
+        onSuccess: () => {
+          toast({
+            title: "Date change undone",
+            description: `${touchName}: ${data.to} → ${data.from}`,
+          });
+          queryClient.invalidateQueries({ queryKey: getGetLastManualDateEditQueryKey(campaignId, touchId) });
+          queryClient.invalidateQueries({ queryKey: getListTouchesQueryKey(campaignId) });
+        },
+        onError: (err: any) => toast({
+          title: "Could not undo date change",
+          description: err?.response?.data?.error || err?.message || "Unknown error",
+          variant: "destructive",
+        }),
+      },
+    );
+  };
+
+  return (
+    <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
+      <span className="font-mono">{data.from}</span>
+      <ArrowRight className="h-3 w-3" />
+      <span className="font-mono">{data.to}</span>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-6 px-2 text-xs"
+        onClick={handleClick}
+        disabled={undo.isPending}
+        title={`Restore previous send date (${data.from})`}
+      >
+        {undo.isPending
+          ? <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+          : <Undo2 className="h-3 w-3 mr-1" />}
+        Undo
+      </Button>
+    </div>
+  );
+}
 
 interface AudienceUploadResult {
   uniqueCount: number;
@@ -127,7 +195,16 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
   const activeChannels = channels?.filter(c => c.active) || [];
   const activeCampaignTypes = campaign.campaignTypes || [];
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: getListTouchesQueryKey(campaign.id) });
+  const wizardLocked = campaign.status === "finalized" || campaign.status === "exported" || campaign.status === "voided" || campaign.status === "archived";
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: getListTouchesQueryKey(campaign.id) });
+    // After any touch mutation, the latest manual-date-edit availability may
+    // have flipped — invalidate every per-touch query for this campaign.
+    queryClient.invalidateQueries({ predicate: (q) => {
+      const k = q.queryKey?.[0];
+      return typeof k === "string" && k.includes("/last-manual-date-edit");
+    } });
+  };
 
   const handleOpenNew = () => {
     setEditingId(null);
@@ -298,7 +375,15 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
                       <TableCell className="pl-6 font-medium">{t.touchName}</TableCell>
                       <TableCell>{t.channelLabel}</TableCell>
                       <TableCell>{t.campaignTypeLabel}</TableCell>
-                      <TableCell>{format(new Date(t.sendDate), "MMM d, yyyy")}</TableCell>
+                      <TableCell>
+                        {format(new Date(t.sendDate), "MMM d, yyyy")}
+                        <UndoableManualDateEdit
+                          campaignId={campaign.id}
+                          touchId={t.id}
+                          touchName={t.touchName}
+                          wizardLocked={wizardLocked}
+                        />
+                      </TableCell>
                       <TableCell>
                         {custom ? (
                           <div className="flex items-center gap-2">
