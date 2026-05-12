@@ -135,6 +135,15 @@ export function checkExportQuota(userId: number): RateLimitResult {
   return checkSlidingRate(`export|user|${userId}`, 20, 60 * 60_000);
 }
 
+// Forgot-password (self-service): 5 requests / 15 minutes / IP.
+// The endpoint is intentionally enumeration-safe (always returns the same 200
+// regardless of whether the email exists), so the only thing this throttle
+// defends against is mailbomb / DoS amplification — an attacker submitting
+// thousands of emails to spam victims' inboxes or burn our Resend quota.
+export function checkForgotPasswordPerIp(ip: string): RateLimitResult {
+  return checkSlidingRate(`forgot|ip|${ip}`, 5, 15 * 60_000);
+}
+
 // Periodic cleanup
 setInterval(() => {
   const now = Date.now();

@@ -5,6 +5,7 @@ import { logger } from "./logger";
 import { generateTempPassword } from "./password";
 import { issueSetupToken } from "./passwordSetupTokens";
 import { buildSetupPasswordUrl } from "./appUrl";
+import { sendInviteEmail, sendResetEmail, emailEnabled } from "./email";
 
 const DEFAULT_CHANNELS = [
   "Email",
@@ -111,12 +112,27 @@ export async function seedDefaults(): Promise<void> {
       .returning();
 
     const ttlHours = 48;
-    const { rawToken } = await issueSetupToken({
+    const { rawToken, expiresAt } = await issueSetupToken({
       userId: created.id,
       kind: "invite",
       ttlHours,
     });
     const setupUrl = buildSetupPasswordUrl(rawToken);
+
+    // Try to email the link too, when the operator has provisioned a real
+    // address and Resend is configured. The stderr fallback below always
+    // runs regardless, so a Resend outage on first boot can't lock the
+    // operator out of the freshly-seeded environment.
+    let emailedNote = "";
+    if (emailEnabled() && adminEmail !== "admin@example.com") {
+      const r = await sendInviteEmail({
+        to: adminEmail,
+        name: "Default Super Admin",
+        setupUrl,
+        expiresAt,
+      });
+      if (r.ok) emailedNote = " (also emailed to the address above)";
+    }
 
     logger.warn(
       "BOOTSTRAP: Initial super_admin account created. Setup link below — open it once to choose a password.",
@@ -126,7 +142,7 @@ export async function seedDefaults(): Promise<void> {
         "",
         "========================================================",
         " BOOTSTRAP: Initial super_admin account created",
-        `   Email:     ${adminEmail}`,
+        `   Email:     ${adminEmail}${emailedNote}`,
         `   Setup URL: ${setupUrl}`,
         ` This single-use link expires in ${ttlHours} hours.`,
         "========================================================",
@@ -166,12 +182,25 @@ export async function seedDefaults(): Promise<void> {
         .set({ failedLoginAttempts: 0, lockedUntil: null })
         .where(eq(usersTable.id, admin.id));
       const ttlHours = 2;
-      const { rawToken } = await issueSetupToken({
+      const { rawToken, expiresAt } = await issueSetupToken({
         userId: admin.id,
         kind: "reset",
         ttlHours,
       });
       const setupUrl = buildSetupPasswordUrl(rawToken);
+
+      let emailedNote = "";
+      if (emailEnabled() && adminEmail !== "admin@example.com") {
+        const r = await sendResetEmail({
+          to: adminEmail,
+          name: "Default Super Admin",
+          setupUrl,
+          expiresAt,
+          source: "admin",
+        });
+        if (r.ok) emailedNote = " (also emailed to the address above)";
+      }
+
       logger.warn(
         "BOOTSTRAP_RESET_ADMIN: Reset link issued for super_admin — see stderr below.",
       );
@@ -180,7 +209,7 @@ export async function seedDefaults(): Promise<void> {
           "",
           "========================================================",
           " BOOTSTRAP_RESET_ADMIN: One-shot password reset",
-          `   Email:     ${adminEmail}`,
+          `   Email:     ${adminEmail}${emailedNote}`,
           `   Setup URL: ${setupUrl}`,
           ` Single-use, expires in ${ttlHours} hours.`,
           " Unset BOOTSTRAP_RESET_ADMIN and redeploy after use.",

@@ -6,6 +6,7 @@ import {
   LoginBody,
   ChangeOwnPasswordBody,
   ReauthBody,
+  ForgotPasswordBody,
 } from "@workspace/api-zod";
 import { loadUser, requireAuth, audit } from "../lib/auth";
 import { revokeOtherSessionsForUser } from "../lib/session";
@@ -16,7 +17,11 @@ import {
   checkChangePasswordRate,
   recordChangePasswordFailure,
   recordChangePasswordSuccess,
+  checkForgotPasswordPerIp,
 } from "../lib/rateLimit";
+import { issueSetupToken } from "../lib/passwordSetupTokens";
+import { buildSetupPasswordUrl } from "../lib/appUrl";
+import { sendResetEmail } from "../lib/email";
 import { SESSION_TTL_MS } from "../lib/session";
 import {
   getLockoutState,
@@ -213,6 +218,101 @@ router.post(
     res.status(204).end();
   },
 );
+
+/**
+ * Self-service "forgot password" endpoint.
+ *
+ * Security model:
+ *  - Always responds 200 with the same generic body, regardless of whether
+ *    the submitted email matches an account. This is the long-standing
+ *    defence against account-existence enumeration.
+ *  - If a real, active account matches, we issue a short-lived (2h)
+ *    single-use reset token and email the link via Resend. Issuing a new
+ *    reset token revokes any prior live one (`issueSetupToken`).
+ *  - Pre-auth IP rate-limited (5 / 15 min) to prevent mailbomb abuse.
+ *  - Timing parity: every code path (rate-limited, malformed body, no-such-
+ *    user, inactive user, real match with token issue + Resend call, real
+ *    match with thrown error) is held to a constant floor response time of
+ *    ~FORGOT_PASSWORD_FLOOR_MS plus small jitter, scheduled before any
+ *    branching work so the matched/unmatched latency distribution is
+ *    indistinguishable from the client's perspective even with statistical
+ *    timing analysis. Combined with the per-IP rate limit and the constant
+ *    200 response body, this closes the timing oracle that would otherwise
+ *    let an attacker enumerate accounts.
+ *  - The audit log entry references the matched user (or is omitted if no
+ *    match) so the audit feed doesn't accumulate one row per bot probe.
+ */
+const FORGOT_PASSWORD_FLOOR_MS = 750;
+const FORGOT_PASSWORD_JITTER_MS = 150;
+const GENERIC_FORGOT_BODY = {
+  message:
+    "If an account exists for that email, a password reset link has been sent.",
+};
+
+router.post("/auth/forgot-password", async (req, res): Promise<void> => {
+  // Schedule the minimum response time before any branching so that fast
+  // paths (rate-limited, validation failure, no-such-user) and slow paths
+  // (token insert + outbound email) all converge on the same response
+  // latency floor + small random jitter.
+  const jitter = Math.floor(Math.random() * FORGOT_PASSWORD_JITTER_MS);
+  const floor = new Promise<void>((resolve) =>
+    setTimeout(resolve, FORGOT_PASSWORD_FLOOR_MS + jitter),
+  );
+
+  try {
+    const ip = req.ip ?? "unknown";
+    const limit = checkForgotPasswordPerIp(ip);
+    if (!limit.allowed) return;
+
+    const parsed = ForgotPasswordBody.safeParse(req.body);
+    if (!parsed.success) return;
+    const normalizedEmail = parsed.data.email.toLowerCase().trim();
+
+    const [u] = await db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.email, normalizedEmail));
+
+    if (!u || !u.active) return;
+
+    try {
+      const { rawToken, expiresAt } = await issueSetupToken({
+        userId: u.id,
+        kind: "reset",
+        createdByUserId: null,
+        ttlHours: 2,
+      });
+      const setupUrl = buildSetupPasswordUrl(rawToken);
+      const sendResult = await sendResetEmail({
+        to: u.email,
+        name: u.name,
+        setupUrl,
+        expiresAt,
+        source: "self_service",
+      });
+      const sessionUser = await loadUser(u.id);
+      if (sessionUser) {
+        await audit({
+          actor: sessionUser,
+          action: "self_service_password_reset_requested",
+          entityType: "user",
+          entityId: u.id,
+          details: sendResult.ok
+            ? "Self-service reset link emailed"
+            : "Self-service reset link issued (email send failed; user must contact admin)",
+        });
+      }
+    } catch (err) {
+      req.log.warn(
+        { errName: (err as Error).name },
+        "forgot-password: failed to issue/send reset for matched user",
+      );
+    }
+  } finally {
+    await floor;
+    res.status(200).json(GENERIC_FORGOT_BODY);
+  }
+});
 
 router.post("/auth/logout", (req, res): void => {
   req.session.destroy(() => {

@@ -95,15 +95,26 @@ export interface PasswordResetInput {
 }
 
 export interface InviteResponse {
-  /** One-time setup URL the admin must deliver to the user out-of-band. Single use, short-lived. */
+  /** One-time setup URL. Always returned so the admin has a fallback to deliver out-of-band if email is unavailable. */
   setupUrl: string;
   expiresAt: string;
+  /** True when the link was successfully emailed directly to the user. False when email is not configured or the send failed; in that case the admin must hand-deliver the URL. */
+  emailed: boolean;
 }
 
 export interface UserCreatedResponse {
   user: User;
   setupUrl: string;
   expiresAt: string;
+  emailed: boolean;
+}
+
+export interface ForgotPasswordInput {
+  email: string;
+}
+
+export interface ForgotPasswordAck {
+  message: string;
 }
 
 export type PasswordResetResponse = InviteResponse;

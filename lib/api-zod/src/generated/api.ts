@@ -57,6 +57,17 @@ export const ReauthBody = zod.object({
   password: zod.string().min(1),
 });
 
+/**
+ * @summary Self-service password reset request. Always returns 200 with the same body to prevent account-existence enumeration.
+ */
+export const ForgotPasswordBody = zod.object({
+  email: zod.string().email(),
+});
+
+export const ForgotPasswordResponse = zod.object({
+  message: zod.string(),
+});
+
 export const changeOwnPasswordBodyNewPasswordMin = 8;
 
 export const ChangeOwnPasswordBody = zod.object({
@@ -123,9 +134,14 @@ export const ResetUserPasswordResponse = zod.object({
   setupUrl: zod
     .string()
     .describe(
-      "One-time setup URL the admin must deliver to the user out-of-band. Single use, short-lived.",
+      "One-time setup URL. Always returned so the admin has a fallback to deliver out-of-band if email is unavailable.",
     ),
   expiresAt: zod.coerce.date(),
+  emailed: zod
+    .boolean()
+    .describe(
+      "True when the link was successfully emailed directly to the user. False when email is not configured or the send failed; in that case the admin must hand-deliver the URL.",
+    ),
 });
 
 export const ResendInviteParams = zod.object({
@@ -136,9 +152,14 @@ export const ResendInviteResponse = zod.object({
   setupUrl: zod
     .string()
     .describe(
-      "One-time setup URL the admin must deliver to the user out-of-band. Single use, short-lived.",
+      "One-time setup URL. Always returned so the admin has a fallback to deliver out-of-band if email is unavailable.",
     ),
   expiresAt: zod.coerce.date(),
+  emailed: zod
+    .boolean()
+    .describe(
+      "True when the link was successfully emailed directly to the user. False when email is not configured or the send failed; in that case the admin must hand-deliver the URL.",
+    ),
 });
 
 export const ValidatePasswordSetupTokenParams = zod.object({

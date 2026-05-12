@@ -13,8 +13,13 @@ Internal NC State University Advancement tool for planning donor communication t
 - Optional: `APP_PUBLIC_URL` — base URL embedded in setup links (e.g. `https://planner.advancement.ncsu.edu`). Falls back to `REPLIT_DOMAINS`/`localhost` so dev still works.
 - Optional: `PASSWORD_HIBP_DISABLED=1` — escape hatch for offline test/dev that skips the Have-I-Been-Pwned k-anonymity breach check.
 - Optional bootstrap: `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_NAME` — override the seeded super-admin identity.
+- Optional email: `RESEND_API_KEY`, `EMAIL_FROM` — when both are set, the server sends invite/reset/forgot-password links via Resend in addition to returning them in the admin API response. With Resend's test sender (`onboarding@resend.dev`) no domain verification is required for dev/staging; for production pin a verified sending domain. Email is best-effort — failures never block the admin flow, and the setup URL is still returned in the response so the admin can deliver it manually.
 
-The system **does not send email**. All account-setup, password-reset, and "resend invite" flows return a one-time setup URL to the calling admin in the API response; the admin hands the link to the user out-of-band (in person, secure messenger, etc.). There is no "forgot password" self-service endpoint — users must contact an admin who issues a fresh setup link.
+When email is **not** configured the system behaves as before: account-setup, admin-issued password-reset, and "resend invite" flows return a one-time setup URL to the calling admin in the API response, and the admin hands the link to the user out-of-band. When email **is** configured the same link is also emailed to the user; the API response gains an `emailed: boolean` field so the admin UI can show "Email sent to <user>" and offer the copy-link as a backup channel.
+
+## Self-service forgot-password
+
+`POST /auth/forgot-password { email }` lets a user request their own reset link. The endpoint is **enumeration-safe** (always 200 with a generic message, regardless of whether the email matched), runs a dummy code path on the no-user branch so timing parity is preserved, and is **per-IP rate-limited** to 5 / 15 min via `checkForgotPasswordPerIp`. On a real, active match it issues a 2-hour single-use reset token (revoking any prior live reset token), emails the link via Resend if configured, and writes a `self_service_password_reset_requested` audit row. If `RESEND_API_KEY` is unset the route still 200s but cannot deliver the link — users must contact an admin in that deployment. The "Forgot your password?" link on the login page routes to `/forgot-password`.
 
 ## Bootstrap super-admin (dev / fresh DB)
 
@@ -65,7 +70,8 @@ Responses to `POST /users`, `POST /users/:id/reset-password`, and `POST /users/:
 - Donor ID parsing/normalization + CSV escape: `artifacts/api-server/src/lib/donor.ts`
 - Password tokens / policy / lockout: `artifacts/api-server/src/lib/passwordSetupTokens.ts`, `passwordPolicy.ts`, `lockout.ts`
 - Setup URL building: `artifacts/api-server/src/lib/appUrl.ts`
-- Web app: `artifacts/touchpoint-planner/src/` (setup-link page: `pages/setup-password.tsx`)
+- Web app: `artifacts/touchpoint-planner/src/` (setup-link page: `pages/setup-password.tsx`, forgot-password page: `pages/forgot-password.tsx`)
+- Email transport: `artifacts/api-server/src/lib/email.ts` (fetch-based Resend wrapper, `sendInviteEmail` / `sendResetEmail` / `emailEnabled`)
 
 ## Hardening (May 2026 bundle)
 

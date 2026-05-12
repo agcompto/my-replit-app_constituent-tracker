@@ -80,6 +80,7 @@ interface InviteResult {
   setupUrl: string;
   expiresAt: string;
   kind: "invite" | "reset";
+  emailed?: boolean;
 }
 
 const createSchema = z.object({
@@ -301,6 +302,7 @@ function CreateUserDialog({
             setupUrl: resp.setupUrl,
             expiresAt: resp.expiresAt,
             kind: "invite",
+            emailed: resp.emailed,
           });
           form.reset();
           onOpenChange(false);
@@ -581,6 +583,7 @@ function ResetPasswordDialog({
             setupUrl: resp.setupUrl,
             expiresAt: resp.expiresAt,
             kind: "reset",
+            emailed: resp.emailed,
           });
           onClose();
         },
@@ -654,6 +657,7 @@ function ResendInviteDialog({
             setupUrl: resp.setupUrl,
             expiresAt: resp.expiresAt,
             kind: "invite",
+            emailed: resp.emailed,
           });
           onClose();
         },
@@ -854,11 +858,28 @@ function InviteResultDialog({
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
-            Copy the one-time link below and share it with{" "}
-            <strong>{invite.email}</strong> through a secure channel (e.g.
-            in person or via an authenticated workplace messenger).
+            {invite.emailed ? (
+              <>
+                The one-time link was emailed to{" "}
+                <strong>{invite.email}</strong>. You can also copy the link
+                below and deliver it through another secure channel as a
+                backup.
+              </>
+            ) : (
+              <>
+                Copy the one-time link below and share it with{" "}
+                <strong>{invite.email}</strong> through a secure channel (e.g.
+                in person or via an authenticated workplace messenger).
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
+        {invite.emailed && (
+          <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+            <Send className="h-4 w-4" />
+            <span>Email sent to {invite.email}</span>
+          </div>
+        )}
 
         <div className="space-y-3">
           <div className="rounded-md border bg-muted/40 p-3 space-y-2">

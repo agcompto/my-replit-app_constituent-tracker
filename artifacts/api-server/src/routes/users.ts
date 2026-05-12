@@ -15,6 +15,7 @@ import { requireRecentAuth, RECENT_AUTH_WINDOW_MS } from "../lib/recentAuth";
 import { generateTempPassword } from "../lib/password";
 import { issueSetupToken } from "../lib/passwordSetupTokens";
 import { buildSetupPasswordUrl } from "../lib/appUrl";
+import { sendInviteEmail, sendResetEmail } from "../lib/email";
 
 const router: IRouter = Router();
 
@@ -49,10 +50,15 @@ router.get(
  * email). The token in the URL is single-use, short-lived, and stored only
  * as a SHA-256 hash server-side.
  */
-function inviteResponse(opts: { setupUrl: string; expiresAt: Date }) {
+function inviteResponse(opts: {
+  setupUrl: string;
+  expiresAt: Date;
+  emailed?: boolean;
+}) {
   return {
     setupUrl: opts.setupUrl,
     expiresAt: opts.expiresAt.toISOString(),
+    emailed: Boolean(opts.emailed),
   };
 }
 
@@ -102,12 +108,23 @@ router.post(
     });
     const setupUrl = buildSetupPasswordUrl(rawToken);
 
+    // Best-effort send the setup link directly to the new user. If the email
+    // helper isn't configured, or Resend is down, we silently fall back to
+    // the legacy out-of-band flow — the admin still receives `setupUrl` in
+    // this response.
+    const sendResult = await sendInviteEmail({
+      to: createdUser.email,
+      name: createdUser.name,
+      setupUrl,
+      expiresAt,
+    });
+
     await audit({
       actor: req.currentUser!,
       action: "create_user",
       entityType: "user",
       entityId: createdUser.id,
-      details: `Created ${createdUser.email} as ${createdUser.role}`,
+      details: `Created ${createdUser.email} as ${createdUser.role}${sendResult.ok ? " (invite email sent)" : ""}`,
     });
 
     res.status(201).json({
@@ -119,7 +136,7 @@ router.post(
         active: createdUser.active,
         createdAt: createdUser.createdAt.toISOString(),
       },
-      ...inviteResponse({ setupUrl, expiresAt }),
+      ...inviteResponse({ setupUrl, expiresAt, emailed: sendResult.ok }),
     });
   },
 );
@@ -220,15 +237,23 @@ router.post(
     });
     const setupUrl = buildSetupPasswordUrl(rawToken);
 
+    const sendResult = await sendResetEmail({
+      to: u.email,
+      name: u.name,
+      setupUrl,
+      expiresAt,
+      source: "admin",
+    });
+
     await audit({
       actor: req.currentUser!,
       action: "reset_password",
       entityType: "user",
       entityId: u.id,
-      details: `Issued password-reset link`,
+      details: `Issued password-reset link${sendResult.ok ? " (emailed)" : ""}`,
     });
 
-    res.json(inviteResponse({ setupUrl, expiresAt }));
+    res.json(inviteResponse({ setupUrl, expiresAt, emailed: sendResult.ok }));
   },
 );
 
@@ -261,15 +286,22 @@ router.post(
     });
     const setupUrl = buildSetupPasswordUrl(rawToken);
 
+    const sendResult = await sendInviteEmail({
+      to: u.email,
+      name: u.name,
+      setupUrl,
+      expiresAt,
+    });
+
     await audit({
       actor: req.currentUser!,
       action: "resend_invite",
       entityType: "user",
       entityId: u.id,
-      details: `Issued new setup link`,
+      details: `Issued new setup link${sendResult.ok ? " (emailed)" : ""}`,
     });
 
-    res.json(inviteResponse({ setupUrl, expiresAt }));
+    res.json(inviteResponse({ setupUrl, expiresAt, emailed: sendResult.ok }));
   },
 );
 

@@ -11,4 +11,5 @@ export interface UserCreatedResponse {
   user: User;
   setupUrl: string;
   expiresAt: Date;
+  emailed: boolean;
 }
