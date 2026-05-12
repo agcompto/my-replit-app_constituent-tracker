@@ -28,8 +28,9 @@ export interface YoyResult {
 /**
  * Shift an ISO date by N years. Used to derive the prior-year window when
  * the caller does not supply explicit priorStart/priorEnd. Note: a Feb-29
- * input shifted back one year becomes Feb-28 of the prior year (JS Date
- * normalization), which matches the existing behavior of the YoY route.
+ * input shifted into a non-leap year rolls forward to Mar 1 of that year
+ * (JS `Date.UTC` normalization), which matches the existing behavior of
+ * the YoY route.
  *
  * Fiscal-year-boundary safety: this is a pure date arithmetic helper and
  * does not depend on the org's fiscal year. The caller selects the window;
