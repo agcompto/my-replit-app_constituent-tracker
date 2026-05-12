@@ -540,6 +540,28 @@ paths:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
         "204": { description: Deleted }
+  /campaigns/{id}/clone:
+    post:
+      operationId: cloneCampaign
+      tags: [campaigns]
+      summary: |
+        Clone a campaign's structural setup (touches, thresholds, scope-only
+        suppressions, seeds) into a new draft campaign owned by the caller.
+        The audience is intentionally NOT copied — staff upload a fresh list
+        each cycle.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CloneCampaignInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CloneCampaignResponse" }
   /campaigns/{id}/archive:
     post:
       operationId: archiveCampaign
@@ -1675,6 +1697,30 @@ components:
         campaignTypeIds:
           type: array
           items: { type: integer }
+    CloneCampaignInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, description: "New campaign name. Defaults on the client to '<original> (copy)'." }
+        intendedSendStartDate:
+          type: ["string", "null"]
+          format: date
+          description: "New intended send start date for the cloned campaign. If provided and the source had one, touch send dates are shifted by (new - old) days unless dateShiftDays is supplied."
+        dateShiftDays:
+          type: integer
+          description: "Optional explicit day-offset to apply to every copied touch's send date. Overrides the implicit shift derived from intendedSendStartDate."
+    CloneCampaignResponse:
+      type: object
+      required: [campaign, copiedTouches, copiedThresholds, copiedSuppressions, skippedSuppressions, copiedSeeds]
+      properties:
+        campaign: { $ref: "#/components/schemas/Campaign" }
+        copiedTouches: { type: integer }
+        copiedThresholds: { type: integer }
+        copiedSuppressions: { type: integer }
+        skippedSuppressions:
+          type: integer
+          description: "Suppressions skipped because they referenced specific donor IDs from the source audience."
+        copiedSeeds: { type: integer }
     CampaignSummary:
       type: object
       required: [id, name, status, submittedByName, owningUnit, createdAt, touchCount, audienceSize, campaignTypes, validIdCount, rejectedIdCount, duplicateIdCount, extraColumnsIgnored, suppressionCount, seedCount]

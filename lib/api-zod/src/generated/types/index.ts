@@ -36,6 +36,8 @@ export * from "./changePasswordInput";
 export * from "./channel";
 export * from "./channelInput";
 export * from "./channelUpdate";
+export * from "./cloneCampaignInput";
+export * from "./cloneCampaignResponse";
 export * from "./cohortAnalysis";
 export * from "./cohortAnalysisCohortsItem";
 export * from "./completePasswordSetupInput";

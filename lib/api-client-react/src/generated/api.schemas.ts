@@ -265,6 +265,62 @@ export interface CampaignUpdate {
   campaignTypeIds?: number[];
 }
 
+export interface CloneCampaignInput {
+  /** New campaign name. Defaults on the client to '<original> (copy)'. */
+  name: string;
+  /**
+   * New intended send start date for the cloned campaign. If provided and the source had one, touch send dates are shifted by (new - old) days unless dateShiftDays is supplied.
+   * @nullable
+   */
+  intendedSendStartDate?: string | null;
+  /** Optional explicit day-offset to apply to every copied touch's send date. Overrides the implicit shift derived from intendedSendStartDate. */
+  dateShiftDays?: number;
+}
+
+export interface Campaign {
+  id: number;
+  name: string;
+  status: string;
+  /** @nullable */
+  owningUnit?: string | null;
+  submittedByUserId: number;
+  submittedByName: string;
+  /** @nullable */
+  intendedSendStartDate?: string | null;
+  /** @nullable */
+  audienceDescription?: string | null;
+  /** @nullable */
+  salesforceCampaignId?: string | null;
+  /** @nullable */
+  internalNotes?: string | null;
+  originalRowCount?: number;
+  blankRowCount?: number;
+  validIdCount?: number;
+  uniqueIdCount?: number;
+  duplicateIdCount?: number;
+  rejectedIdCount?: number;
+  extraColumnsIgnored?: boolean;
+  createdAt: string;
+  updatedAt?: string;
+  /** @nullable */
+  exportedAt?: string | null;
+  /** @nullable */
+  archivedAt?: string | null;
+  /** @nullable */
+  voidedAt?: string | null;
+  campaignTypes: CampaignType[];
+}
+
+export interface CloneCampaignResponse {
+  campaign: Campaign;
+  copiedTouches: number;
+  copiedThresholds: number;
+  copiedSuppressions: number;
+  /** Suppressions skipped because they referenced specific donor IDs from the source audience. */
+  skippedSuppressions: number;
+  copiedSeeds: number;
+}
+
 /**
  * @nullable
  */
@@ -302,40 +358,6 @@ export interface CampaignSummary {
   /** @nullable */
   lastHealthCheckStatus?: CampaignSummaryLastHealthCheckStatus;
   campaignTypes: string[];
-}
-
-export interface Campaign {
-  id: number;
-  name: string;
-  status: string;
-  /** @nullable */
-  owningUnit?: string | null;
-  submittedByUserId: number;
-  submittedByName: string;
-  /** @nullable */
-  intendedSendStartDate?: string | null;
-  /** @nullable */
-  audienceDescription?: string | null;
-  /** @nullable */
-  salesforceCampaignId?: string | null;
-  /** @nullable */
-  internalNotes?: string | null;
-  originalRowCount?: number;
-  blankRowCount?: number;
-  validIdCount?: number;
-  uniqueIdCount?: number;
-  duplicateIdCount?: number;
-  rejectedIdCount?: number;
-  extraColumnsIgnored?: boolean;
-  createdAt: string;
-  updatedAt?: string;
-  /** @nullable */
-  exportedAt?: string | null;
-  /** @nullable */
-  archivedAt?: string | null;
-  /** @nullable */
-  voidedAt?: string | null;
-  campaignTypes: CampaignType[];
 }
 
 export interface AudienceInput {

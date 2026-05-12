@@ -1,4 +1,4 @@
-import { useGetCampaign, useArchiveCampaign, useVoidCampaign, useDeleteCampaign, useAiAudienceSummary, useGetSettings, getGetCampaignQueryKey, useListTouches, getListTouchesQueryKey } from "@workspace/api-client-react";
+import { useGetCampaign, useArchiveCampaign, useVoidCampaign, useDeleteCampaign, useCloneCampaign, useAiAudienceSummary, useGetSettings, getGetCampaignQueryKey, useListTouches, getListTouchesQueryKey } from "@workspace/api-client-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TouchDateHistoryPopover } from "@/components/touch-date-history-popover";
 import { useRoute, useLocation } from "wouter";
@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, ArrowLeft, Edit, Archive, Ban, Sparkles, RefreshCw, Trash2, AlertTriangle, Printer } from "lucide-react";
+import { Loader2, ArrowLeft, Edit, Archive, Ban, Sparkles, RefreshCw, Trash2, AlertTriangle, Printer, Copy } from "lucide-react";
 import { format } from "date-fns";
 import { useEffect, useState } from "react";
 import { ReauthDialog, isReauthRequired } from "@/components/ReauthDialog";
@@ -41,9 +41,14 @@ export default function CampaignDetail() {
   const archiveMutation = useArchiveCampaign();
   const voidMutation = useVoidCampaign();
   const deleteMutation = useDeleteCampaign();
+  const cloneMutation = useCloneCampaign();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [reauthOpen, setReauthOpen] = useState(false);
+  const [cloneOpen, setCloneOpen] = useState(false);
+  const [cloneName, setCloneName] = useState("");
+  const [cloneIntendedDate, setCloneIntendedDate] = useState("");
+  const [cloneShiftDays, setCloneShiftDays] = useState("");
   // Server gates DELETE /campaigns/:id on requireRecentAuth — if it
   // responds with code "reauth_required", pop the password prompt and
   // retry the delete on success.
@@ -128,6 +133,9 @@ export default function CampaignDetail() {
               <Edit className="h-4 w-4 mr-2" /> Edit Campaign
             </Button>
           )}
+          <Button variant="outline" onClick={() => setCloneOpen(true)} data-testid="button-open-clone">
+            <Copy className="h-4 w-4 mr-2" /> Clone
+          </Button>
           {isAdmin && !isVoided && (
             <>
               {campaign.status !== "archived" && <Button variant="secondary" onClick={handleArchive}><Archive className="h-4 w-4 mr-2" /> Archive</Button>}
@@ -141,6 +149,121 @@ export default function CampaignDetail() {
           )}
         </div>
       </div>
+
+      <Dialog
+        open={cloneOpen}
+        onOpenChange={(v) => {
+          if (v) {
+            setCloneName(`${campaign.name} (copy)`);
+            setCloneIntendedDate(campaign.intendedSendStartDate ?? "");
+            setCloneShiftDays("");
+            cloneMutation.reset();
+          }
+          setCloneOpen(v);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Clone this campaign</DialogTitle>
+            <DialogDescription>
+              Creates a new draft campaign with the same touches, thresholds,
+              scope-only suppressions, and seed groups.{" "}
+              <strong>The audience is not copied</strong> &mdash; you upload a
+              fresh donor list for the new cycle. Donor-ID-specific
+              suppressions are skipped because they referred to people in the
+              old audience.
+            </DialogDescription>
+          </DialogHeader>
+          {cloneMutation.error ? (
+            <div className="bg-destructive/10 text-destructive p-3 rounded-md text-sm flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>{(cloneMutation.error as any)?.data?.error || (cloneMutation.error as any)?.response?.data?.error || "Failed to clone campaign."}</span>
+            </div>
+          ) : null}
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="clone-name">New campaign name</Label>
+              <Input
+                id="clone-name"
+                value={cloneName}
+                onChange={(e) => setCloneName(e.target.value)}
+                data-testid="input-clone-name"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="clone-date">New intended send date</Label>
+              <Input
+                id="clone-date"
+                type="date"
+                value={cloneIntendedDate}
+                onChange={(e) => setCloneIntendedDate(e.target.value)}
+                data-testid="input-clone-date"
+              />
+              <p className="text-xs text-muted-foreground">
+                Touch send dates shift by the difference between this and the
+                original intended send date
+                {campaign.intendedSendStartDate
+                  ? ` (${format(new Date(campaign.intendedSendStartDate), "MMM d, yyyy")})`
+                  : ""}.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="clone-shift">Custom date shift in days (optional)</Label>
+              <Input
+                id="clone-shift"
+                type="number"
+                placeholder="e.g. 7 or -14"
+                value={cloneShiftDays}
+                onChange={(e) => setCloneShiftDays(e.target.value)}
+                data-testid="input-clone-shift"
+              />
+              <p className="text-xs text-muted-foreground">
+                Overrides the implicit shift derived from the intended send
+                date. Leave blank to use the date difference.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setCloneOpen(false)} disabled={cloneMutation.isPending}>Cancel</Button>
+            <Button
+              disabled={cloneMutation.isPending || !cloneName.trim()}
+              data-testid="button-confirm-clone"
+              onClick={() => {
+                const shiftRaw = cloneShiftDays.trim();
+                const dateShiftDays = shiftRaw === "" ? undefined : Number(shiftRaw);
+                if (shiftRaw !== "" && !Number.isFinite(dateShiftDays)) return;
+                cloneMutation.mutate(
+                  {
+                    id,
+                    data: {
+                      name: cloneName.trim(),
+                      intendedSendStartDate: cloneIntendedDate || null,
+                      ...(dateShiftDays !== undefined ? { dateShiftDays } : {}),
+                    },
+                  },
+                  {
+                    onSuccess: (res) => {
+                      const newId = res.campaign.id;
+                      const skipped = res.skippedSuppressions;
+                      queryClient.invalidateQueries({ queryKey: ["listCampaigns"] });
+                      toast({
+                        title: "Campaign cloned",
+                        description:
+                          `Created "${res.campaign.name}" with ${res.copiedTouches} touches, ${res.copiedThresholds} thresholds, ${res.copiedSuppressions} suppressions, ${res.copiedSeeds} seed groups.` +
+                          (skipped ? ` ${skipped} donor-ID-specific suppression${skipped === 1 ? "" : "s"} skipped.` : ""),
+                      });
+                      setCloneOpen(false);
+                      setLocation(`/campaigns/${newId}`);
+                    },
+                  },
+                );
+              }}
+            >
+              {cloneMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create clone"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={deleteOpen} onOpenChange={(v) => { if (!v) { setDeleteOpen(false); setDeleteConfirm(""); } }}>
         <DialogContent>

@@ -538,6 +538,37 @@ export const DeleteCampaignParams = zod.object({
   id: zod.coerce.number(),
 });
 
+/**
+ * @summary Clone a campaign's structural setup (touches, thresholds, scope-only
+suppressions, seeds) into a new draft campaign owned by the caller.
+The audience is intentionally NOT copied — staff upload a fresh list
+each cycle.
+
+ */
+export const CloneCampaignParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const CloneCampaignBody = zod.object({
+  name: zod
+    .string()
+    .describe(
+      "New campaign name. Defaults on the client to '<original> (copy)'.",
+    ),
+  intendedSendStartDate: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "New intended send start date for the cloned campaign. If provided and the source had one, touch send dates are shifted by (new - old) days unless dateShiftDays is supplied.",
+    ),
+  dateShiftDays: zod
+    .number()
+    .optional()
+    .describe(
+      "Optional explicit day-offset to apply to every copied touch's send date. Overrides the implicit shift derived from intendedSendStartDate.",
+    ),
+});
+
 export const ArchiveCampaignParams = zod.object({
   id: zod.coerce.number(),
 });

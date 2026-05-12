@@ -97,8 +97,12 @@ export async function audit(opts: {
   entityType: string;
   entityId?: number | null;
   details?: string | null;
+  /** Optional Drizzle transaction handle so audit writes can be committed
+   * atomically with the action they describe. Defaults to the global db. */
+  tx?: { insert: typeof db.insert };
 }): Promise<void> {
-  await db.insert(auditLogTable).values({
+  const exec = opts.tx ?? db;
+  await exec.insert(auditLogTable).values({
     actorUserId: opts.actor.id,
     actorName: opts.actor.name,
     actorRole: opts.actor.role,

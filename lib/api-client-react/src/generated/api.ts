@@ -42,6 +42,8 @@ import type {
   Channel,
   ChannelInput,
   ChannelUpdate,
+  CloneCampaignInput,
+  CloneCampaignResponse,
   CohortAnalysis,
   CompletePasswordSetupInput,
   Dashboard,
@@ -3021,6 +3023,101 @@ export const useDeleteCampaign = <
   TContext
 > => {
   return useMutation(getDeleteCampaignMutationOptions(options));
+};
+
+/**
+ * @summary Clone a campaign's structural setup (touches, thresholds, scope-only
+suppressions, seeds) into a new draft campaign owned by the caller.
+The audience is intentionally NOT copied — staff upload a fresh list
+each cycle.
+
+ */
+export const getCloneCampaignUrl = (id: number) => {
+  return `/api/campaigns/${id}/clone`;
+};
+
+export const cloneCampaign = async (
+  id: number,
+  cloneCampaignInput: CloneCampaignInput,
+  options?: RequestInit,
+): Promise<CloneCampaignResponse> => {
+  return customFetch<CloneCampaignResponse>(getCloneCampaignUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(cloneCampaignInput),
+  });
+};
+
+export const getCloneCampaignMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof cloneCampaign>>,
+    TError,
+    { id: number; data: BodyType<CloneCampaignInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof cloneCampaign>>,
+  TError,
+  { id: number; data: BodyType<CloneCampaignInput> },
+  TContext
+> => {
+  const mutationKey = ["cloneCampaign"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof cloneCampaign>>,
+    { id: number; data: BodyType<CloneCampaignInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return cloneCampaign(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CloneCampaignMutationResult = NonNullable<
+  Awaited<ReturnType<typeof cloneCampaign>>
+>;
+export type CloneCampaignMutationBody = BodyType<CloneCampaignInput>;
+export type CloneCampaignMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Clone a campaign's structural setup (touches, thresholds, scope-only
+suppressions, seeds) into a new draft campaign owned by the caller.
+The audience is intentionally NOT copied — staff upload a fresh list
+each cycle.
+
+ */
+export const useCloneCampaign = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof cloneCampaign>>,
+    TError,
+    { id: number; data: BodyType<CloneCampaignInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof cloneCampaign>>,
+  TError,
+  { id: number; data: BodyType<CloneCampaignInput> },
+  TContext
+> => {
+  return useMutation(getCloneCampaignMutationOptions(options));
 };
 
 export const getArchiveCampaignUrl = (id: number) => {
