@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useListCampaigns, useCloneCampaign, ApiError } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -281,8 +281,6 @@ export default function Campaigns() {
         </DialogContent>
       </Dialog>
 
-      {/* `Link` is used elsewhere in the app; keep the import alive even when this page doesn't render one. */}
-      {false && <Link href="#" />}
     </div>
   );
 }

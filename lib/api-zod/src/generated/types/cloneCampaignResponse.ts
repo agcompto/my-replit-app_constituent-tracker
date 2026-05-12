@@ -12,7 +12,7 @@ export interface CloneCampaignResponse {
   copiedTouches: number;
   copiedThresholds: number;
   copiedSuppressions: number;
-  /** Suppressions skipped because they referenced specific donor IDs from the source audience. */
+  /** Suppressions skipped because they referenced specific donor IDs from the source audience or were tied to a single source touch (touch-scoped). */
   skippedSuppressions: number;
   copiedSeeds: number;
 }

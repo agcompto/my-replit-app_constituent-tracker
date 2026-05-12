@@ -1719,7 +1719,7 @@ components:
         copiedSuppressions: { type: integer }
         skippedSuppressions:
           type: integer
-          description: "Suppressions skipped because they referenced specific donor IDs from the source audience."
+          description: "Suppressions skipped because they referenced specific donor IDs from the source audience or were tied to a single source touch (touch-scoped)."
         copiedSeeds: { type: integer }
     CampaignSummary:
       type: object

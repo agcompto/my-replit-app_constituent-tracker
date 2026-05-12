@@ -1,3 +1,17 @@
+import { eq } from "drizzle-orm";
+import {
+  db,
+  campaignsTable,
+  campaignTypeLinksTable,
+  touchesTable,
+  thresholdsTable,
+  suppressionsTable,
+  seedGroupsTable,
+  auditLogTable,
+} from "@workspace/db";
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 /**
  * Pure planning logic for `POST /campaigns/:id/clone`.
  *
@@ -199,5 +213,234 @@ export function planClone(input: {
     suppressions,
     skippedSuppressions,
     seeds,
+  };
+}
+
+export interface ExecuteCloneResult {
+  newCampaignId: number;
+  copiedTouches: number;
+  copiedThresholds: number;
+  copiedSuppressions: number;
+  skippedSuppressions: number;
+  copiedSeeds: number;
+  shiftDays: number;
+}
+
+/**
+ * Transactional clone: load the source's structural rows, plan the clone,
+ * and write the new campaign + its children + a `campaign_cloned` audit row
+ * inside the supplied Drizzle transaction. Pulled out of the route so it can
+ * be exercised by integration tests without spinning up an HTTP server.
+ *
+ * The audience (`audience_donors`), per-touch overrides, upload jobs, export
+ * jobs, recorded touchpoints, and the source's audit history are all
+ * intentionally NOT copied — only structural setup transfers to the new
+ * draft.
+ */
+export async function executeClone(
+  tx: Tx,
+  args: {
+    sourceCampaignId: number;
+    actingUserId: number;
+    actingUserName: string;
+    actingUserRole: string;
+    newName: string;
+    newIntendedSendDate: string | null;
+    explicitShiftDays?: number;
+  },
+): Promise<ExecuteCloneResult> {
+  const [source] = await tx
+    .select()
+    .from(campaignsTable)
+    .where(eq(campaignsTable.id, args.sourceCampaignId));
+  if (!source) {
+    throw new Error(`Source campaign ${args.sourceCampaignId} not found`);
+  }
+
+  const sourceTouches = await tx
+    .select()
+    .from(touchesTable)
+    .where(eq(touchesTable.campaignId, source.id))
+    .orderBy(touchesTable.sendDate);
+  const sourceThresholds = await tx
+    .select()
+    .from(thresholdsTable)
+    .where(eq(thresholdsTable.campaignId, source.id));
+  const sourceSuppressions = await tx
+    .select()
+    .from(suppressionsTable)
+    .where(eq(suppressionsTable.campaignId, source.id));
+  const sourceSeeds = await tx
+    .select()
+    .from(seedGroupsTable)
+    .where(eq(seedGroupsTable.campaignId, source.id));
+  const sourceCampaignTypeLinks = await tx
+    .select()
+    .from(campaignTypeLinksTable)
+    .where(eq(campaignTypeLinksTable.campaignId, source.id));
+
+  const sourceIntended =
+    typeof source.intendedSendStartDate === "string"
+      ? source.intendedSendStartDate
+      : source.intendedSendStartDate
+        ? (source.intendedSendStartDate as Date).toISOString().slice(0, 10)
+        : null;
+
+  const plan = planClone({
+    touches: sourceTouches.map((t) => ({
+      id: t.id,
+      touchName: t.touchName,
+      channelId: t.channelId,
+      campaignTypeId: t.campaignTypeId,
+      sendDate:
+        typeof t.sendDate === "string"
+          ? t.sendDate
+          : (t.sendDate as Date).toISOString().slice(0, 10),
+      notes: t.notes,
+      audienceMode: t.audienceMode as "campaign" | "custom",
+    })),
+    thresholds: sourceThresholds.map((th) => ({
+      name: th.name,
+      maxTouchpoints: th.maxTouchpoints,
+      windowDays: th.windowDays,
+      scope: th.scope,
+      channelId: th.channelId,
+      campaignTypeId: th.campaignTypeId,
+      actionMode: th.actionMode,
+    })),
+    suppressions: sourceSuppressions.map((s) => ({
+      scope: s.scope,
+      channelId: s.channelId,
+      campaignTypeId: s.campaignTypeId,
+      touchId: s.touchId,
+      reasonCodeId: s.reasonCodeId,
+      reason: s.reason,
+      notes: s.notes,
+      donorIds: (s.donorIds ?? []) as string[],
+    })),
+    seeds: sourceSeeds.map((sg) => ({
+      scope: sg.scope,
+      channelId: sg.channelId,
+      touchId: sg.touchId,
+      donorIds: (sg.donorIds ?? []) as string[],
+    })),
+    options: {
+      newIntendedSendDate: args.newIntendedSendDate,
+      sourceIntendedSendDate: sourceIntended,
+      explicitShiftDays: args.explicitShiftDays,
+    },
+  });
+
+  const [newCampaign] = await tx
+    .insert(campaignsTable)
+    .values({
+      name: args.newName,
+      owningUnit: source.owningUnit,
+      submittedByUserId: args.actingUserId,
+      intendedSendStartDate: args.newIntendedSendDate,
+      audienceDescription: source.audienceDescription,
+      salesforceCampaignId: null,
+      internalNotes: source.internalNotes,
+      status: "draft",
+    })
+    .returning();
+
+  if (sourceCampaignTypeLinks.length > 0) {
+    await tx.insert(campaignTypeLinksTable).values(
+      sourceCampaignTypeLinks.map((l) => ({
+        campaignId: newCampaign.id,
+        campaignTypeId: l.campaignTypeId,
+      })),
+    );
+  }
+
+  const touchIdMap = new Map<number, number>();
+  for (const pt of plan.touches) {
+    const [nt] = await tx
+      .insert(touchesTable)
+      .values({
+        campaignId: newCampaign.id,
+        touchName: pt.touchName,
+        channelId: pt.channelId,
+        campaignTypeId: pt.campaignTypeId,
+        sendDate: pt.sendDate,
+        notes: pt.notes,
+        audienceMode: pt.audienceMode,
+        createdBySource: "manual",
+      })
+      .returning();
+    touchIdMap.set(pt.sourceId, nt.id);
+  }
+
+  if (plan.thresholds.length > 0) {
+    await tx.insert(thresholdsTable).values(
+      plan.thresholds.map((th) => ({
+        campaignId: newCampaign.id,
+        name: th.name,
+        maxTouchpoints: th.maxTouchpoints,
+        windowDays: th.windowDays,
+        scope: th.scope,
+        channelId: th.channelId,
+        campaignTypeId: th.campaignTypeId,
+        actionMode: th.actionMode,
+      })),
+    );
+  }
+
+  if (plan.suppressions.length > 0) {
+    await tx.insert(suppressionsTable).values(
+      plan.suppressions.map((s) => ({
+        campaignId: newCampaign.id,
+        scope: s.scope,
+        channelId: s.channelId,
+        campaignTypeId: s.campaignTypeId,
+        touchId: null,
+        reasonCodeId: s.reasonCodeId,
+        reason: s.reason,
+        notes: s.notes,
+        donorIds: [],
+        createdByUserId: args.actingUserId,
+      })),
+    );
+  }
+
+  let copiedSeeds = 0;
+  const seedInserts: Array<typeof seedGroupsTable.$inferInsert> = [];
+  for (const ps of plan.seeds) {
+    const remappedTouchId =
+      ps.sourceTouchId != null ? (touchIdMap.get(ps.sourceTouchId) ?? null) : null;
+    if (ps.sourceTouchId != null && remappedTouchId == null) continue;
+    seedInserts.push({
+      campaignId: newCampaign.id,
+      scope: ps.scope,
+      channelId: ps.channelId,
+      touchId: remappedTouchId,
+      donorIds: ps.donorIds,
+      createdByUserId: args.actingUserId,
+    });
+    copiedSeeds++;
+  }
+  if (seedInserts.length > 0) {
+    await tx.insert(seedGroupsTable).values(seedInserts);
+  }
+
+  await tx.insert(auditLogTable).values({
+    actorUserId: args.actingUserId,
+    actorName: args.actingUserName,
+    actorRole: args.actingUserRole,
+    action: "campaign_cloned",
+    entityType: "campaign",
+    entityId: newCampaign.id,
+    details: `Cloned from campaign ${source.id} ("${source.name}") shiftDays=${plan.shiftDays} touches=${plan.touches.length} thresholds=${plan.thresholds.length} suppressions=${plan.suppressions.length}/${plan.suppressions.length + plan.skippedSuppressions} seeds=${copiedSeeds}`,
+  });
+
+  return {
+    newCampaignId: newCampaign.id,
+    copiedTouches: plan.touches.length,
+    copiedThresholds: plan.thresholds.length,
+    copiedSuppressions: plan.suppressions.length,
+    skippedSuppressions: plan.skippedSuppressions,
+    copiedSeeds,
+    shiftDays: plan.shiftDays,
   };
 }
