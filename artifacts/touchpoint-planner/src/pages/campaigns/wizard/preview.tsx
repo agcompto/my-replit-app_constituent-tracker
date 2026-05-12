@@ -26,6 +26,7 @@ import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { useState } from "react";
 import { HealthCheckPanel } from "@/components/health-check-panel";
+import { TouchDateHistoryPopover } from "@/components/touch-date-history-popover";
 
 function UndoableShiftRow({
   campaignId,
@@ -379,7 +380,16 @@ export default function PreviewStep({ campaign }: { campaign: any }) {
                 <TableRow key={t.touchId}>
                   <TableCell className="pl-6 font-mono text-sm">{t.fileName}</TableCell>
                   <TableCell>{t.channelLabel}</TableCell>
-                  <TableCell>{format(new Date(t.sendDate), "MMM d, yyyy")}</TableCell>
+                  <TableCell>
+                    <span className="inline-flex items-center">
+                      {format(new Date(t.sendDate), "MMM d, yyyy")}
+                      <TouchDateHistoryPopover
+                        campaignId={campaign.id}
+                        touchId={t.touchId}
+                        touchName={t.touchName ?? t.fileName ?? `Touch #${t.touchId}`}
+                      />
+                    </span>
+                  </TableCell>
                   <TableCell className="text-right">{t.eligibleCount}</TableCell>
                   <TableCell className="text-right text-destructive">{t.suppressedCount > 0 ? `-${t.suppressedCount}` : '0'}</TableCell>
                   <TableCell className="text-right text-emerald-600">{t.seedCount > 0 ? `+${t.seedCount}` : '0'}</TableCell>
