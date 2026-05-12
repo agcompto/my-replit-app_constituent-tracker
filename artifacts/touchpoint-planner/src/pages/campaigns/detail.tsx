@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, ArrowLeft, Edit, Archive, Ban, Sparkles, RefreshCw, Trash2, AlertTriangle } from "lucide-react";
+import { Loader2, ArrowLeft, Edit, Archive, Ban, Sparkles, RefreshCw, Trash2, AlertTriangle, Printer } from "lucide-react";
 import { format } from "date-fns";
 import { useEffect, useState } from "react";
 import { ReauthDialog, isReauthRequired } from "@/components/ReauthDialog";
@@ -120,6 +120,9 @@ export default function CampaignDetail() {
         </div>
         
         <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setLocation(`/campaigns/${id}/summary`)} data-testid="button-open-summary">
+            <Printer className="h-4 w-4 mr-2" /> Print Summary
+          </Button>
           {canEdit && (
             <Button onClick={() => setLocation(`/campaigns/${id}/edit`)}>
               <Edit className="h-4 w-4 mr-2" /> Edit Campaign

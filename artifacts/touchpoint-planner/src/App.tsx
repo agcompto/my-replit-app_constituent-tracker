@@ -13,6 +13,7 @@ import SetupPassword from "@/pages/setup-password";
 import Dashboard from "@/pages/dashboard";
 import Campaigns from "@/pages/campaigns";
 import CampaignDetail from "@/pages/campaigns/detail";
+import CampaignSummary from "@/pages/campaigns/summary";
 import CampaignWizard from "@/pages/campaigns/wizard/index";
 import Donors from "@/pages/donors";
 import Audit from "@/pages/audit";
@@ -30,6 +31,7 @@ function AuthenticatedRoutes() {
           <Route path="/campaigns" component={Campaigns} />
           <Route path="/campaigns/new" component={CampaignWizard} />
           <Route path="/campaigns/:id/edit" component={CampaignWizard} />
+          <Route path="/campaigns/:id/summary" component={CampaignSummary} />
           <Route path="/campaigns/:id" component={CampaignDetail} />
           <Route path="/donors" component={Donors} />
           <Route path="/reports" component={Reports} />
