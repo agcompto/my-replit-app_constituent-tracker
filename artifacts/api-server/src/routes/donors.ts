@@ -38,6 +38,7 @@ router.get("/donors/:donorId/touchpoints", requireAuth, async (req, res): Promis
         campaignId: r.campaignId,
         campaignName: c?.name ?? `Campaign #${r.campaignId}`,
         campaignStatus: c?.status ?? "unknown",
+        touchId: r.touchId,
         channelLabel: channels.find((x) => x.id === r.channelId)?.name ?? "Unknown",
         campaignTypeLabel: types.find((x) => x.id === r.campaignTypeId)?.name ?? "Unknown",
         sendDate,

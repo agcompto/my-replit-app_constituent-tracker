@@ -964,6 +964,7 @@ export const GetDonorTouchpointsResponse = zod.object({
       campaignId: zod.number(),
       campaignName: zod.string(),
       campaignStatus: zod.string(),
+      touchId: zod.number(),
       channelLabel: zod.string(),
       campaignTypeLabel: zod.string(),
       sendDate: zod.coerce.date(),

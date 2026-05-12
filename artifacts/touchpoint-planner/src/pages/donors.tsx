@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { TouchDateHistoryPopover } from "@/components/touch-date-history-popover";
 import { normalizeDonorId } from "@/lib/utils";
 import { Search, Loader2, AlertCircle } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -112,7 +113,16 @@ export default function Donors() {
                   <TableCell><StatusBadge status={t.campaignStatus} /></TableCell>
                   <TableCell>{t.channelLabel}</TableCell>
                   <TableCell>{t.campaignTypeLabel}</TableCell>
-                  <TableCell>{format(new Date(t.sendDate), "MMM d, yyyy")}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center">
+                      <span>{format(new Date(t.sendDate), "MMM d, yyyy")}</span>
+                      <TouchDateHistoryPopover
+                        campaignId={t.campaignId}
+                        touchId={t.touchId}
+                        touchName={t.campaignName}
+                      />
+                    </div>
+                  </TableCell>
                   <TableCell>
                     {t.countsTowardThreshold ? (
                       <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/20">Yes</span>

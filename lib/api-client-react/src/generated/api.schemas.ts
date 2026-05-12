@@ -650,6 +650,7 @@ export type DonorLookupTouchpointsItem = {
   campaignId: number;
   campaignName: string;
   campaignStatus: string;
+  touchId: number;
   channelLabel: string;
   campaignTypeLabel: string;
   sendDate: string;

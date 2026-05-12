@@ -1823,11 +1823,12 @@ components:
           type: array
           items:
             type: object
-            required: [campaignId, campaignName, campaignStatus, channelLabel, campaignTypeLabel, sendDate, countsTowardThreshold]
+            required: [campaignId, campaignName, campaignStatus, touchId, channelLabel, campaignTypeLabel, sendDate, countsTowardThreshold]
             properties:
               campaignId: { type: integer }
               campaignName: { type: string }
               campaignStatus: { type: string }
+              touchId: { type: integer }
               channelLabel: { type: string }
               campaignTypeLabel: { type: string }
               sendDate: { type: string, format: date }
