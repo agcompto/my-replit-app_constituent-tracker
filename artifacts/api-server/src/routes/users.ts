@@ -45,10 +45,13 @@ router.get(
 
 /**
  * Build the standard "invite/reset" response envelope. The one-time setup
- * URL is returned to the admin so they can hand-deliver it to the user via
- * a secure out-of-band channel (the system intentionally does not send
- * email). The token in the URL is single-use, short-lived, and stored only
- * as a SHA-256 hash server-side.
+ * URL is always returned to the admin so they can hand-deliver it to the
+ * user via a secure out-of-band channel as a fallback. When `RESEND_API_KEY`
+ * + `EMAIL_FROM` are configured the same link is also emailed to the user
+ * automatically; `emailed: true` lets the admin UI show "Email sent to
+ * <user>" and treat the copy-link affordance as a backup channel. The token
+ * in the URL is single-use, short-lived, and stored only as a SHA-256 hash
+ * server-side.
  */
 function inviteResponse(opts: {
   setupUrl: string;
