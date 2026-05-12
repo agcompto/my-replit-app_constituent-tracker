@@ -4,6 +4,9 @@ import {
   useStartTotpEnrollment,
   useVerifyTotpEnrollment,
   getGetMeQueryKey,
+  ApiError,
+  type LoginOutcome,
+  type LoginTotpChallenge,
 } from "@workspace/api-client-react";
 import { Link, useLocation } from "wouter";
 import { useForm } from "react-hook-form";
@@ -59,11 +62,15 @@ function downloadRecoveryCodesTxt(codes: string[]): void {
 }
 
 function readErr(err: unknown): { status?: number; message?: string } {
-  const e = err as any;
-  return {
-    status: e?.status ?? e?.response?.status,
-    message: e?.data?.error ?? e?.response?.data?.error,
-  };
+  if (err instanceof ApiError) {
+    const data = err.data as { error?: string } | null;
+    return { status: err.status, message: data?.error };
+  }
+  return {};
+}
+
+function isTotpChallenge(resp: LoginOutcome): resp is LoginTotpChallenge {
+  return (resp as LoginTotpChallenge).requiresTotp === true;
 }
 
 export default function Login() {
@@ -98,8 +105,8 @@ export default function Login() {
     loginMutation.mutate(
       { data },
       {
-        onSuccess: async (resp: any) => {
-          if (resp && resp.requiresTotp) {
+        onSuccess: async (resp) => {
+          if (isTotpChallenge(resp)) {
             if (resp.enrollmentRequired) {
               // Kick off enrollment immediately for first-time admin login.
               try {

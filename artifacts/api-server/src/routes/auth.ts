@@ -423,6 +423,23 @@ router.post("/auth/totp/enroll/verify", async (req, res): Promise<void> => {
   }
   const ok = verifyTotpCode({ encryptedSecret: candidate, code: parsed.data.code });
   if (!ok) {
+    // Pending-login enrollment is part of completing authentication, so
+    // failed codes here must feed the same per-user lockout as /auth/login
+    // and /auth/login/totp — otherwise an attacker on a stolen pending
+    // session could grind 10⁶-space TOTP codes against a brand-new admin
+    // account at unbounded rate.
+    if (!actor.loggedIn) {
+      const accountLock = await recordLoginFailureForUser(actor.userId);
+      if (accountLock.locked) {
+        res
+          .status(429)
+          .setHeader("Retry-After", String(accountLock.retryAfterSec))
+          .json({
+            error: `This account is temporarily locked due to too many failed login attempts. Try again in ${Math.ceil(accountLock.retryAfterSec / 60)} minutes.`,
+          });
+        return;
+      }
+    }
     res.status(401).json({ error: "Invalid code. Please try again." });
     return;
   }

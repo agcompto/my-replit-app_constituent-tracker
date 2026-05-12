@@ -7,6 +7,7 @@ import {
   useRegenerateTotpRecoveryCodes,
   getGetTotpStatusQueryKey,
   getGetMeQueryKey,
+  ApiError,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,8 +28,11 @@ import { useToast } from "@/hooks/use-toast";
 import { ReauthDialog, isReauthRequired } from "@/components/ReauthDialog";
 
 function errMsg(e: unknown, fallback: string): string {
-  const x = e as any;
-  return x?.data?.error ?? x?.response?.data?.error ?? fallback;
+  if (e instanceof ApiError) {
+    const data = e.data as { error?: string } | null;
+    if (data?.error) return data.error;
+  }
+  return fallback;
 }
 
 function downloadRecoveryCodes(codes: string[]): void {
