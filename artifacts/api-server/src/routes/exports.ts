@@ -1,6 +1,13 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq } from "drizzle-orm";
-import { db, campaignsTable, touchpointsTable, exportJobsTable, usersTable } from "@workspace/db";
+import {
+  db,
+  campaignsTable,
+  touchpointsTable,
+  touchesTable,
+  exportJobsTable,
+  usersTable,
+} from "@workspace/db";
 import {
   GetCampaignPreviewParams,
   FinalizeCampaignParams,
@@ -150,68 +157,74 @@ router.post("/campaigns/:id/export", requireAuth, async (req, res): Promise<void
   }
   const exportedAt = new Date();
   await snapshotHealthCheck(params.data.id, health, req.currentUser!.id);
-  // Save touchpoints to history + record export jobs
+  // Pre-fetch every touch for this campaign in one query so the per-touch
+  // write loop below doesn't issue N round-trips, and so the channelId /
+  // campaignTypeId resolution happens BEFORE we open any transaction.
+  const touchRows = await db
+    .select({
+      id: touchesTable.id,
+      channelId: touchesTable.channelId,
+      campaignTypeId: touchesTable.campaignTypeId,
+    })
+    .from(touchesTable)
+    .where(eq(touchesTable.campaignId, params.data.id));
+  const touchById = new Map(touchRows.map((t) => [t.id, t]));
+  // Save touchpoints to history + record export jobs.
+  // Each touch's reset (delete previous touchpoints) + insert new touchpoints
+  // + insert export-job row runs in a single transaction. Without this, a
+  // crash between the delete and the inserts would silently destroy a
+  // touch's prior history with nothing to replace it.
   for (const p of perTouch) {
-    // Clear any prior records for this touch (idempotent re-export)
-    await db.delete(touchpointsTable).where(eq(touchpointsTable.touchId, p.touchId));
-    if (p.donorIds.length > 0 || p.seedDonorIds.length > 0) {
-      const rows: (typeof touchpointsTable.$inferInsert)[] = [];
-      const ch = await db
-        .select()
-        .from(campaignsTable)
-        .where(eq(campaignsTable.id, params.data.id));
-      void ch;
-      for (const donorId of p.donorIds) {
-        rows.push({
-          campaignId: params.data.id,
-          touchId: p.touchId,
-          donorId,
-          channelId: 0, // will be filled below
-          campaignTypeId: 0,
-          sendDate: p.sendDate,
-          isSeed: false,
-          countsTowardThreshold: true,
-        });
-      }
-      for (const donorId of p.seedDonorIds) {
-        rows.push({
-          campaignId: params.data.id,
-          touchId: p.touchId,
-          donorId,
-          channelId: 0,
-          campaignTypeId: 0,
-          sendDate: p.sendDate,
-          isSeed: true,
-          countsTowardThreshold: false,
-        });
-      }
-      // We need channelId/campaignTypeId per-touch; fetch from touches
-      const { touchesTable } = await import("@workspace/db");
-      const [t] = await db
-        .select()
-        .from(touchesTable)
-        .where(eq(touchesTable.id, p.touchId));
-      if (t) {
-        for (const r of rows) {
-          r.channelId = t.channelId;
-          r.campaignTypeId = t.campaignTypeId;
+    const t = touchById.get(p.touchId);
+    if (!t) {
+      res.status(500).json({ error: `Touch ${p.touchId} disappeared mid-export.` });
+      return;
+    }
+    await db.transaction(async (tx) => {
+      // Clear any prior records for this touch (idempotent re-export)
+      await tx.delete(touchpointsTable).where(eq(touchpointsTable.touchId, p.touchId));
+      if (p.donorIds.length > 0 || p.seedDonorIds.length > 0) {
+        const rows: (typeof touchpointsTable.$inferInsert)[] = [];
+        for (const donorId of p.donorIds) {
+          rows.push({
+            campaignId: params.data.id,
+            touchId: p.touchId,
+            donorId,
+            channelId: t.channelId,
+            campaignTypeId: t.campaignTypeId,
+            sendDate: p.sendDate,
+            isSeed: false,
+            countsTowardThreshold: true,
+          });
+        }
+        for (const donorId of p.seedDonorIds) {
+          rows.push({
+            campaignId: params.data.id,
+            touchId: p.touchId,
+            donorId,
+            channelId: t.channelId,
+            campaignTypeId: t.campaignTypeId,
+            sendDate: p.sendDate,
+            isSeed: true,
+            countsTowardThreshold: false,
+          });
+        }
+        // Bulk insert in chunks
+        const chunkSize = 1000;
+        for (let i = 0; i < rows.length; i += chunkSize) {
+          await tx.insert(touchpointsTable).values(rows.slice(i, i + chunkSize));
         }
       }
-      // Bulk insert in chunks
-      const chunkSize = 1000;
-      for (let i = 0; i < rows.length; i += chunkSize) {
-        await db.insert(touchpointsTable).values(rows.slice(i, i + chunkSize));
-      }
-    }
-    await db.insert(exportJobsTable).values({
-      campaignId: params.data.id,
-      touchId: p.touchId,
-      fileName: p.fileName,
-      rowCount: p.totalRowsInExport,
-      seedCount: p.seedCount,
-      suppressedCount: p.suppressedCount,
-      exportedByUserId: req.currentUser!.id,
-      exportedAt,
+      await tx.insert(exportJobsTable).values({
+        campaignId: params.data.id,
+        touchId: p.touchId,
+        fileName: p.fileName,
+        rowCount: p.totalRowsInExport,
+        seedCount: p.seedCount,
+        suppressedCount: p.suppressedCount,
+        exportedByUserId: req.currentUser!.id,
+        exportedAt,
+      });
     });
   }
   await db

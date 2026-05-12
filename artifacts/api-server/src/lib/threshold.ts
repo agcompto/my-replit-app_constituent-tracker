@@ -24,7 +24,9 @@ function toISO(d: Date | string): string {
   return d.toISOString().slice(0, 10);
 }
 
-function diffDays(a: string, b: string): number {
+// Exported for unit testing. Uses Date.UTC so DST shifts in the host TZ
+// don't change the day count between two YYYY-MM-DD strings.
+export function diffDays(a: string, b: string): number {
   const ta = Date.UTC(+a.slice(0, 4), +a.slice(5, 7) - 1, +a.slice(8, 10));
   const tb = Date.UTC(+b.slice(0, 4), +b.slice(5, 7) - 1, +b.slice(8, 10));
   return Math.abs((ta - tb) / 86400000);

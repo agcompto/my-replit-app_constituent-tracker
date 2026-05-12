@@ -1,3 +1,4 @@
+import { pool } from "@workspace/db";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { seedDefaults } from "./lib/seed";
@@ -20,7 +21,7 @@ seedDefaults().catch((err) => {
   logger.error({ err }, "Failed to seed defaults");
 });
 
-app.listen(port, (err) => {
+const server = app.listen(port, (err) => {
   if (err) {
     logger.error({ err }, "Error listening on port");
     process.exit(1);
@@ -28,3 +29,46 @@ app.listen(port, (err) => {
 
   logger.info({ port }, "Server listening");
 });
+
+// Graceful shutdown. Without this, SIGTERM (deploys, container restarts)
+// drops in-flight exports/audience uploads on the floor and leaves the PG
+// pool's sockets in TIME_WAIT. The handler:
+//   1. Stops accepting new connections (server.close())
+//   2. Waits up to SHUTDOWN_TIMEOUT_MS for in-flight requests to finish
+//   3. Closes the PG pool
+//   4. Hard-exits if step 2 stalls
+const SHUTDOWN_TIMEOUT_MS = 25_000;
+let shuttingDown = false;
+function gracefulShutdown(signal: NodeJS.Signals) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.info({ signal }, "Shutdown signal received; draining");
+  const forceExit = setTimeout(() => {
+    logger.error(
+      { timeoutMs: SHUTDOWN_TIMEOUT_MS },
+      "Graceful shutdown timed out; forcing exit",
+    );
+    process.exit(1);
+  }, SHUTDOWN_TIMEOUT_MS);
+  // Don't block process exit on the timer itself.
+  forceExit.unref();
+  server.close((err) => {
+    if (err) {
+      logger.error({ err }, "Error closing HTTP server");
+    }
+    pool
+      .end()
+      .then(() => {
+        logger.info("Shutdown complete");
+        clearTimeout(forceExit);
+        process.exit(0);
+      })
+      .catch((poolErr: unknown) => {
+        logger.error({ err: poolErr }, "Error closing DB pool");
+        clearTimeout(forceExit);
+        process.exit(1);
+      });
+  });
+}
+process.on("SIGTERM", gracefulShutdown);
+process.on("SIGINT", gracefulShutdown);
