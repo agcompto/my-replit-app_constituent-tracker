@@ -949,6 +949,30 @@ export interface LastAiDateShift {
   appliedAt?: string;
 }
 
+export type TouchDateHistoryEntriesItemKind =
+  (typeof TouchDateHistoryEntriesItemKind)[keyof typeof TouchDateHistoryEntriesItemKind];
+
+export const TouchDateHistoryEntriesItemKind = {
+  manual_edit: "manual_edit",
+  ai_applied: "ai_applied",
+  ai_undone: "ai_undone",
+  manual_undone: "manual_undone",
+} as const;
+
+export type TouchDateHistoryEntriesItem = {
+  at: string;
+  actorName: string;
+  actorRole: string;
+  kind: TouchDateHistoryEntriesItemKind;
+  from: string;
+  to: string;
+};
+
+export interface TouchDateHistory {
+  touchId: number;
+  entries: TouchDateHistoryEntriesItem[];
+}
+
 export interface LastManualDateEdit {
   available: boolean;
   from?: string;

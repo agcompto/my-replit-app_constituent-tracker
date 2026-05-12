@@ -1378,6 +1378,30 @@ export const UndoAiDateShiftResponse = zod.object({
   customDuplicateSamples: zod.array(zod.string()).optional(),
 });
 
+export const GetTouchDateHistoryParams = zod.object({
+  id: zod.coerce.number(),
+  touchId: zod.coerce.number(),
+});
+
+export const GetTouchDateHistoryResponse = zod.object({
+  touchId: zod.number(),
+  entries: zod.array(
+    zod.object({
+      at: zod.coerce.date(),
+      actorName: zod.string(),
+      actorRole: zod.string(),
+      kind: zod.enum([
+        "manual_edit",
+        "ai_applied",
+        "ai_undone",
+        "manual_undone",
+      ]),
+      from: zod.coerce.date(),
+      to: zod.coerce.date(),
+    }),
+  ),
+});
+
 export const GetLastManualDateEditParams = zod.object({
   id: zod.coerce.number(),
   touchId: zod.coerce.number(),

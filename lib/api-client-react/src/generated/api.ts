@@ -89,6 +89,7 @@ import type {
   ThresholdTemplateInput,
   ThresholdTemplateUpdate,
   Touch,
+  TouchDateHistory,
   TouchInput,
   TouchUpdate,
   UpcomingVolumeRow,
@@ -6421,6 +6422,91 @@ export const useUndoAiDateShift = <
 > => {
   return useMutation(getUndoAiDateShiftMutationOptions(options));
 };
+
+export const getGetTouchDateHistoryUrl = (id: number, touchId: number) => {
+  return `/api/campaigns/${id}/touches/${touchId}/date-history`;
+};
+
+export const getTouchDateHistory = async (
+  id: number,
+  touchId: number,
+  options?: RequestInit,
+): Promise<TouchDateHistory> => {
+  return customFetch<TouchDateHistory>(getGetTouchDateHistoryUrl(id, touchId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetTouchDateHistoryQueryKey = (id: number, touchId: number) => {
+  return [`/api/campaigns/${id}/touches/${touchId}/date-history`] as const;
+};
+
+export const getGetTouchDateHistoryQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTouchDateHistory>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  touchId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTouchDateHistory>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetTouchDateHistoryQueryKey(id, touchId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getTouchDateHistory>>
+  > = ({ signal }) =>
+    getTouchDateHistory(id, touchId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!(id && touchId),
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTouchDateHistory>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetTouchDateHistoryQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getTouchDateHistory>>
+>;
+export type GetTouchDateHistoryQueryError = ErrorType<unknown>;
+
+export function useGetTouchDateHistory<
+  TData = Awaited<ReturnType<typeof getTouchDateHistory>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  touchId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTouchDateHistory>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetTouchDateHistoryQueryOptions(id, touchId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 export const getGetLastManualDateEditUrl = (id: number, touchId: number) => {
   return `/api/campaigns/${id}/touches/${touchId}/last-manual-date-edit`;

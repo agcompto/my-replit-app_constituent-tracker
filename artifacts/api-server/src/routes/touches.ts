@@ -17,6 +17,7 @@ import {
   UndoAiDateShiftParams,
   GetLastManualDateEditParams,
   UndoManualDateEditParams,
+  GetTouchDateHistoryParams,
 } from "@workspace/api-zod";
 import { requireAuth, audit, canMutateCampaign } from "../lib/auth";
 import { resolveAudienceSource } from "../lib/audienceSource";
@@ -447,6 +448,71 @@ async function findLastUndoableManualDateEdit(touchId: number): Promise<
   }
   return null;
 }
+
+router.get(
+  "/campaigns/:id/touches/:touchId/date-history",
+  requireAuth,
+  async (req, res): Promise<void> => {
+    const params = GetTouchDateHistoryParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    // Read access mirrors viewing the touch — all authenticated staff can see
+    // a campaign's data per the product's shared-visibility rule. We still
+    // verify the touch belongs to the campaign so the URL can't be used to
+    // probe arbitrary touch IDs.
+    const [touch] = await db
+      .select()
+      .from(touchesTable)
+      .where(and(
+        eq(touchesTable.id, params.data.touchId),
+        eq(touchesTable.campaignId, params.data.id),
+      ));
+    if (!touch) { res.status(404).json({ error: "Not found" }); return; }
+
+    const rows = await db
+      .select()
+      .from(auditLogTable)
+      .where(and(
+        eq(auditLogTable.entityType, "touch"),
+        eq(auditLogTable.entityId, params.data.touchId),
+      ))
+      .orderBy(desc(auditLogTable.createdAt));
+
+    const KIND_BY_ACTION: Record<string, "manual_edit" | "ai_applied" | "ai_undone" | "manual_undone"> = {
+      update_touch: "manual_edit",
+      touch_date_shift_applied: "ai_applied",
+      touch_date_shift_undone: "ai_undone",
+      touch_date_manual_undone: "manual_undone",
+    };
+
+    const entries: Array<{
+      at: string;
+      actorName: string;
+      actorRole: string;
+      kind: string;
+      from: string;
+      to: string;
+    }> = [];
+    for (const r of rows) {
+      const kind = KIND_BY_ACTION[r.action];
+      if (!kind) continue;
+      const m = /from=(\d{4}-\d{2}-\d{2}) to=(\d{4}-\d{2}-\d{2})/.exec(r.details ?? "");
+      if (!m) continue;
+      entries.push({
+        at: r.createdAt.toISOString(),
+        actorName: r.actorName,
+        actorRole: r.actorRole,
+        kind,
+        from: m[1],
+        to: m[2],
+      });
+    }
+
+    res.json({ touchId: params.data.touchId, entries });
+  },
+);
 
 router.get(
   "/campaigns/:id/touches/:touchId/last-manual-date-edit",
