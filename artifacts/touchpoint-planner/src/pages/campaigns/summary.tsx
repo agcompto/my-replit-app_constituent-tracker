@@ -1,6 +1,6 @@
 import { useGetCampaign, useListTouches, getGetCampaignQueryKey, getListTouchesQueryKey } from "@workspace/api-client-react";
 import { useRoute, useLocation } from "wouter";
-import { Loader2, ArrowLeft, Printer } from "lucide-react";
+import { Loader2, ArrowLeft, Printer, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 
@@ -45,9 +45,21 @@ export default function CampaignSummary() {
         >
           <ArrowLeft className="h-4 w-4 mr-1" /> Back to Campaign
         </button>
-        <Button onClick={() => window.print()} size="sm" data-testid="button-print-summary">
-          <Printer className="h-4 w-4 mr-2" /> Print
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            asChild
+            variant="outline"
+            size="sm"
+            data-testid="button-download-summary-pdf"
+          >
+            <a href={`/api/campaigns/${id}/summary.pdf`} download>
+              <Download className="h-4 w-4 mr-2" /> Download PDF
+            </a>
+          </Button>
+          <Button onClick={() => window.print()} size="sm" data-testid="button-print-summary">
+            <Printer className="h-4 w-4 mr-2" /> Print
+          </Button>
+        </div>
       </div>
 
       <header className="border-b pb-4">

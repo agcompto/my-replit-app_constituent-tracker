@@ -912,6 +912,10 @@ export const GetCampaignExportManifestParams = zod.object({
   id: zod.coerce.number(),
 });
 
+export const GetCampaignSummaryPdfParams = zod.object({
+  id: zod.coerce.number(),
+});
+
 export const ListSuppressionReasonsResponseItem = zod.object({
   id: zod.number(),
   name: zod.string(),

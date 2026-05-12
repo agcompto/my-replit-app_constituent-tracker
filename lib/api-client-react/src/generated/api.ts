@@ -4515,6 +4515,87 @@ export function useGetCampaignExportManifest<
   return { ...query, queryKey: queryOptions.queryKey };
 }
 
+export const getGetCampaignSummaryPdfUrl = (id: number) => {
+  return `/api/campaigns/${id}/summary.pdf`;
+};
+
+export const getCampaignSummaryPdf = async (
+  id: number,
+  options?: RequestInit,
+): Promise<Blob> => {
+  return customFetch<Blob>(getGetCampaignSummaryPdfUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetCampaignSummaryPdfQueryKey = (id: number) => {
+  return [`/api/campaigns/${id}/summary.pdf`] as const;
+};
+
+export const getGetCampaignSummaryPdfQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCampaignSummaryPdf>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCampaignSummaryPdf>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetCampaignSummaryPdfQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getCampaignSummaryPdf>>
+  > = ({ signal }) => getCampaignSummaryPdf(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCampaignSummaryPdf>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCampaignSummaryPdfQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCampaignSummaryPdf>>
+>;
+export type GetCampaignSummaryPdfQueryError = ErrorType<unknown>;
+
+export function useGetCampaignSummaryPdf<
+  TData = Awaited<ReturnType<typeof getCampaignSummaryPdf>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCampaignSummaryPdf>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCampaignSummaryPdfQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
 export const getListSuppressionReasonsUrl = () => {
   return `/api/suppression-reasons`;
 };

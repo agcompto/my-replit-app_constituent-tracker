@@ -1,15 +1,17 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq, ilike, or } from "drizzle-orm";
-import { db, campaignsTable, campaignTypeLinksTable, campaignTypesTable, owningUnitsTable, usersTable } from "@workspace/db";
+import { db, campaignsTable, campaignTypeLinksTable, campaignTypesTable, channelsTable, owningUnitsTable, touchesTable, usersTable } from "@workspace/db";
 import {
   CreateCampaignBody,
   GetCampaignParams,
+  GetCampaignSummaryPdfParams,
   UpdateCampaignParams,
   UpdateCampaignBody,
   ArchiveCampaignParams,
   VoidCampaignParams,
   DeleteCampaignParams,
 } from "@workspace/api-zod";
+import PDFDocument from "pdfkit";
 import { requireAuth, requireRole, audit, canMutateCampaign } from "../lib/auth";
 import { requireRecentAuth } from "../lib/recentAuth";
 import { loadCampaignFull, loadCampaignSummary, setCampaignTypes } from "../lib/campaigns";
@@ -257,6 +259,270 @@ router.post(
       return;
     }
     res.json(c);
+  },
+);
+
+router.get(
+  "/campaigns/:id/summary.pdf",
+  requireAuth,
+  async (req, res): Promise<void> => {
+    const params = GetCampaignSummaryPdfParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const campaign = await loadCampaignFull(params.data.id);
+    if (!campaign) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    const touchRows = await db
+      .select({
+        id: touchesTable.id,
+        touchName: touchesTable.touchName,
+        sendDate: touchesTable.sendDate,
+        audienceMode: touchesTable.audienceMode,
+        customUniqueIdCount: touchesTable.customUniqueIdCount,
+        channelLabel: channelsTable.name,
+        campaignTypeLabel: campaignTypesTable.name,
+      })
+      .from(touchesTable)
+      .leftJoin(channelsTable, eq(channelsTable.id, touchesTable.channelId))
+      .leftJoin(campaignTypesTable, eq(campaignTypesTable.id, touchesTable.campaignTypeId))
+      .where(eq(touchesTable.campaignId, params.data.id))
+      .orderBy(touchesTable.sendDate);
+
+    const safeName =
+      campaign.name.replace(/[^A-Za-z0-9_-]+/g, "_").slice(0, 60) ||
+      `campaign_${campaign.id}`;
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${safeName}_summary.pdf"`,
+    );
+
+    const doc = new PDFDocument({ size: "LETTER", margin: 54 });
+    doc.pipe(res);
+
+    const fmtDate = (s: string | null | undefined): string => {
+      if (!s) return "-";
+      const d = new Date(s);
+      if (Number.isNaN(d.getTime())) return "-";
+      return d.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        timeZone: "UTC",
+      });
+    };
+    const fmtNum = (n: number | null | undefined): string =>
+      (n ?? 0).toLocaleString("en-US");
+
+    doc.font("Helvetica-Bold").fontSize(20).text(campaign.name);
+    doc
+      .moveDown(0.25)
+      .font("Helvetica")
+      .fontSize(10)
+      .fillColor("#555")
+      .text(
+        `Campaign Summary  ·  Submitted by ${campaign.submittedByName}  ·  Status: ${campaign.status}`,
+      );
+    doc.moveDown(0.5);
+    doc
+      .moveTo(doc.page.margins.left, doc.y)
+      .lineTo(doc.page.width - doc.page.margins.right, doc.y)
+      .strokeColor("#cccccc")
+      .lineWidth(1)
+      .stroke();
+    doc.fillColor("black").moveDown(0.75);
+
+    const sectionTitle = (s: string) => {
+      doc.font("Helvetica-Bold").fontSize(13).fillColor("black").text(s);
+      doc.moveDown(0.4);
+    };
+    const labelValue = (label: string, value: string, x: number, y: number, w: number) => {
+      doc
+        .font("Helvetica-Bold")
+        .fontSize(8)
+        .fillColor("#666")
+        .text(label.toUpperCase(), x, y, { width: w });
+      doc
+        .font("Helvetica")
+        .fontSize(11)
+        .fillColor("black")
+        .text(value, x, doc.y + 1, { width: w });
+    };
+
+    sectionTitle("Details");
+    const usableWidth =
+      doc.page.width - doc.page.margins.left - doc.page.margins.right;
+    const colW = usableWidth / 2;
+    let yStart = doc.y;
+    labelValue("Owning Unit", campaign.owningUnit || "-", doc.page.margins.left, yStart, colW);
+    const leftBottom1 = doc.y;
+    labelValue(
+      "Intended Send Date",
+      fmtDate(campaign.intendedSendStartDate),
+      doc.page.margins.left + colW,
+      yStart,
+      colW,
+    );
+    const rightBottom1 = doc.y;
+    yStart = Math.max(leftBottom1, rightBottom1) + 8;
+    labelValue(
+      "Salesforce ID",
+      campaign.salesforceCampaignId || "-",
+      doc.page.margins.left,
+      yStart,
+      colW,
+    );
+    const leftBottom2 = doc.y;
+    labelValue(
+      "Campaign Types",
+      campaign.campaignTypes.length
+        ? campaign.campaignTypes.map((t) => t.name).join(", ")
+        : "-",
+      doc.page.margins.left + colW,
+      yStart,
+      colW,
+    );
+    const rightBottom2 = doc.y;
+    doc.x = doc.page.margins.left;
+    doc.y = Math.max(leftBottom2, rightBottom2) + 16;
+
+    sectionTitle("Audience Summary");
+    const audCols = [
+      { label: "Valid IDs", value: fmtNum(campaign.validIdCount) },
+      { label: "Unique IDs", value: fmtNum(campaign.uniqueIdCount) },
+      { label: "Rejected", value: fmtNum(campaign.rejectedIdCount) },
+      { label: "Duplicates", value: fmtNum(campaign.duplicateIdCount) },
+    ];
+    const audColW = usableWidth / audCols.length;
+    const audY = doc.y;
+    audCols.forEach((c, i) => {
+      const x = doc.page.margins.left + i * audColW;
+      doc
+        .font("Helvetica-Bold")
+        .fontSize(8)
+        .fillColor("#666")
+        .text(c.label.toUpperCase(), x, audY, { width: audColW });
+      doc
+        .font("Helvetica-Bold")
+        .fontSize(16)
+        .fillColor("black")
+        .text(c.value, x, audY + 14, { width: audColW });
+    });
+    doc.x = doc.page.margins.left;
+    doc.y = audY + 14 + 22;
+
+    sectionTitle("Planned Touches");
+    if (touchRows.length === 0) {
+      doc
+        .font("Helvetica")
+        .fontSize(10)
+        .fillColor("#666")
+        .text("No touchpoints defined for this campaign.");
+    } else {
+      const cols = [
+        { key: "name", label: "Name", w: 0.28 },
+        { key: "channel", label: "Channel", w: 0.16 },
+        { key: "type", label: "Type", w: 0.18 },
+        { key: "date", label: "Send Date", w: 0.18 },
+        { key: "audience", label: "Audience", w: 0.20, align: "right" as const },
+      ];
+      const colWidths = cols.map((c) => c.w * usableWidth);
+      const colX = (i: number) =>
+        doc.page.margins.left +
+        colWidths.slice(0, i).reduce((a, b) => a + b, 0);
+
+      const drawHeader = () => {
+        const y = doc.y;
+        doc.font("Helvetica-Bold").fontSize(9).fillColor("black");
+        cols.forEach((c, i) => {
+          doc.text(c.label, colX(i), y, {
+            width: colWidths[i],
+            align: c.align ?? "left",
+          });
+        });
+        doc.y = y + 14;
+        doc
+          .moveTo(doc.page.margins.left, doc.y)
+          .lineTo(doc.page.width - doc.page.margins.right, doc.y)
+          .strokeColor("#cccccc")
+          .lineWidth(0.5)
+          .stroke();
+        doc.y += 4;
+      };
+
+      drawHeader();
+
+      for (const t of touchRows) {
+        const custom = t.audienceMode === "custom";
+        const audienceCount = custom
+          ? t.customUniqueIdCount ?? 0
+          : campaign.uniqueIdCount ?? 0;
+        const audienceLabel = custom ? "Custom" : "Campaign-wide";
+        const sendDateStr =
+          typeof t.sendDate === "string"
+            ? t.sendDate
+            : (t.sendDate as Date).toISOString().slice(0, 10);
+        const values = [
+          t.touchName,
+          t.channelLabel ?? "Unknown",
+          t.campaignTypeLabel ?? "Unknown",
+          fmtDate(sendDateStr),
+          `${audienceLabel} · ${fmtNum(audienceCount)}`,
+        ];
+        const rowY = doc.y;
+        doc.font("Helvetica").fontSize(10).fillColor("black");
+        const rowHeights = values.map((v, i) =>
+          doc.heightOfString(v, {
+            width: colWidths[i],
+            align: cols[i].align ?? "left",
+          }),
+        );
+        const rowHeight = Math.max(...rowHeights) + 6;
+        if (rowY + rowHeight > doc.page.height - doc.page.margins.bottom) {
+          doc.addPage();
+          drawHeader();
+        }
+        const yy = doc.y;
+        values.forEach((v, i) => {
+          doc.text(v, colX(i), yy, {
+            width: colWidths[i],
+            align: cols[i].align ?? "left",
+          });
+        });
+        doc.y = yy + rowHeight - 6;
+        doc
+          .moveTo(doc.page.margins.left, doc.y + 2)
+          .lineTo(doc.page.width - doc.page.margins.right, doc.y + 2)
+          .strokeColor("#eeeeee")
+          .lineWidth(0.5)
+          .stroke();
+        doc.y += 6;
+      }
+    }
+
+    doc.moveDown(1);
+    doc
+      .font("Helvetica")
+      .fontSize(8)
+      .fillColor("#888")
+      .text(
+        `Generated ${new Date().toLocaleString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        })}`,
+        doc.page.margins.left,
+        undefined,
+        { align: "left" },
+      );
+
+    doc.end();
   },
 );
 

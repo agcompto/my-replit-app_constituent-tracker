@@ -793,6 +793,18 @@ paths:
           content:
             text/csv:
               schema: { type: string }
+  /campaigns/{id}/summary.pdf:
+    get:
+      operationId: getCampaignSummaryPdf
+      tags: [campaigns]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: One-click PDF version of the printable campaign summary
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
 
   # ───────── Suppression reason codes (admin)
   /suppression-reasons:
