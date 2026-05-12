@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useGetAuditLog } from "@workspace/api-client-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { X, Sparkles } from "lucide-react";
+import { X, Sparkles, CalendarClock } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format } from "date-fns";
 
@@ -18,15 +18,16 @@ type AuditFilters = {
   endDate?: string;
 };
 
-function hasAny(f: AuditFilters): boolean {
-  return !!(f.actor || f.action || f.entityType || f.startDate || f.endDate);
+function hasAny(f: AuditFilters, dateChangeOnly: boolean): boolean {
+  return !!(f.actor || f.action || f.entityType || f.startDate || f.endDate) || dateChangeOnly;
 }
 
 const AI_DATE_SHIFT_ACTION = "touch_date_shift_applied";
+const UPDATE_TOUCH_ACTION = "update_touch";
 
-function parseAiDateShiftDetails(
-  details: string | null | undefined,
-): { source: string | null; from: string | null; to: string | null } | null {
+type DateShift = { source: string | null; from: string | null; to: string | null };
+
+function parseDateShiftDetails(details: string | null | undefined): DateShift | null {
   if (!details) return null;
   const parts = details.split(/\s+/);
   const out: Record<string, string> = {};
@@ -42,9 +43,31 @@ function parseAiDateShiftDetails(
   };
 }
 
+function getDateChange(action: string, details: string | null | undefined): DateShift | null {
+  if (action === AI_DATE_SHIFT_ACTION) {
+    return parseDateShiftDetails(details);
+  }
+  if (action === UPDATE_TOUCH_ACTION) {
+    const shift = parseDateShiftDetails(details);
+    if (shift && shift.source === "manual_edit" && (shift.from || shift.to)) {
+      return shift;
+    }
+  }
+  return null;
+}
+
 export default function Audit() {
   const [filters, setFilters] = useState<AuditFilters>({});
+  const [dateChangeOnly, setDateChangeOnly] = useState(false);
   const { data: auditLogs, isLoading } = useGetAuditLog(filters);
+
+  const visibleLogs = useMemo(() => {
+    if (!auditLogs) return auditLogs;
+    if (!dateChangeOnly) return auditLogs;
+    return auditLogs.filter((log) => getDateChange(log.action, log.details) !== null);
+  }, [auditLogs, dateChangeOnly]);
+
+  const aiFilterActive = filters.action === AI_DATE_SHIFT_ACTION;
 
   return (
     <div className="space-y-6">
@@ -107,7 +130,7 @@ export default function Audit() {
           />
         </div>
         <Button
-          variant={filters.action === AI_DATE_SHIFT_ACTION ? "default" : "outline"}
+          variant={aiFilterActive ? "default" : "outline"}
           size="sm"
           onClick={() =>
             setFilters((prev) =>
@@ -117,12 +140,29 @@ export default function Audit() {
             )
           }
           className="self-end"
-          aria-pressed={filters.action === AI_DATE_SHIFT_ACTION}
+          aria-pressed={aiFilterActive}
         >
           <Sparkles className="h-3.5 w-3.5 mr-1" /> AI actions only
         </Button>
-        {hasAny(filters) && (
-          <Button variant="ghost" size="sm" onClick={() => setFilters({})} className="self-end">
+        <Button
+          variant={dateChangeOnly ? "default" : "outline"}
+          size="sm"
+          onClick={() => setDateChangeOnly((v) => !v)}
+          className="self-end"
+          aria-pressed={dateChangeOnly}
+        >
+          <CalendarClock className="h-3.5 w-3.5 mr-1" /> Date changes only
+        </Button>
+        {hasAny(filters, dateChangeOnly) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setFilters({});
+              setDateChangeOnly(false);
+            }}
+            className="self-end"
+          >
             <X className="h-3.5 w-3.5 mr-1" /> Clear
           </Button>
         )}
@@ -156,17 +196,17 @@ export default function Audit() {
                     <TableCell className="pr-6"><Skeleton className="h-4 w-40" /></TableCell>
                   </TableRow>
                 ))
-              ) : auditLogs?.length === 0 ? (
+              ) : visibleLogs?.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">
                     No audit records match these filters.
                   </TableCell>
                 </TableRow>
               ) : (
-                auditLogs?.map(log => {
-                  const isAiDateShift = log.action === AI_DATE_SHIFT_ACTION;
-                  const shift = isAiDateShift ? parseAiDateShiftDetails(log.details) : null;
-                  const isAi = isAiDateShift && shift?.source === "ai_suggestion";
+                visibleLogs?.map(log => {
+                  const shift = getDateChange(log.action, log.details);
+                  const isDateChange = shift !== null;
+                  const isAi = isDateChange && shift?.source === "ai_suggestion";
                   return (
                     <TableRow key={log.id}>
                       <TableCell className="pl-6 whitespace-nowrap text-muted-foreground text-sm">
@@ -178,8 +218,8 @@ export default function Audit() {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1.5">
-                          {isAiDateShift ? (
-                            <Badge variant="secondary" className="font-mono text-xs">date shift applied</Badge>
+                          {isDateChange ? (
+                            <Badge variant="secondary" className="font-mono text-xs">date change</Badge>
                           ) : (
                             <Badge variant="secondary" className="font-mono text-xs">{log.action}</Badge>
                           )}
