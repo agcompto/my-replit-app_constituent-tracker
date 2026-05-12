@@ -10,7 +10,7 @@ Internal NC State University Advancement tool for planning donor communication t
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks/Zod from `lib/api-spec/openapi.yaml`
 - `pnpm --filter @workspace/db run push` — push DB schema changes
 - Required env: `DATABASE_URL`, `SESSION_SECRET`
-- Optional: `PUBLIC_APP_URL` — base URL embedded in setup links (e.g. `https://planner.advancement.ncsu.edu`). Falls back to `REPLIT_DOMAINS`/`localhost` so dev still works.
+- Optional: `APP_PUBLIC_URL` — base URL embedded in setup links (e.g. `https://planner.advancement.ncsu.edu`). Falls back to `REPLIT_DOMAINS`/`localhost` so dev still works.
 - Optional: `PASSWORD_HIBP_DISABLED=1` — escape hatch for offline test/dev that skips the Have-I-Been-Pwned k-anonymity breach check.
 - Optional bootstrap: `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_NAME` — override the seeded super-admin identity.
 
@@ -19,6 +19,14 @@ The system **does not send email**. All account-setup, password-reset, and "rese
 ## Bootstrap super-admin (dev / fresh DB)
 
 On first startup against an empty database, a `super_admin` account is created (default `admin@example.com`) with **no password**. A 48-hour single-use setup link is generated and printed once to stderr (the only intended log reader is the operator running the boot). Open the link, choose a password, and sign in.
+
+### One-shot bootstrap-admin recovery (forgotten prod password)
+
+If the bootstrap super-admin's password has been lost (e.g. on a deployed environment where the original first-boot stderr line is gone), set `BOOTSTRAP_RESET_ADMIN=1` in that environment's secrets and redeploy. On boot, `seed.ts` will look up the bootstrap admin (by `BOOTSTRAP_ADMIN_EMAIL` or default `admin@example.com`), clear its lockout state, mint a fresh 2-hour single-use reset token, and print the setup URL once to stderr — same posture as the first-boot bootstrap link. Refuses to run if the matching user is missing or not `super_admin`.
+
+**Operational caveats:**
+- The reset is reissued on every boot while the env var is set, and each new token revokes the previous one. If the deployment restarts (autoscale spin-up, crash recovery, etc.) between when you copy the link and when you click it, your link will already be dead. Always grab the link from the **most recent** stderr block.
+- After successfully signing in with the new password, **unset `BOOTSTRAP_RESET_ADMIN` and redeploy promptly**. Leaving it set means every subsequent restart mints another super-admin reset link in the logs and clears any lockout state.
 
 ## Password setup (no-temp-password flow)
 

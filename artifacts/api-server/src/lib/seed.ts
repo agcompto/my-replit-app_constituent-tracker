@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db, usersTable, campaignTypesTable, channelsTable, owningUnitsTable, appSettingsTable, suppressionReasonCodesTable, thresholdTemplatesTable } from "@workspace/db";
 import { logger } from "./logger";
 import { generateTempPassword } from "./password";
@@ -133,6 +133,62 @@ export async function seedDefaults(): Promise<void> {
         "",
       ].join("\n"),
     );
+  }
+
+  // One-shot bootstrap-admin password reset. Operator sets
+  // BOOTSTRAP_RESET_ADMIN=1 in environment, redeploys, reads the printed
+  // setup URL from stderr, then unsets the env var to stop reissuing on
+  // every boot. Same security posture as the first-boot bootstrap link:
+  // single-use, time-bounded, only readable by whoever has access to the
+  // server's stderr stream.
+  if (process.env.BOOTSTRAP_RESET_ADMIN === "1") {
+    const adminEmail = (process.env.BOOTSTRAP_ADMIN_EMAIL ?? "admin@example.com")
+      .toLowerCase()
+      .trim();
+    const [admin] = await db
+      .select({ id: usersTable.id, role: usersTable.role })
+      .from(usersTable)
+      .where(eq(usersTable.email, adminEmail))
+      .limit(1);
+    if (!admin) {
+      logger.error(
+        { adminEmail },
+        "BOOTSTRAP_RESET_ADMIN set but no user found for that email — skipping reset.",
+      );
+    } else if (admin.role !== "super_admin") {
+      logger.error(
+        { adminEmail, role: admin.role },
+        "BOOTSTRAP_RESET_ADMIN set but matching user is not super_admin — refusing reset.",
+      );
+    } else {
+      await db
+        .update(usersTable)
+        .set({ failedLoginAttempts: 0, lockedUntil: null })
+        .where(eq(usersTable.id, admin.id));
+      const ttlHours = 2;
+      const { rawToken } = await issueSetupToken({
+        userId: admin.id,
+        kind: "reset",
+        ttlHours,
+      });
+      const setupUrl = buildSetupPasswordUrl(rawToken);
+      logger.warn(
+        "BOOTSTRAP_RESET_ADMIN: Reset link issued for super_admin — see stderr below.",
+      );
+      process.stderr.write(
+        [
+          "",
+          "========================================================",
+          " BOOTSTRAP_RESET_ADMIN: One-shot password reset",
+          `   Email:     ${adminEmail}`,
+          `   Setup URL: ${setupUrl}`,
+          ` Single-use, expires in ${ttlHours} hours.`,
+          " Unset BOOTSTRAP_RESET_ADMIN and redeploy after use.",
+          "========================================================",
+          "",
+        ].join("\n"),
+      );
+    }
   }
 
   const existingChannels = await db.select({ id: channelsTable.id }).from(channelsTable).limit(1);
