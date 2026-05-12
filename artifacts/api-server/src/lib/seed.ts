@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { db, usersTable, campaignTypesTable, channelsTable, owningUnitsTable, appSettingsTable, suppressionReasonCodesTable, thresholdTemplatesTable } from "@workspace/db";
 import { logger } from "./logger";
 import { generateTempPassword } from "./password";
