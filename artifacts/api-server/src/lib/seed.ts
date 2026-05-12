@@ -4,7 +4,6 @@ import { db, usersTable, campaignTypesTable, channelsTable, owningUnitsTable, ap
 import { logger } from "./logger";
 import { generateTempPassword } from "./password";
 import { issueSetupToken } from "./passwordSetupTokens";
-import { sendPasswordSetupLink, isEmailConfigured } from "./email";
 import { buildSetupPasswordUrl } from "./appUrl";
 
 const DEFAULT_CHANNELS = [
@@ -89,10 +88,10 @@ export async function seedDefaults(): Promise<void> {
   await installAuditLogAppendOnlyTrigger();
   // Default super admin. The account is created with a random unguessable
   // password the operator never sees — they MUST complete the setup link to
-  // sign in. The link is emailed when BOOTSTRAP_ADMIN_EMAIL + Resend are
-  // configured; otherwise the link itself (NOT a password) is printed once
-  // to stderr. The link is one-time and short-lived, which is materially
-  // better than leaking a long-lived plaintext password.
+  // sign in. The link itself (NOT a password) is printed once to stderr;
+  // the operator hands it to the intended administrator out-of-band. The
+  // link is one-time and short-lived, which is materially better than
+  // leaking a long-lived plaintext password.
   const existingUsers = await db.select({ id: usersTable.id }).from(usersTable).limit(1);
   if (existingUsers.length === 0) {
     const placeholderHash = await bcrypt.hash(generateTempPassword(32), 10);
@@ -119,42 +118,21 @@ export async function seedDefaults(): Promise<void> {
     });
     const setupUrl = buildSetupPasswordUrl(rawToken);
 
-    let emailed = false;
-    if (process.env.BOOTSTRAP_ADMIN_EMAIL && isEmailConfigured()) {
-      const r = await sendPasswordSetupLink({
-        to: adminEmail,
-        recipientName: "Default Super Admin",
-        url: setupUrl,
-        kind: "invite",
-        expiresInHours: ttlHours,
-      });
-      emailed = r.sent;
-    }
-
-    if (emailed) {
-      logger.warn(
-        { adminEmail },
-        "BOOTSTRAP: Initial super_admin account created. Setup link emailed.",
-      );
-    } else {
-      logger.warn(
-        "BOOTSTRAP: Initial super_admin account created. Setup link below — open it once to choose a password.",
-      );
-      process.stderr.write(
-        [
-          "",
-          "========================================================",
-          " BOOTSTRAP: Initial super_admin account created",
-          `   Email:     ${adminEmail}`,
-          `   Setup URL: ${setupUrl}`,
-          ` This single-use link expires in ${ttlHours} hours.`,
-          " Set BOOTSTRAP_ADMIN_EMAIL + RESEND_API_KEY + EMAIL_FROM to",
-          " have the link emailed instead of printed.",
-          "========================================================",
-          "",
-        ].join("\n"),
-      );
-    }
+    logger.warn(
+      "BOOTSTRAP: Initial super_admin account created. Setup link below — open it once to choose a password.",
+    );
+    process.stderr.write(
+      [
+        "",
+        "========================================================",
+        " BOOTSTRAP: Initial super_admin account created",
+        `   Email:     ${adminEmail}`,
+        `   Setup URL: ${setupUrl}`,
+        ` This single-use link expires in ${ttlHours} hours.`,
+        "========================================================",
+        "",
+      ].join("\n"),
+    );
   }
 
   const existingChannels = await db.select({ id: channelsTable.id }).from(channelsTable).limit(1);

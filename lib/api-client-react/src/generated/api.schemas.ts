@@ -95,36 +95,18 @@ export interface PasswordResetInput {
 }
 
 export interface InviteResponse {
-  /** True when the setup-link email was successfully delivered. */
-  inviteSent: boolean;
-  /**
-   * Reason email delivery failed; null on success.
-   * @nullable
-   */
-  emailError?: string | null;
-  /**
-   * One-time setup URL. Only returned when email delivery failed so the admin can hand-deliver the link.
-   * @nullable
-   */
-  setupUrl?: string | null;
+  /** One-time setup URL the admin must deliver to the user out-of-band. Single use, short-lived. */
+  setupUrl: string;
   expiresAt: string;
 }
 
 export interface UserCreatedResponse {
   user: User;
-  inviteSent: boolean;
-  /** @nullable */
-  emailError?: string | null;
-  /** @nullable */
-  setupUrl?: string | null;
+  setupUrl: string;
   expiresAt: string;
 }
 
 export type PasswordResetResponse = InviteResponse;
-
-export interface ForgotPasswordInput {
-  email: string;
-}
 
 export type PasswordSetupTokenInfoKind =
   (typeof PasswordSetupTokenInfoKind)[keyof typeof PasswordSetupTokenInfoKind];

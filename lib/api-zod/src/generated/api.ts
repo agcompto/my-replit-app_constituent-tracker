@@ -120,18 +120,10 @@ export const ResetUserPasswordParams = zod.object({
 export const ResetUserPasswordBody = zod.object({}).passthrough();
 
 export const ResetUserPasswordResponse = zod.object({
-  inviteSent: zod
-    .boolean()
-    .describe("True when the setup-link email was successfully delivered."),
-  emailError: zod
-    .string()
-    .nullish()
-    .describe("Reason email delivery failed; null on success."),
   setupUrl: zod
     .string()
-    .nullish()
     .describe(
-      "One-time setup URL. Only returned when email delivery failed so the admin can hand-deliver the link.",
+      "One-time setup URL the admin must deliver to the user out-of-band. Single use, short-lived.",
     ),
   expiresAt: zod.coerce.date(),
 });
@@ -141,24 +133,12 @@ export const ResendInviteParams = zod.object({
 });
 
 export const ResendInviteResponse = zod.object({
-  inviteSent: zod
-    .boolean()
-    .describe("True when the setup-link email was successfully delivered."),
-  emailError: zod
-    .string()
-    .nullish()
-    .describe("Reason email delivery failed; null on success."),
   setupUrl: zod
     .string()
-    .nullish()
     .describe(
-      "One-time setup URL. Only returned when email delivery failed so the admin can hand-deliver the link.",
+      "One-time setup URL the admin must deliver to the user out-of-band. Single use, short-lived.",
     ),
   expiresAt: zod.coerce.date(),
-});
-
-export const ForgotPasswordBody = zod.object({
-  email: zod.string().email(),
 });
 
 export const ValidatePasswordSetupTokenParams = zod.object({

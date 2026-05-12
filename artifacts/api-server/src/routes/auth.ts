@@ -5,7 +5,6 @@ import { db, usersTable } from "@workspace/db";
 import {
   LoginBody,
   ChangeOwnPasswordBody,
-  ForgotPasswordBody,
   ReauthBody,
 } from "@workspace/api-zod";
 import { loadUser, requireAuth, audit } from "../lib/auth";
@@ -17,7 +16,6 @@ import {
   checkChangePasswordRate,
   recordChangePasswordFailure,
   recordChangePasswordSuccess,
-  checkForgotPasswordPerIp,
 } from "../lib/rateLimit";
 import { SESSION_TTL_MS } from "../lib/session";
 import {
@@ -26,14 +24,8 @@ import {
   clearLoginFailures,
 } from "../lib/lockout";
 import { validatePasswordPolicy } from "../lib/passwordPolicy";
-import { issueSetupToken } from "../lib/passwordSetupTokens";
-import { sendPasswordSetupLink, isEmailConfigured } from "../lib/email";
-import { buildSetupPasswordUrl } from "../lib/appUrl";
-import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
-
-const FORGOT_PASSWORD_TTL_HOURS = 2;
 
 // Constant bcrypt hash used to equalize timing on the no-such-user / inactive
 // login path so the response time can't be used to enumerate valid emails.
@@ -343,70 +335,5 @@ router.post(
     res.json(updated);
   },
 );
-
-/**
- * "Forgot password" entry point. Always returns 204 — never reveals whether
- * the email exists or whether a token was issued, to avoid an account
- * enumeration oracle. Rate-limited per (email, ip) by reusing the login
- * bucket.
- */
-router.post("/auth/forgot-password", async (req, res): Promise<void> => {
-  const parsed = ForgotPasswordBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(204).end();
-    return;
-  }
-  const email = parsed.data.email.toLowerCase().trim();
-  const ip = req.ip ?? "unknown";
-
-  // Per-IP cap layered on top of the per-(email,ip) bucket. Stops one IP
-  // from fanning out across many emails to enumerate accounts or run up
-  // the email-provider bill. We still respond 204 either way — never
-  // reveal whether a request was throttled vs accepted.
-  const ipRate = checkForgotPasswordPerIp(ip);
-  if (!ipRate.allowed) {
-    res.status(204).end();
-    return;
-  }
-
-  const rateKey = `forgot|${email}|${ip}`;
-  const rate = checkLoginRate(rateKey);
-  if (!rate.allowed) {
-    res.status(204).end();
-    return;
-  }
-  // Always count the attempt against the bucket so attackers can't fish
-  // freely.
-  recordLoginFailure(rateKey);
-
-  const [u] = await db
-    .select()
-    .from(usersTable)
-    .where(eq(usersTable.email, email));
-
-  if (u && u.active) {
-    try {
-      const { rawToken } = await issueSetupToken({
-        userId: u.id,
-        kind: "reset",
-        ttlHours: FORGOT_PASSWORD_TTL_HOURS,
-      });
-      const setupUrl = buildSetupPasswordUrl(rawToken);
-      if (isEmailConfigured()) {
-        await sendPasswordSetupLink({
-          to: u.email,
-          recipientName: u.name,
-          url: setupUrl,
-          kind: "reset",
-          expiresInHours: FORGOT_PASSWORD_TTL_HOURS,
-        });
-      }
-    } catch (err) {
-      logger.warn({ errName: (err as Error).name }, "forgot-password issue/email failed");
-    }
-  }
-
-  res.status(204).end();
-});
 
 export default router;

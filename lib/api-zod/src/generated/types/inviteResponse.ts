@@ -7,17 +7,7 @@
  */
 
 export interface InviteResponse {
-  /** True when the setup-link email was successfully delivered. */
-  inviteSent: boolean;
-  /**
-   * Reason email delivery failed; null on success.
-   * @nullable
-   */
-  emailError?: string | null;
-  /**
-   * One-time setup URL. Only returned when email delivery failed so the admin can hand-deliver the link.
-   * @nullable
-   */
-  setupUrl?: string | null;
+  /** One-time setup URL the admin must deliver to the user out-of-band. Single use, short-lived. */
+  setupUrl: string;
   expiresAt: Date;
 }

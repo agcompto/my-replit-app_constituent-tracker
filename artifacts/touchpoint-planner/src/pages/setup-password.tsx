@@ -122,11 +122,10 @@ export default function SetupPassword() {
                 <p>{loadError}</p>
               </div>
             </div>
-            <div className="text-center text-sm space-x-3">
-              <Link href="/forgot-password" className="text-primary hover:underline">
-                Request a new link
-              </Link>
-              <span className="text-muted-foreground">·</span>
+            <div className="text-center text-sm space-y-2">
+              <p className="text-muted-foreground">
+                Contact an administrator to issue a new setup link.
+              </p>
               <Link href="/login" className="text-primary hover:underline">
                 Back to sign in
               </Link>

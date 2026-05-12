@@ -57,8 +57,6 @@ import {
   AlertTriangle,
   Copy,
   Check,
-  Mail,
-  MailX,
   Send,
   Trash2,
 } from "lucide-react";
@@ -79,9 +77,7 @@ type UserRow = {
 interface InviteResult {
   email: string;
   name: string;
-  inviteSent: boolean;
-  emailError?: string | null;
-  setupUrl?: string | null;
+  setupUrl: string;
   expiresAt: string;
   kind: "invite" | "reset";
 }
@@ -130,8 +126,8 @@ export default function Users() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Users</h1>
           <p className="text-muted-foreground text-sm">
-            Manage system access and roles. New users receive a one-time email
-            link to set their password.
+            Manage system access and roles. Adding a user generates a one-time
+            setup link you'll deliver to them through a secure channel.
           </p>
         </div>
         <Button onClick={() => setCreateOpen(true)} data-testid="button-add-user">
@@ -302,8 +298,6 @@ function CreateUserDialog({
           onCreated({
             email: resp.user.email,
             name: resp.user.name,
-            inviteSent: resp.inviteSent,
-            emailError: resp.emailError,
             setupUrl: resp.setupUrl,
             expiresAt: resp.expiresAt,
             kind: "invite",
@@ -327,8 +321,9 @@ function CreateUserDialog({
         <DialogHeader>
           <DialogTitle>Add User</DialogTitle>
           <DialogDescription>
-            A one-time setup link will be emailed to the user. They'll choose
-            their own password — admins never see or type passwords for users.
+            A one-time setup link will be generated. Hand it to the user
+            through a secure channel — they'll choose their own password.
+            Admins never see or type passwords for users.
           </DialogDescription>
         </DialogHeader>
         {mutation.error && (
@@ -403,7 +398,7 @@ function CreateUserDialog({
                 {mutation.isPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  "Create User & Send Invite"
+                  "Create User & Generate Link"
                 )}
               </Button>
             </DialogFooter>
@@ -583,8 +578,6 @@ function ResetPasswordDialog({
           onReset({
             email: user.email,
             name: user.name,
-            inviteSent: resp.inviteSent,
-            emailError: resp.emailError,
             setupUrl: resp.setupUrl,
             expiresAt: resp.expiresAt,
             kind: "reset",
@@ -599,11 +592,12 @@ function ResetPasswordDialog({
     <Dialog open onOpenChange={(v) => !v && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Send password-reset link?</DialogTitle>
+          <DialogTitle>Generate password-reset link?</DialogTitle>
           <DialogDescription>
-            A one-time link will be emailed to <strong>{user.email}</strong>.
-            They'll choose a new password through that link. Their existing
-            password will keep working until the new one is set.
+            A one-time link will be generated for <strong>{user.email}</strong>.
+            Hand it to them through a secure channel. They'll choose a new
+            password through that link. Their existing password will keep
+            working until the new one is set.
           </DialogDescription>
         </DialogHeader>
         {mutation.error && (
@@ -629,7 +623,7 @@ function ResetPasswordDialog({
             {mutation.isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
-              "Send Reset Link"
+              "Generate Reset Link"
             )}
           </Button>
         </DialogFooter>
@@ -657,8 +651,6 @@ function ResendInviteDialog({
           onResent({
             email: user.email,
             name: user.name,
-            inviteSent: resp.inviteSent,
-            emailError: resp.emailError,
             setupUrl: resp.setupUrl,
             expiresAt: resp.expiresAt,
             kind: "invite",
@@ -672,11 +664,11 @@ function ResendInviteDialog({
     <Dialog open onOpenChange={(v) => !v && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Resend setup link?</DialogTitle>
+          <DialogTitle>Generate new setup link?</DialogTitle>
           <DialogDescription>
-            A new one-time setup link will be emailed to{" "}
+            A new one-time setup link will be generated for{" "}
             <strong>{user.email}</strong>. Any previous unused setup link will
-            stop working.
+            stop working. Hand the new link to them through a secure channel.
           </DialogDescription>
         </DialogHeader>
         {mutation.error && (
@@ -699,7 +691,7 @@ function ResendInviteDialog({
             {mutation.isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
-              "Resend Invite"
+              "Generate New Link"
             )}
           </Button>
         </DialogFooter>
@@ -831,7 +823,6 @@ function InviteResultDialog({
   if (!invite) return null;
 
   const copy = async () => {
-    if (!invite.setupUrl) return;
     try {
       await navigator.clipboard.writeText(invite.setupUrl);
       setCopied(true);
@@ -863,55 +854,44 @@ function InviteResultDialog({
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
-            {invite.inviteSent ? (
-              <span className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400">
-                <Mail className="h-4 w-4" />
-                Setup link emailed to <strong>{invite.email}</strong>.
-              </span>
-            ) : (
-              <span className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
-                <MailX className="h-4 w-4" /> Email could not be delivered
-                {invite.emailError ? ` (${invite.emailError})` : ""}. Share the
-                link below with the user through a secure channel.
-              </span>
-            )}
+            Copy the one-time link below and share it with{" "}
+            <strong>{invite.email}</strong> through a secure channel (e.g.
+            in person or via an authenticated workplace messenger).
           </DialogDescription>
         </DialogHeader>
 
-        {invite.setupUrl && (
-          <div className="space-y-3">
-            <div className="rounded-md border bg-muted/40 p-3 space-y-2">
-              <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                One-time setup link
-              </div>
-              <div className="flex items-center gap-2">
-                <code
-                  className="flex-1 font-mono text-xs bg-background border rounded px-3 py-2 break-all select-all"
-                  data-testid="text-setup-url"
-                >
-                  {invite.setupUrl}
-                </code>
-                <Button
-                  size="icon"
-                  variant="outline"
-                  onClick={copy}
-                  title="Copy setup link"
-                  data-testid="button-copy-setup-url"
-                >
-                  {copied ? (
-                    <Check className="h-4 w-4 text-emerald-600" />
-                  ) : (
-                    <Copy className="h-4 w-4" />
-                  )}
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Single use. Expires{" "}
-                {format(new Date(invite.expiresAt), "MMM d, yyyy 'at' h:mm a")}.
-              </p>
+        <div className="space-y-3">
+          <div className="rounded-md border bg-muted/40 p-3 space-y-2">
+            <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              One-time setup link
             </div>
+            <div className="flex items-center gap-2">
+              <code
+                className="flex-1 font-mono text-xs bg-background border rounded px-3 py-2 break-all select-all"
+                data-testid="text-setup-url"
+              >
+                {invite.setupUrl}
+              </code>
+              <Button
+                size="icon"
+                variant="outline"
+                onClick={copy}
+                title="Copy setup link"
+                data-testid="button-copy-setup-url"
+              >
+                {copied ? (
+                  <Check className="h-4 w-4 text-emerald-600" />
+                ) : (
+                  <Copy className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Single use. Expires{" "}
+              {format(new Date(invite.expiresAt), "MMM d, yyyy 'at' h:mm a")}.
+            </p>
           </div>
-        )}
+        </div>
 
         <DialogFooter>
           <Button onClick={onClose} data-testid="button-close-credentials">

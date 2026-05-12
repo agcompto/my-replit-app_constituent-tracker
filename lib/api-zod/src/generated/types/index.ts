@@ -44,7 +44,6 @@ export * from "./donorLookupTouchpointsItem";
 export * from "./exportJob";
 export * from "./exportResult";
 export * from "./exportResultFilesItem";
-export * from "./forgotPasswordInput";
 export * from "./getAuditLogParams";
 export * from "./getCohortAnalysisParams";
 export * from "./getDashboardParams";

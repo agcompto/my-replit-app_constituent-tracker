@@ -197,17 +197,6 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/InviteResponse" }
-  /auth/forgot-password:
-    post:
-      operationId: forgotPassword
-      tags: [auth]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/ForgotPasswordInput" }
-      responses:
-        "204": { description: "Always returned, regardless of whether the email exists." }
   /password-setup/{token}:
     get:
       operationId: validatePasswordSetupToken
@@ -1271,34 +1260,21 @@ components:
       properties: {}
     InviteResponse:
       type: object
-      required: [inviteSent, expiresAt]
+      required: [setupUrl, expiresAt]
       properties:
-        inviteSent:
-          type: boolean
-          description: True when the setup-link email was successfully delivered.
-        emailError:
-          type: ["string", "null"]
-          description: Reason email delivery failed; null on success.
         setupUrl:
-          type: ["string", "null"]
-          description: One-time setup URL. Only returned when email delivery failed so the admin can hand-deliver the link.
+          type: string
+          description: One-time setup URL the admin must deliver to the user out-of-band. Single use, short-lived.
         expiresAt: { type: string, format: date-time }
     UserCreatedResponse:
       type: object
-      required: [user, inviteSent, expiresAt]
+      required: [user, setupUrl, expiresAt]
       properties:
         user: { $ref: "#/components/schemas/User" }
-        inviteSent: { type: boolean }
-        emailError: { type: ["string", "null"] }
-        setupUrl: { type: ["string", "null"] }
+        setupUrl: { type: string }
         expiresAt: { type: string, format: date-time }
     PasswordResetResponse:
       $ref: "#/components/schemas/InviteResponse"
-    ForgotPasswordInput:
-      type: object
-      required: [email]
-      properties:
-        email: { type: string, format: email }
     PasswordSetupTokenInfo:
       type: object
       required: [email, name, kind, expiresAt]

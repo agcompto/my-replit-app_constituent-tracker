@@ -13,7 +13,6 @@ import {
 import { requireRole, audit } from "../lib/auth";
 import { requireRecentAuth, RECENT_AUTH_WINDOW_MS } from "../lib/recentAuth";
 import { generateTempPassword } from "../lib/password";
-import { sendPasswordSetupLink, isEmailConfigured } from "../lib/email";
 import { issueSetupToken } from "../lib/passwordSetupTokens";
 import { buildSetupPasswordUrl } from "../lib/appUrl";
 
@@ -44,21 +43,15 @@ router.get(
 );
 
 /**
- * Build the standard "invite/reset" response envelope. The setup URL is only
- * surfaced when email delivery failed so the admin can hand-deliver the link;
- * otherwise it stays out of the API response so it can't be intercepted from
- * the admin's network logs.
+ * Build the standard "invite/reset" response envelope. The one-time setup
+ * URL is returned to the admin so they can hand-deliver it to the user via
+ * a secure out-of-band channel (the system intentionally does not send
+ * email). The token in the URL is single-use, short-lived, and stored only
+ * as a SHA-256 hash server-side.
  */
-function inviteResponse(opts: {
-  inviteSent: boolean;
-  emailError?: string | null;
-  setupUrl: string;
-  expiresAt: Date;
-}) {
+function inviteResponse(opts: { setupUrl: string; expiresAt: Date }) {
   return {
-    inviteSent: opts.inviteSent,
-    emailError: opts.inviteSent ? null : opts.emailError ?? null,
-    setupUrl: opts.inviteSent ? null : opts.setupUrl,
+    setupUrl: opts.setupUrl,
     expiresAt: opts.expiresAt.toISOString(),
   };
 }
@@ -109,23 +102,12 @@ router.post(
     });
     const setupUrl = buildSetupPasswordUrl(rawToken);
 
-    const emailResult = isEmailConfigured()
-      ? await sendPasswordSetupLink({
-          to: createdUser.email,
-          recipientName: createdUser.name,
-          url: setupUrl,
-          kind: "invite",
-          triggeredBy: req.currentUser!.name,
-          expiresInHours: INVITE_TTL_HOURS,
-        })
-      : { sent: false, error: "Email not configured" };
-
     await audit({
       actor: req.currentUser!,
       action: "create_user",
       entityType: "user",
       entityId: createdUser.id,
-      details: `Created ${createdUser.email} as ${createdUser.role}; invite_sent=${emailResult.sent}`,
+      details: `Created ${createdUser.email} as ${createdUser.role}`,
     });
 
     res.status(201).json({
@@ -137,12 +119,7 @@ router.post(
         active: createdUser.active,
         createdAt: createdUser.createdAt.toISOString(),
       },
-      ...inviteResponse({
-        inviteSent: emailResult.sent,
-        emailError: emailResult.error,
-        setupUrl,
-        expiresAt,
-      }),
+      ...inviteResponse({ setupUrl, expiresAt }),
     });
   },
 );
@@ -243,33 +220,15 @@ router.post(
     });
     const setupUrl = buildSetupPasswordUrl(rawToken);
 
-    const emailResult = isEmailConfigured()
-      ? await sendPasswordSetupLink({
-          to: u.email,
-          recipientName: u.name,
-          url: setupUrl,
-          kind: "reset",
-          triggeredBy: req.currentUser!.name,
-          expiresInHours: RESET_TTL_HOURS,
-        })
-      : { sent: false, error: "Email not configured" };
-
     await audit({
       actor: req.currentUser!,
       action: "reset_password",
       entityType: "user",
       entityId: u.id,
-      details: `invite_sent=${emailResult.sent}`,
+      details: `Issued password-reset link`,
     });
 
-    res.json(
-      inviteResponse({
-        inviteSent: emailResult.sent,
-        emailError: emailResult.error,
-        setupUrl,
-        expiresAt,
-      }),
-    );
+    res.json(inviteResponse({ setupUrl, expiresAt }));
   },
 );
 
@@ -302,33 +261,15 @@ router.post(
     });
     const setupUrl = buildSetupPasswordUrl(rawToken);
 
-    const emailResult = isEmailConfigured()
-      ? await sendPasswordSetupLink({
-          to: u.email,
-          recipientName: u.name,
-          url: setupUrl,
-          kind: "invite",
-          triggeredBy: req.currentUser!.name,
-          expiresInHours: INVITE_TTL_HOURS,
-        })
-      : { sent: false, error: "Email not configured" };
-
     await audit({
       actor: req.currentUser!,
       action: "resend_invite",
       entityType: "user",
       entityId: u.id,
-      details: `invite_sent=${emailResult.sent}`,
+      details: `Issued new setup link`,
     });
 
-    res.json(
-      inviteResponse({
-        inviteSent: emailResult.sent,
-        emailError: emailResult.error,
-        setupUrl,
-        expiresAt,
-      }),
-    );
+    res.json(inviteResponse({ setupUrl, expiresAt }));
   },
 );
 

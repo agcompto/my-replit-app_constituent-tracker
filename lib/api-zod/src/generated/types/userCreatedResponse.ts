@@ -9,10 +9,6 @@ import type { User } from "./user";
 
 export interface UserCreatedResponse {
   user: User;
-  inviteSent: boolean;
-  /** @nullable */
-  emailError?: string | null;
-  /** @nullable */
-  setupUrl?: string | null;
+  setupUrl: string;
   expiresAt: Date;
 }

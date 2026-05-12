@@ -9,7 +9,6 @@ import { AuthGuard } from "@/components/layout/AuthGuard";
 import { AppLayout } from "@/components/layout/AppLayout";
 import Login from "@/pages/login";
 import ChangePassword from "@/pages/change-password";
-import ForgotPassword from "@/pages/forgot-password";
 import SetupPassword from "@/pages/setup-password";
 import Dashboard from "@/pages/dashboard";
 import Campaigns from "@/pages/campaigns";
@@ -60,7 +59,6 @@ function Router() {
     <>
       <Switch>
         <Route path="/login" component={Login} />
-        <Route path="/forgot-password" component={ForgotPassword} />
         <Route path="/setup-password/:token" component={SetupPassword} />
         <Route path="/change-password">
           <AuthGuard>
