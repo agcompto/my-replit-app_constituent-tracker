@@ -1,4 +1,4 @@
-import { pool } from "@workspace/db";
+import { closeDb } from "@workspace/db";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { seedDefaults } from "./lib/seed";
@@ -56,8 +56,7 @@ function gracefulShutdown(signal: NodeJS.Signals) {
     if (err) {
       logger.error({ err }, "Error closing HTTP server");
     }
-    pool
-      .end()
+    closeDb()
       .then(() => {
         logger.info("Shutdown complete");
         clearTimeout(forceExit);

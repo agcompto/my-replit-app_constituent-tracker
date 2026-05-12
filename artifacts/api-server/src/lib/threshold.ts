@@ -196,16 +196,30 @@ export interface PreviewOutput {
   byThreshold: Array<{ thresholdId: number; thresholdName: string; flaggedCount: number }>;
 }
 
-export async function computeThresholdPreview(campaignId: number): Promise<PreviewOutput> {
-  const [planned, history, thresholds, overrides] = await Promise.all([
-    getCampaignTouchesForPreview(campaignId),
-    getHistoricalTouchpoints(campaignId),
-    getThresholds(campaignId),
-    getOverrides(campaignId),
-  ]);
-  const audienceByTouch = await getEffectiveAudienceByTouch(campaignId, planned);
+export interface ThresholdRule {
+  id: number;
+  name: string;
+  scope: "all" | "channel" | "campaign_type" | "channel_and_type";
+  channelId: number | null;
+  campaignTypeId: number | null;
+  windowDays: number;
+  maxTouchpoints: number;
+}
 
-  // Union of all donors who will receive any touch in this campaign
+/**
+ * Pure threshold-conflict computation. Extracted from `computeThresholdPreview`
+ * so it can be unit-tested with hand-crafted inputs (notably for DST/timezone
+ * edge cases at the rolling-window boundary).
+ */
+export function computeThresholdConflicts(input: {
+  planned: PlannedTouch[];
+  history: HistoryRow[];
+  thresholds: ThresholdRule[];
+  overrides: Set<string>;
+  audienceByTouch: Map<number, Set<string>>;
+}): PreviewOutput {
+  const { planned, history, thresholds, overrides, audienceByTouch } = input;
+
   const allDonors = new Set<string>();
   for (const set of audienceByTouch.values()) {
     for (const d of set) allDonors.add(d);
@@ -220,7 +234,6 @@ export async function computeThresholdPreview(campaignId: number): Promise<Previ
     byThreshold.set(t.id, { name: t.name, flagged: new Set() });
   }
 
-  // Build per-donor combined timeline
   const perDonorEvents = new Map<string, Array<{ sendDate: string; channelId: number; campaignTypeId: number; isPlanned: boolean }>>();
   for (const h of history) {
     if (!allDonors.has(h.donorId)) continue;
@@ -245,11 +258,11 @@ export async function computeThresholdPreview(campaignId: number): Promise<Previ
         if (t.scope === "campaign_type") return e.campaignTypeId === t.campaignTypeId;
         if (t.scope === "channel_and_type")
           return e.channelId === t.channelId && e.campaignTypeId === t.campaignTypeId;
-        return true; // all
+        return true;
       });
       if (filtered.length === 0) continue;
-      for (const planned of filtered.filter((e) => e.isPlanned)) {
-        const inWindow = filtered.filter((e) => diffDays(e.sendDate, planned.sendDate) < t.windowDays);
+      for (const plannedEvt of filtered.filter((e) => e.isPlanned)) {
+        const inWindow = filtered.filter((e) => diffDays(e.sendDate, plannedEvt.sendDate) < t.windowDays);
         if (inWindow.length > t.maxTouchpoints) {
           const explanation = `${inWindow.length} touchpoints projected in ${t.windowDays}-day window (max ${t.maxTouchpoints}) for ${t.scope === "all" ? "all communications" : t.scope.replace("_", " ")}.`;
           conflicts.push({
@@ -280,6 +293,23 @@ export async function computeThresholdPreview(campaignId: number): Promise<Previ
       flaggedCount: v.flagged.size,
     })),
   };
+}
+
+export async function computeThresholdPreview(campaignId: number): Promise<PreviewOutput> {
+  const [planned, history, thresholds, overrides] = await Promise.all([
+    getCampaignTouchesForPreview(campaignId),
+    getHistoricalTouchpoints(campaignId),
+    getThresholds(campaignId),
+    getOverrides(campaignId),
+  ]);
+  const audienceByTouch = await getEffectiveAudienceByTouch(campaignId, planned);
+  return computeThresholdConflicts({
+    planned,
+    history,
+    thresholds: thresholds as unknown as ThresholdRule[],
+    overrides,
+    audienceByTouch,
+  });
 }
 
 export interface PerTouchExport {
