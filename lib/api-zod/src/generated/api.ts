@@ -1290,6 +1290,56 @@ export const AiSuggestCadenceResponse = zod.object({
   ),
 });
 
+export const AiSuggestDateShiftsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const AiSuggestDateShiftsResponse = zod.object({
+  generatedAt: zod.coerce.date(),
+  currentExcludedCount: zod.number(),
+  suggestions: zod.array(
+    zod.object({
+      touchId: zod.number(),
+      touchName: zod.string(),
+      currentSendDate: zod.coerce.date(),
+      proposedSendDate: zod.coerce.date(),
+      projectedExcludedDelta: zod.number(),
+      projectedExcludedAfter: zod.number(),
+      rationale: zod.string(),
+    }),
+  ),
+});
+
+export const ApplyAiDateShiftParams = zod.object({
+  id: zod.coerce.number(),
+  touchId: zod.coerce.number(),
+});
+
+export const ApplyAiDateShiftBody = zod.object({
+  proposedSendDate: zod.coerce.date(),
+});
+
+export const ApplyAiDateShiftResponse = zod.object({
+  id: zod.number(),
+  campaignId: zod.number(),
+  touchName: zod.string(),
+  channelId: zod.number(),
+  channelLabel: zod.string(),
+  campaignTypeId: zod.number(),
+  campaignTypeLabel: zod.string(),
+  sendDate: zod.coerce.date(),
+  notes: zod.string().nullish(),
+  audienceMode: zod.enum(["campaign", "custom"]),
+  customValidIdCount: zod.number().optional(),
+  customUniqueIdCount: zod.number().optional(),
+  customDuplicateIdCount: zod.number().optional(),
+  customRejectedIdCount: zod.number().optional(),
+  customOriginalRowCount: zod.number().optional(),
+  customExtraColumnsIgnored: zod.boolean().optional(),
+  customRejectedSamples: zod.array(zod.string()).optional(),
+  customDuplicateSamples: zod.array(zod.string()).optional(),
+});
+
 export const aiClassifySuppressionReasonBodyTextMin = 3;
 export const aiClassifySuppressionReasonBodyTextMax = 4000;
 

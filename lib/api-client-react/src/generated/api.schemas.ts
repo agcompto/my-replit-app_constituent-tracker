@@ -922,6 +922,26 @@ export interface AiCadenceSuggestion {
   touches: AiCadenceSuggestionTouchesItem[];
 }
 
+export type AiDateShiftSuggestionsSuggestionsItem = {
+  touchId: number;
+  touchName: string;
+  currentSendDate: string;
+  proposedSendDate: string;
+  projectedExcludedDelta: number;
+  projectedExcludedAfter: number;
+  rationale: string;
+};
+
+export interface AiDateShiftSuggestions {
+  generatedAt: string;
+  currentExcludedCount: number;
+  suggestions: AiDateShiftSuggestionsSuggestionsItem[];
+}
+
+export interface ApplyAiDateShiftInput {
+  proposedSendDate: string;
+}
+
 export interface AiClassifyInput {
   /**
    * @minLength 3

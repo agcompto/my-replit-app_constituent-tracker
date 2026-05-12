@@ -1078,6 +1078,36 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AiCadenceSuggestion" }
+  /campaigns/{id}/ai/suggest-date-shifts:
+    post:
+      operationId: aiSuggestDateShifts
+      tags: [aiAssist]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AiDateShiftSuggestions" }
+  /campaigns/{id}/touches/{touchId}/apply-ai-date-shift:
+    post:
+      operationId: applyAiDateShift
+      tags: [touches]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: touchId, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApplyAiDateShiftInput" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Touch" }
   /ai/classify-suppression-reason:
     post:
       operationId: aiClassifySuppressionReason
@@ -1937,6 +1967,30 @@ components:
               channelLabel: { type: string }
               dayOffset: { type: integer }
               purpose: { type: string }
+    AiDateShiftSuggestions:
+      type: object
+      required: [generatedAt, currentExcludedCount, suggestions]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        currentExcludedCount: { type: integer }
+        suggestions:
+          type: array
+          items:
+            type: object
+            required: [touchId, touchName, currentSendDate, proposedSendDate, projectedExcludedDelta, projectedExcludedAfter, rationale]
+            properties:
+              touchId: { type: integer }
+              touchName: { type: string }
+              currentSendDate: { type: string, format: date }
+              proposedSendDate: { type: string, format: date }
+              projectedExcludedDelta: { type: integer }
+              projectedExcludedAfter: { type: integer }
+              rationale: { type: string }
+    ApplyAiDateShiftInput:
+      type: object
+      required: [proposedSendDate]
+      properties:
+        proposedSendDate: { type: string, format: date }
     AiClassifyInput:
       type: object
       required: [text]

@@ -295,6 +295,27 @@ export function computeThresholdConflicts(input: {
   };
 }
 
+/**
+ * Count distinct donors that would be excluded (removed) from exports because
+ * of "remove"-action threshold rules, ignoring per-donor overrides. This is
+ * the metric the AI date-shift suggester optimizes: a candidate proposal is
+ * only kept if it strictly reduces this count.
+ */
+export function countExcludedByRemoveThresholds(
+  conflicts: PreviewOutput["conflicts"],
+  thresholds: Array<{ id: number; actionMode: string }>,
+): number {
+  const removeIds = new Set(
+    thresholds.filter((t) => t.actionMode === "remove").map((t) => t.id),
+  );
+  const excluded = new Set<string>();
+  for (const c of conflicts) {
+    if (c.overridden) continue;
+    if (removeIds.has(c.thresholdId)) excluded.add(c.donorId);
+  }
+  return excluded.size;
+}
+
 export async function computeThresholdPreview(campaignId: number): Promise<PreviewOutput> {
   const [planned, history, thresholds, overrides] = await Promise.all([
     getCampaignTouchesForPreview(campaignId),

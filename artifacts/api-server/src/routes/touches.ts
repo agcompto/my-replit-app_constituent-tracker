@@ -11,6 +11,8 @@ import {
   UploadTouchAudienceParams,
   UploadTouchAudienceBody,
   ClearTouchAudienceParams,
+  ApplyAiDateShiftParams,
+  ApplyAiDateShiftBody,
 } from "@workspace/api-zod";
 import { requireAuth, audit, canMutateCampaign } from "../lib/auth";
 import { resolveAudienceSource } from "../lib/audienceSource";
@@ -148,6 +150,107 @@ router.patch(
       action: "update_touch",
       entityType: "touch",
       entityId: row.id,
+    });
+    res.json(await shapeTouch(row));
+  },
+);
+
+router.post(
+  "/campaigns/:id/touches/:touchId/apply-ai-date-shift",
+  requireAuth,
+  async (req, res): Promise<void> => {
+    const params = ApplyAiDateShiftParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const body = ApplyAiDateShiftBody.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: body.error.message });
+      return;
+    }
+    const access = await canMutateCampaign(params.data.id, req.currentUser!);
+    if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
+    if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
+    if (access === "voided") { res.status(403).json({ error: "Cannot modify a voided campaign" }); return; }
+
+    const proposed = body.data.proposedSendDate instanceof Date
+      ? body.data.proposedSendDate.toISOString().slice(0, 10)
+      : String(body.data.proposedSendDate);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(proposed)) {
+      res.status(400).json({ error: "Invalid proposedSendDate" });
+      return;
+    }
+    {
+      const [y, m, d] = proposed.split("-").map(Number);
+      const dt = new Date(Date.UTC(y, m - 1, d));
+      if (
+        dt.getUTCFullYear() !== y ||
+        dt.getUTCMonth() !== m - 1 ||
+        dt.getUTCDate() !== d
+      ) {
+        res.status(400).json({ error: "Invalid calendar date" });
+        return;
+      }
+    }
+
+    const [existing] = await db
+      .select()
+      .from(touchesTable)
+      .where(and(
+        eq(touchesTable.id, params.data.touchId),
+        eq(touchesTable.campaignId, params.data.id),
+      ));
+    if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+    const previousISO = typeof existing.sendDate === "string"
+      ? existing.sendDate
+      : (existing.sendDate as Date).toISOString().slice(0, 10);
+
+    // Defense-in-depth: even though the UI only POSTs server-validated
+    // suggestions, the apply route is its own trust boundary. Reject
+    // requests that violate the AI date-shift contract (±7 days from the
+    // touch's current send date, not in the past).
+    const todayISO = new Date().toISOString().slice(0, 10);
+    if (proposed < todayISO) {
+      res.status(400).json({ error: "Proposed date is in the past" });
+      return;
+    }
+    const [py, pm, pd] = proposed.split("-").map(Number);
+    const [cy, cm, cd] = previousISO.split("-").map(Number);
+    const diffDays = Math.round(
+      (Date.UTC(py, pm - 1, pd) - Date.UTC(cy, cm - 1, cd)) / 86400000,
+    );
+    if (Math.abs(diffDays) > 7) {
+      res.status(400).json({ error: "Proposed date must be within ±7 days of the current send date" });
+      return;
+    }
+
+    const [row] = await db
+      .update(touchesTable)
+      .set({ sendDate: proposed })
+      .where(and(
+        eq(touchesTable.id, params.data.touchId),
+        eq(touchesTable.campaignId, params.data.id),
+      ))
+      .returning();
+    if (!row) { res.status(404).json({ error: "Not found" }); return; }
+    // Same standard touch-update audit row that PATCH /touches/:id writes,
+    // so general "who changed this touch?" queries don't have to special-case
+    // the AI path...
+    await audit({
+      actor: req.currentUser!,
+      action: "update_touch",
+      entityType: "touch",
+      entityId: row.id,
+    });
+    // ...plus an additional AI-originated audit row that records the source
+    // and the from→to dates, so AI-driven changes can be filtered separately.
+    await audit({
+      actor: req.currentUser!,
+      action: "touch_date_shift_applied",
+      entityType: "touch",
+      entityId: row.id,
+      details: `source=ai_suggestion from=${previousISO} to=${proposed}`,
     });
     res.json(await shapeTouch(row));
   },

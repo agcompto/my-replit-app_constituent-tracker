@@ -1,14 +1,38 @@
-import { useGetCampaignPreview, useFinalizeCampaign, useExportCampaign, useGetCampaignHealthCheck, getGetCampaignQueryKey, getGetCampaignPreviewQueryKey, getGetCampaignHealthCheckQueryKey } from "@workspace/api-client-react";
+import {
+  useGetCampaignPreview,
+  useFinalizeCampaign,
+  useExportCampaign,
+  useGetCampaignHealthCheck,
+  useAiSuggestDateShifts,
+  useApplyAiDateShift,
+  useGetSettings,
+  getGetCampaignQueryKey,
+  getGetCampaignPreviewQueryKey,
+  getGetCampaignHealthCheckQueryKey,
+  getListTouchesQueryKey,
+  getListThresholdsQueryKey,
+} from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Download, AlertTriangle, AlertOctagon, Send, FileText } from "lucide-react";
+import { Loader2, Download, AlertTriangle, AlertOctagon, Send, FileText, Sparkles, ArrowRight } from "lucide-react";
 import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { useState } from "react";
 import { HealthCheckPanel } from "@/components/health-check-panel";
+
+interface DateShiftSuggestion {
+  touchId: number;
+  touchName: string;
+  currentSendDate: string;
+  proposedSendDate: string;
+  projectedExcludedDelta: number;
+  projectedExcludedAfter: number;
+  rationale: string;
+}
 
 export default function PreviewStep({ campaign }: { campaign: any }) {
   const [, setLocation] = useLocation();
@@ -25,10 +49,73 @@ export default function PreviewStep({ campaign }: { campaign: any }) {
 
   const finalizeMutation = useFinalizeCampaign();
   const exportMutation = useExportCampaign();
-  
+  const { data: settings } = useGetSettings();
+  const suggestDateShifts = useAiSuggestDateShifts();
+  const applyDateShift = useApplyAiDateShift();
+
   const [exportResult, setExportResult] = useState<any>(null);
   const [warningAck, setWarningAck] = useState(false);
   const [exportError, setExportError] = useState<{ message: string; findings?: any[] } | null>(null);
+  const [shiftPanelOpen, setShiftPanelOpen] = useState(false);
+  const [dateShifts, setDateShifts] = useState<{
+    suggestions: DateShiftSuggestion[];
+    currentExcludedCount: number;
+    generatedAt: string;
+  } | null>(null);
+  const [applyingTouchId, setApplyingTouchId] = useState<number | null>(null);
+
+  const wizardLocked = campaign.status === "finalized" || campaign.status === "exported" || campaign.status === "voided" || campaign.status === "archived";
+  // `thresholdFlaggedDonors` is a superset of "excluded under remove rules"
+  // (it includes flag-mode conflicts too), so this is a conservative gate:
+  // when there are zero flagged donors there can't be anyone to optimize.
+  const flaggedCount = preview?.thresholdFlaggedDonors ?? 0;
+  const aiPanelEnabled = !!settings?.aiAssistEnabled && !wizardLocked && flaggedCount > 0;
+
+  const fetchDateShifts = () => {
+    setShiftPanelOpen(true);
+    suggestDateShifts.mutate({ id: campaign.id }, {
+      onSuccess: (res) => setDateShifts({
+        suggestions: (res.suggestions ?? []) as DateShiftSuggestion[],
+        currentExcludedCount: res.currentExcludedCount ?? 0,
+        generatedAt: typeof res.generatedAt === "string" ? res.generatedAt : new Date(res.generatedAt as unknown as Date).toISOString(),
+      }),
+      onError: (err: any) => toast({
+        title: "AI suggestion failed",
+        description: err?.response?.data?.error || err?.message || "Unknown error",
+        variant: "destructive",
+      }),
+    });
+  };
+
+  const handleApplyShift = (s: DateShiftSuggestion) => {
+    setApplyingTouchId(s.touchId);
+    applyDateShift.mutate(
+      { id: campaign.id, touchId: s.touchId, data: { proposedSendDate: s.proposedSendDate } },
+      {
+        onSuccess: () => {
+          toast({ title: "Touch date shifted", description: `${s.touchName}: ${s.currentSendDate} → ${s.proposedSendDate}` });
+          queryClient.invalidateQueries({ queryKey: getGetCampaignPreviewQueryKey(campaign.id) });
+          queryClient.invalidateQueries({ queryKey: getListTouchesQueryKey(campaign.id) });
+          queryClient.invalidateQueries({ queryKey: getListThresholdsQueryKey(campaign.id) });
+          queryClient.invalidateQueries({ queryKey: getGetCampaignHealthCheckQueryKey(campaign.id) });
+          // Re-run the suggestion call so the next round shows up automatically.
+          suggestDateShifts.mutate({ id: campaign.id }, {
+            onSuccess: (res) => setDateShifts({
+              suggestions: (res.suggestions ?? []) as DateShiftSuggestion[],
+              currentExcludedCount: res.currentExcludedCount ?? 0,
+              generatedAt: typeof res.generatedAt === "string" ? res.generatedAt : new Date(res.generatedAt as unknown as Date).toISOString(),
+            }),
+          });
+        },
+        onError: (err: any) => toast({
+          title: "Could not apply shift",
+          description: err?.response?.data?.error || err?.message || "Unknown error",
+          variant: "destructive",
+        }),
+        onSettled: () => setApplyingTouchId(null),
+      },
+    );
+  };
 
   const hasErrors = health?.status === "error";
   const hasWarnings = health?.status === "warning";
@@ -233,6 +320,88 @@ export default function PreviewStep({ campaign }: { campaign: any }) {
       </Card>
 
       <HealthCheckPanel campaignId={campaign.id} />
+
+      {aiPanelEnabled && (
+        <Card>
+          <CardHeader className="flex flex-row items-start justify-between gap-4">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-primary" /> AI Suggestions
+              </CardTitle>
+              <CardDescription>
+                Small touch send-date shifts that may reduce constituents excluded by your threshold rules. Suggestions are advisory; the server recomputes the impact under your own rules before showing them.
+              </CardDescription>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={fetchDateShifts}
+              disabled={suggestDateShifts.isPending}
+            >
+              {suggestDateShifts.isPending
+                ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                : <Sparkles className="h-4 w-4 mr-2 text-primary" />}
+              Suggest date shifts
+            </Button>
+          </CardHeader>
+          {shiftPanelOpen && (
+            <CardContent className="space-y-3">
+              {suggestDateShifts.isPending && !dateShifts && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Asking the model for candidates…
+                </div>
+              )}
+              {dateShifts && dateShifts.suggestions.length === 0 && (
+                <div className="text-sm text-muted-foreground">No suggestions to apply.</div>
+              )}
+              {dateShifts && dateShifts.suggestions.length > 0 && (
+                <div className="space-y-3">
+                  <div className="text-xs text-muted-foreground">
+                    Current excluded constituents under your rules: <strong>{dateShifts.currentExcludedCount.toLocaleString()}</strong>
+                  </div>
+                  {dateShifts.suggestions.map((s) => (
+                    <div
+                      key={`${s.touchId}-${s.proposedSendDate}`}
+                      className="border rounded-md p-4 space-y-2 bg-muted/20"
+                    >
+                      <div className="flex items-center justify-between gap-3 flex-wrap">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/30">
+                            <Sparkles className="h-3 w-3 mr-1" /> AI suggestion
+                          </Badge>
+                          <span className="font-semibold">{s.touchName}</span>
+                        </div>
+                        <Button
+                          size="sm"
+                          onClick={() => handleApplyShift(s)}
+                          disabled={applyingTouchId !== null}
+                        >
+                          {applyingTouchId === s.touchId
+                            ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            : null}
+                          Apply
+                        </Button>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="font-mono">{s.currentSendDate}</span>
+                        <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                        <span className="font-mono font-semibold">{s.proposedSendDate}</span>
+                        <span className="text-emerald-700">
+                          · drops {s.projectedExcludedDelta.toLocaleString()} excluded
+                          {" "}({dateShifts.currentExcludedCount.toLocaleString()} → {s.projectedExcludedAfter.toLocaleString()})
+                        </span>
+                      </div>
+                      {s.rationale && (
+                        <div className="text-sm text-muted-foreground">{s.rationale}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          )}
+        </Card>
+      )}
 
       {exportError && (
         <div className="bg-destructive/10 border border-destructive/30 p-4 rounded-md flex gap-3 text-destructive" role="alert">

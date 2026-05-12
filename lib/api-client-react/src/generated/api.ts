@@ -20,9 +20,11 @@ import type {
   AiCadenceSuggestion,
   AiClassifyInput,
   AiClassifyResult,
+  AiDateShiftSuggestions,
   AiSummary,
   AiUsage,
   AppSettings,
+  ApplyAiDateShiftInput,
   ApplyTemplatesResult,
   AudienceInput,
   AudienceUploadResult,
@@ -6090,6 +6092,166 @@ export const useAiSuggestCadence = <
   TContext
 > => {
   return useMutation(getAiSuggestCadenceMutationOptions(options));
+};
+
+export const getAiSuggestDateShiftsUrl = (id: number) => {
+  return `/api/campaigns/${id}/ai/suggest-date-shifts`;
+};
+
+export const aiSuggestDateShifts = async (
+  id: number,
+  options?: RequestInit,
+): Promise<AiDateShiftSuggestions> => {
+  return customFetch<AiDateShiftSuggestions>(getAiSuggestDateShiftsUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getAiSuggestDateShiftsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof aiSuggestDateShifts>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof aiSuggestDateShifts>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["aiSuggestDateShifts"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof aiSuggestDateShifts>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return aiSuggestDateShifts(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AiSuggestDateShiftsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof aiSuggestDateShifts>>
+>;
+
+export type AiSuggestDateShiftsMutationError = ErrorType<unknown>;
+
+export const useAiSuggestDateShifts = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof aiSuggestDateShifts>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof aiSuggestDateShifts>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getAiSuggestDateShiftsMutationOptions(options));
+};
+
+export const getApplyAiDateShiftUrl = (id: number, touchId: number) => {
+  return `/api/campaigns/${id}/touches/${touchId}/apply-ai-date-shift`;
+};
+
+export const applyAiDateShift = async (
+  id: number,
+  touchId: number,
+  applyAiDateShiftInput: ApplyAiDateShiftInput,
+  options?: RequestInit,
+): Promise<Touch> => {
+  return customFetch<Touch>(getApplyAiDateShiftUrl(id, touchId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(applyAiDateShiftInput),
+  });
+};
+
+export const getApplyAiDateShiftMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof applyAiDateShift>>,
+    TError,
+    { id: number; touchId: number; data: BodyType<ApplyAiDateShiftInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof applyAiDateShift>>,
+  TError,
+  { id: number; touchId: number; data: BodyType<ApplyAiDateShiftInput> },
+  TContext
+> => {
+  const mutationKey = ["applyAiDateShift"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof applyAiDateShift>>,
+    { id: number; touchId: number; data: BodyType<ApplyAiDateShiftInput> }
+  > = (props) => {
+    const { id, touchId, data } = props ?? {};
+
+    return applyAiDateShift(id, touchId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ApplyAiDateShiftMutationResult = NonNullable<
+  Awaited<ReturnType<typeof applyAiDateShift>>
+>;
+export type ApplyAiDateShiftMutationBody = BodyType<ApplyAiDateShiftInput>;
+export type ApplyAiDateShiftMutationError = ErrorType<unknown>;
+
+export const useApplyAiDateShift = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof applyAiDateShift>>,
+    TError,
+    { id: number; touchId: number; data: BodyType<ApplyAiDateShiftInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof applyAiDateShift>>,
+  TError,
+  { id: number; touchId: number; data: BodyType<ApplyAiDateShiftInput> },
+  TContext
+> => {
+  return useMutation(getApplyAiDateShiftMutationOptions(options));
 };
 
 export const getAiClassifySuppressionReasonUrl = () => {
