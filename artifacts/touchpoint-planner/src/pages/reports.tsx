@@ -15,7 +15,7 @@ import {
 } from "@workspace/api-client-react";
 import { Link } from "wouter";
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -35,11 +35,62 @@ import { useToast } from "@/hooks/use-toast";
 const VIEW_TYPES = ["channels", "types", "upcoming", "high-volume", "cohort", "yoy", "saturation"] as const;
 type ViewType = (typeof VIEW_TYPES)[number];
 
+// Linkable reports: tab + filters + per-tab config are kept in
+// `window.location.search` so a URL is enough to share/bookmark a view.
+function readInitialState(): {
+  tab: ViewType;
+  filters: ReportFilters;
+  cohortMonths: number;
+  saturationWeeks: number;
+} {
+  const sp = typeof window === "undefined" ? new URLSearchParams() : new URLSearchParams(window.location.search);
+  const rawTab = sp.get("tab");
+  const tab = (VIEW_TYPES as readonly string[]).includes(rawTab ?? "")
+    ? (rawTab as ViewType)
+    : "channels";
+  const filters: ReportFilters = {};
+  const start = sp.get("startDate");
+  const end = sp.get("endDate");
+  const owningUnit = sp.get("owningUnit");
+  const channelIdRaw = sp.get("channelId");
+  if (start) filters.startDate = start;
+  if (end) filters.endDate = end;
+  if (owningUnit) filters.owningUnit = owningUnit;
+  if (channelIdRaw && /^\d+$/.test(channelIdRaw)) filters.channelId = Number(channelIdRaw);
+  const months = Number(sp.get("cohortMonths"));
+  const weeks = Number(sp.get("saturationWeeks"));
+  return {
+    tab,
+    filters,
+    cohortMonths: [3, 6, 12, 18, 24, 36].includes(months) ? months : 12,
+    saturationWeeks: [4, 8, 12, 16, 20, 26].includes(weeks) ? weeks : 12,
+  };
+}
+
 export default function Reports() {
-  const [tab, setTab] = useState<ViewType>("channels");
-  const [filters, setFilters] = useState<ReportFilters>({});
-  const [cohortMonths, setCohortMonths] = useState(12);
-  const [saturationWeeks, setSaturationWeeks] = useState(12);
+  const initial = useRef(readInitialState()).current;
+  const [tab, setTab] = useState<ViewType>(initial.tab);
+  const [filters, setFilters] = useState<ReportFilters>(initial.filters);
+  const [cohortMonths, setCohortMonths] = useState(initial.cohortMonths);
+  const [saturationWeeks, setSaturationWeeks] = useState(initial.saturationWeeks);
+
+  // Push state → querystring (replaceState so we don't pollute history).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const sp = new URLSearchParams();
+    sp.set("tab", tab);
+    if (filters.startDate) sp.set("startDate", filters.startDate);
+    if (filters.endDate) sp.set("endDate", filters.endDate);
+    if (filters.owningUnit) sp.set("owningUnit", filters.owningUnit);
+    if (filters.channelId !== undefined) sp.set("channelId", String(filters.channelId));
+    if (tab === "cohort") sp.set("cohortMonths", String(cohortMonths));
+    if (tab === "saturation") sp.set("saturationWeeks", String(saturationWeeks));
+    const next = `${window.location.pathname}?${sp.toString()}`;
+    if (window.location.pathname + window.location.search !== next) {
+      window.history.replaceState(null, "", next);
+    }
+  }, [tab, filters, cohortMonths, saturationWeeks]);
+
   const saturationParams = {
     weeks: saturationWeeks,
     ...(filters.owningUnit ? { owningUnit: filters.owningUnit } : {}),
@@ -372,6 +423,27 @@ export default function Reports() {
                     <Stat label="Prior total" value={yoy?.priorTotal} />
                     <Stat label="% change" value={yoy ? `${yoy.percentChange >= 0 ? "+" : ""}${yoy.percentChange.toFixed(1)}%` : "—"} highlight={yoy?.percentChange} />
                   </div>
+                  {yoy && yoy.byMonth.length > 0 ? (
+                    <div className="mb-6">
+                      <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                        Monthly comparison (current vs prior year)
+                      </div>
+                      <div className="h-[300px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={buildYoyMonthlySeries(yoy.currentRange.start, yoy.byMonth)}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                            <XAxis dataKey="monthLabel" fontSize={12} tickLine={false} axisLine={false} />
+                            <YAxis fontSize={12} tickLine={false} axisLine={false} />
+                            <Tooltip cursor={{ fill: "rgba(0,0,0,0.05)" }} />
+                            <Legend />
+                            <Bar dataKey="prior" name="Prior year" fill="#94a3b8" radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="current" name="Current year" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  ) : null}
+                  <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">By channel</div>
                   <div className="h-[300px] mb-6">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={yoy?.byChannel || []}>
@@ -462,6 +534,23 @@ export default function Reports() {
       </Tabs>
     </div>
   );
+}
+
+// Convert the YoY backend's monthOffset-keyed buckets into a chart-ready
+// series with a human "Mon YYYY" label anchored on the current range start.
+function buildYoyMonthlySeries(
+  currentRangeStart: string,
+  byMonth: { monthOffset: number; current: number; prior: number }[],
+): { monthLabel: string; current: number; prior: number }[] {
+  const [y, m] = currentRangeStart.split("-").map(Number);
+  return byMonth.map((b) => {
+    const dt = new Date(Date.UTC(y, (m - 1) + b.monthOffset, 1));
+    return {
+      monthLabel: format(dt, "MMM yyyy"),
+      current: b.current,
+      prior: b.prior,
+    };
+  });
 }
 
 function SaturationHeatmap({ data }: { data: SaturationReport }) {
