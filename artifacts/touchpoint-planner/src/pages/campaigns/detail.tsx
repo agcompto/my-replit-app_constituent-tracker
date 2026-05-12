@@ -1,4 +1,6 @@
-import { useGetCampaign, useArchiveCampaign, useVoidCampaign, useDeleteCampaign, useAiAudienceSummary, useGetSettings, getGetCampaignQueryKey } from "@workspace/api-client-react";
+import { useGetCampaign, useArchiveCampaign, useVoidCampaign, useDeleteCampaign, useAiAudienceSummary, useGetSettings, getGetCampaignQueryKey, useListTouches, getListTouchesQueryKey } from "@workspace/api-client-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TouchDateHistoryPopover } from "@/components/touch-date-history-popover";
 import { useRoute, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -31,6 +33,9 @@ export default function CampaignDetail() {
 
   const { data: campaign, isLoading } = useGetCampaign(id, {
     query: { enabled: !!id, queryKey: getGetCampaignQueryKey(id) }
+  });
+  const { data: touches, isLoading: touchesLoading } = useListTouches(id, {
+    query: { enabled: !!id, queryKey: getListTouchesQueryKey(id) }
   });
 
   const archiveMutation = useArchiveCampaign();
@@ -267,6 +272,67 @@ export default function CampaignDetail() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Planned Touches</CardTitle>
+          <CardDescription>
+            Each planned communication for this campaign and its scheduled send date.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="pl-6">Name</TableHead>
+                <TableHead>Channel</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Send Date</TableHead>
+                <TableHead className="pr-6">Audience</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {touchesLoading ? (
+                <TableRow><TableCell colSpan={5} className="h-24 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell></TableRow>
+              ) : !touches?.length ? (
+                <TableRow><TableCell colSpan={5} className="h-24 text-center text-muted-foreground">No touchpoints defined for this campaign.</TableCell></TableRow>
+              ) : (
+                touches.map((t) => {
+                  const custom = t.audienceMode === "custom";
+                  return (
+                    <TableRow key={t.id} data-testid={`row-touch-${t.id}`}>
+                      <TableCell className="pl-6 font-medium">{t.touchName}</TableCell>
+                      <TableCell>{t.channelLabel}</TableCell>
+                      <TableCell>{t.campaignTypeLabel}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center">
+                          <span>{format(new Date(t.sendDate), "MMM d, yyyy")}</span>
+                          <TouchDateHistoryPopover
+                            campaignId={campaign.id}
+                            touchId={t.id}
+                            touchName={t.touchName}
+                          />
+                        </div>
+                      </TableCell>
+                      <TableCell className="pr-6">
+                        {custom ? (
+                          <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/30">
+                            Custom · {t.customUniqueIdCount?.toLocaleString() ?? 0}
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-muted-foreground">
+                            Campaign-wide · {campaign.uniqueIdCount?.toLocaleString() ?? 0}
+                          </Badge>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
 
     </div>
   );
