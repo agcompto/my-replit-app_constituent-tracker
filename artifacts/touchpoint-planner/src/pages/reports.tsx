@@ -155,11 +155,13 @@ export default function Reports() {
           }
           onLoad={(v) => {
             setFilters((v.filters as ReportFilters) || {});
-            if (v.viewType === "cohort" && v.config && typeof (v.config as any).months === "number") {
-              setCohortMonths((v.config as any).months);
+            const cohortMonthsFromConfig = readNumberField(v.config, "months");
+            if (v.viewType === "cohort" && cohortMonthsFromConfig !== undefined) {
+              setCohortMonths(cohortMonthsFromConfig);
             }
-            if (v.viewType === "saturation" && v.config && typeof (v.config as any).weeks === "number") {
-              setSaturationWeeks((v.config as any).weeks);
+            const saturationWeeksFromConfig = readNumberField(v.config, "weeks");
+            if (v.viewType === "saturation" && saturationWeeksFromConfig !== undefined) {
+              setSaturationWeeks(saturationWeeksFromConfig);
             }
             if ((VIEW_TYPES as readonly string[]).includes(v.viewType)) setTab(v.viewType as ViewType);
           }}
@@ -534,6 +536,16 @@ export default function Reports() {
       </Tabs>
     </div>
   );
+}
+
+// Typed narrowing for saved-view `config` blobs. Saved views store an opaque
+// JSON object per view type; we read only the numeric fields we recognize and
+// ignore everything else, so a malformed/legacy config can never crash the
+// load handler.
+function readNumberField(config: unknown, key: string): number | undefined {
+  if (!config || typeof config !== "object") return undefined;
+  const v = (config as Record<string, unknown>)[key];
+  return typeof v === "number" && Number.isFinite(v) ? v : undefined;
 }
 
 // Convert the YoY backend's monthOffset-keyed buckets into a chart-ready

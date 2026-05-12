@@ -13,6 +13,7 @@ import {
 import { requireRole } from "../lib/auth";
 import { loadCampaignSummary } from "../lib/campaigns";
 import { computeSaturation } from "../lib/saturation";
+import { computeYoyVolume } from "../lib/yoy";
 
 const router: IRouter = Router();
 
@@ -302,12 +303,6 @@ router.get("/reports/cohort-analysis", requireRole("admin", "super_admin"), asyn
   res.json({ generatedAt: new Date().toISOString(), months, cohorts });
 });
 
-function shiftYear(iso: string, years: number): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  const dt = new Date(Date.UTC(y - years, m - 1, d));
-  return dt.toISOString().slice(0, 10);
-}
-
 router.get("/reports/yoy-volume", requireRole("admin", "super_admin"), async (req, res): Promise<void> => {
   const cs = req.query.currentStart;
   const ce = req.query.currentEnd;
@@ -327,16 +322,13 @@ router.get("/reports/yoy-volume", requireRole("admin", "super_admin"), async (re
   }
   const ps = req.query.priorStart;
   const pe = req.query.priorEnd;
-  let priorStart: string;
-  let priorEnd: string;
+  let priorStart: string | undefined;
+  let priorEnd: string | undefined;
   if (typeof ps === "string" && typeof pe === "string") {
     const a = parseIsoDate(ps), b = parseIsoDate(pe);
     if (!a || !b) { res.status(400).json({ message: "Invalid prior date" }); return; }
     if (a > b) { res.status(400).json({ message: "priorStart must be on or before priorEnd" }); return; }
     priorStart = a; priorEnd = b;
-  } else {
-    priorStart = shiftYear(currentStart, 1);
-    priorEnd = shiftYear(currentEnd, 1);
   }
 
   const ouRaw = req.query.owningUnit;
@@ -349,112 +341,15 @@ router.get("/reports/yoy-volume", requireRole("admin", "super_admin"), async (re
     channelId = n;
   }
 
-  function buildWhere(start: string, end: string): SQL {
-    const parts: SQL[] = [
-      sql`${touchpointsTable.isSeed} = false`,
-      sql`${campaignsTable.status} <> 'voided'`,
-      sql`${touchpointsTable.sendDate} >= ${start}::date`,
-      sql`${touchpointsTable.sendDate} <= ${end}::date`,
-    ];
-    if (owningUnit) parts.push(sql`${campaignsTable.owningUnit} = ${owningUnit}`);
-    if (channelId !== undefined) parts.push(sql`${touchpointsTable.channelId} = ${channelId}`);
-    return sql.join(parts, sql` AND `);
-  }
-
-  const [curTotal] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(touchpointsTable)
-    .innerJoin(campaignsTable, sql`${touchpointsTable.campaignId} = ${campaignsTable.id}`)
-    .where(buildWhere(currentStart, currentEnd));
-  const [priTotal] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(touchpointsTable)
-    .innerJoin(campaignsTable, sql`${touchpointsTable.campaignId} = ${campaignsTable.id}`)
-    .where(buildWhere(priorStart, priorEnd));
-
-  const curByChannel = await db
-    .select({
-      label: channelsTable.name,
-      count: sql<number>`count(*)::int`,
-    })
-    .from(touchpointsTable)
-    .innerJoin(channelsTable, sql`${touchpointsTable.channelId} = ${channelsTable.id}`)
-    .innerJoin(campaignsTable, sql`${touchpointsTable.campaignId} = ${campaignsTable.id}`)
-    .where(buildWhere(currentStart, currentEnd))
-    .groupBy(channelsTable.name);
-  const priByChannel = await db
-    .select({
-      label: channelsTable.name,
-      count: sql<number>`count(*)::int`,
-    })
-    .from(touchpointsTable)
-    .innerJoin(channelsTable, sql`${touchpointsTable.channelId} = ${channelsTable.id}`)
-    .innerJoin(campaignsTable, sql`${touchpointsTable.campaignId} = ${campaignsTable.id}`)
-    .where(buildWhere(priorStart, priorEnd))
-    .groupBy(channelsTable.name);
-
-  const channelMap = new Map<string, { current: number; prior: number }>();
-  for (const r of curByChannel) channelMap.set(r.label, { current: r.count, prior: 0 });
-  for (const r of priByChannel) {
-    const e = channelMap.get(r.label) ?? { current: 0, prior: 0 };
-    e.prior = r.count;
-    channelMap.set(r.label, e);
-  }
-  const byChannel = Array.from(channelMap.entries())
-    .map(([label, v]) => ({ label, current: v.current, prior: v.prior }))
-    .sort((a, b) => b.current + b.prior - (a.current + a.prior));
-
-  // By month-offset: align month index from start of each range
-  function monthsBetween(start: string, end: string): number {
-    const [sy, sm] = start.split("-").map(Number);
-    const [ey, em] = end.split("-").map(Number);
-    return (ey - sy) * 12 + (em - sm) + 1;
-  }
-  const monthCount = Math.max(monthsBetween(currentStart, currentEnd), monthsBetween(priorStart, priorEnd));
-
-  async function monthBuckets(start: string, end: string): Promise<Map<number, number>> {
-    const rows = await db
-      .select({
-        bucket: sql<string>`to_char(date_trunc('month', ${touchpointsTable.sendDate}), 'YYYY-MM')`,
-        count: sql<number>`count(*)::int`,
-      })
-      .from(touchpointsTable)
-      .innerJoin(campaignsTable, sql`${touchpointsTable.campaignId} = ${campaignsTable.id}`)
-      .where(buildWhere(start, end))
-      .groupBy(sql`date_trunc('month', ${touchpointsTable.sendDate})`)
-      .orderBy(sql`date_trunc('month', ${touchpointsTable.sendDate})`);
-    const [sy, sm] = start.split("-").map(Number);
-    const map = new Map<number, number>();
-    for (const r of rows) {
-      const [y, m] = r.bucket.split("-").map(Number);
-      const offset = (y - sy) * 12 + (m - sm);
-      map.set(offset, r.count);
-    }
-    return map;
-  }
-  const curBuckets = await monthBuckets(currentStart, currentEnd);
-  const priBuckets = await monthBuckets(priorStart, priorEnd);
-  const byMonth: { monthOffset: number; current: number; prior: number }[] = [];
-  for (let i = 0; i < monthCount; i++) {
-    byMonth.push({ monthOffset: i, current: curBuckets.get(i) ?? 0, prior: priBuckets.get(i) ?? 0 });
-  }
-
-  const currentTotal = curTotal?.count ?? 0;
-  const priorTotal = priTotal?.count ?? 0;
-  const percentChange = priorTotal > 0
-    ? Number((((currentTotal - priorTotal) / priorTotal) * 100).toFixed(2))
-    : currentTotal > 0 ? 100 : 0;
-
-  res.json({
-    generatedAt: new Date().toISOString(),
-    currentRange: { start: currentStart, end: currentEnd },
-    priorRange: { start: priorStart, end: priorEnd },
-    currentTotal,
-    priorTotal,
-    percentChange,
-    byChannel,
-    byMonth,
+  const result = await computeYoyVolume({
+    currentStart,
+    currentEnd,
+    priorStart,
+    priorEnd,
+    owningUnit,
+    channelId,
   });
+  res.json({ generatedAt: new Date().toISOString(), ...result });
 });
 
 router.get("/reports/saturation", requireRole("admin", "super_admin"), async (req, res): Promise<void> => {

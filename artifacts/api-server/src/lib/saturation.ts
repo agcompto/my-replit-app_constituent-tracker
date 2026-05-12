@@ -1,4 +1,4 @@
-import { sql, inArray, eq } from "drizzle-orm";
+import { sql, inArray } from "drizzle-orm";
 import {
   db,
   touchpointsTable,
@@ -207,5 +207,3 @@ export function validateChannelCapacity(input: unknown): Record<string, number> 
   return out;
 }
 
-// Suppress unused-import lint for `eq` (kept available for future filters).
-void eq;
