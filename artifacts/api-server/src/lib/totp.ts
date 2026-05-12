@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import bcrypt from "bcryptjs";
 import { generateSecret, generateURI, verifySync } from "otplib";
 import qrcode from "qrcode";
 import { and, eq, isNull } from "drizzle-orm";
@@ -95,17 +96,16 @@ export function verifyTotpCode(opts: { encryptedSecret: string; code: string }):
 // ─────────────────────── Recovery codes ───────────────────────
 //
 // Ten codes, each 10 base32 chars (no padding) split as XXXXX-XXXXX for
-// readability. Hashed with SHA-256 before storage; only the SHA-256 hex is
-// persisted. Recovery codes are high-entropy (≈50 bits) so SHA-256 with no
-// per-code salt is acceptable here — the cost of an exhaustive offline
-// search against a leaked DB row is comparable to brute-forcing the secret
-// itself.
+// readability. Hashed with bcrypt (per-code salt) before storage; only the
+// bcrypt hash is persisted. Even though the codes are high-entropy, bcrypt's
+// per-row salt and configurable cost defeat precomputed/rainbow attacks on a
+// leaked DB and matches the same hashing posture as account passwords.
 const RECOVERY_CODE_COUNT = 10;
 const RECOVERY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // crockford-ish, no 0/O/1/I
+const RECOVERY_BCRYPT_COST = 10;
 
-function hashRecoveryCode(raw: string): string {
-  const normalized = normalizeRecoveryCode(raw);
-  return crypto.createHash("sha256").update(normalized).digest("hex");
+async function hashRecoveryCode(raw: string): Promise<string> {
+  return bcrypt.hash(normalizeRecoveryCode(raw), RECOVERY_BCRYPT_COST);
 }
 
 export function normalizeRecoveryCode(raw: string): string {
@@ -132,12 +132,13 @@ function randomRecoveryCode(): string {
 export async function regenerateRecoveryCodes(userId: number): Promise<string[]> {
   const raw: string[] = [];
   for (let i = 0; i < RECOVERY_CODE_COUNT; i++) raw.push(randomRecoveryCode());
+  const hashes = await Promise.all(raw.map((c) => hashRecoveryCode(c)));
   await db.transaction(async (tx) => {
     await tx
       .delete(totpRecoveryCodesTable)
       .where(eq(totpRecoveryCodesTable.userId, userId));
     await tx.insert(totpRecoveryCodesTable).values(
-      raw.map((code) => ({ userId, codeHash: hashRecoveryCode(code) })),
+      raw.map((_, i) => ({ userId, codeHash: hashes[i] })),
     );
   });
   return raw;
@@ -146,20 +147,44 @@ export async function regenerateRecoveryCodes(userId: number): Promise<string[]>
 /**
  * Atomically consume a recovery code. Returns true on success (and marks
  * the row used), false if the code doesn't match an unused row for this user.
+ *
+ * Because each row's hash carries its own bcrypt salt we cannot look the row
+ * up by hash directly. We fetch the user's unused rows, bcrypt-compare the
+ * candidate against each, then perform a guarded `UPDATE … WHERE id=? AND
+ * used_at IS NULL` so two concurrent attempts can never consume the same
+ * code twice.
  */
 export async function consumeRecoveryCode(
   userId: number,
   raw: string,
 ): Promise<boolean> {
-  if (normalizeRecoveryCode(raw).length !== 10) return false;
-  const hash = hashRecoveryCode(raw);
+  const normalized = normalizeRecoveryCode(raw);
+  if (normalized.length !== 10) return false;
+  const rows = await db
+    .select({ id: totpRecoveryCodesTable.id, codeHash: totpRecoveryCodesTable.codeHash })
+    .from(totpRecoveryCodesTable)
+    .where(
+      and(
+        eq(totpRecoveryCodesTable.userId, userId),
+        isNull(totpRecoveryCodesTable.usedAt),
+      ),
+    );
+  let matchedId: number | null = null;
+  for (const row of rows) {
+    // bcrypt.compare is constant-time per pair; iterating all unused rows
+    // is fine — there are at most RECOVERY_CODE_COUNT (10) per user.
+    if (await bcrypt.compare(normalized, row.codeHash)) {
+      matchedId = row.id;
+      break;
+    }
+  }
+  if (matchedId == null) return false;
   const result = await db
     .update(totpRecoveryCodesTable)
     .set({ usedAt: new Date() })
     .where(
       and(
-        eq(totpRecoveryCodesTable.userId, userId),
-        eq(totpRecoveryCodesTable.codeHash, hash),
+        eq(totpRecoveryCodesTable.id, matchedId),
         isNull(totpRecoveryCodesTable.usedAt),
       ),
     )

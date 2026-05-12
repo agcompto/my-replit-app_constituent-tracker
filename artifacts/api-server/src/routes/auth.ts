@@ -320,11 +320,19 @@ router.post("/auth/login/totp", async (req, res): Promise<void> => {
     return;
   }
   await completeLogin(req, res, sessionUser, {
-    auditAction: usedRecovery ? "login_with_recovery_code" : "login",
+    auditAction: usedRecovery ? "recovery_code_used" : "login",
     auditDetails: usedRecovery
       ? `Used a TOTP recovery code (${await unusedRecoveryCodeCount(u.id)} left)`
       : null,
   });
+  if (!usedRecovery) {
+    await audit({
+      actor: sessionUser,
+      action: "totp_used",
+      entityType: "user",
+      entityId: sessionUser.id,
+    });
+  }
 });
 
 // ───────────────────────── TOTP enrollment + management ─────────────────────────
@@ -474,7 +482,7 @@ router.post(
     const codes = await regenerateRecoveryCodes(u.id);
     await audit({
       actor: u,
-      action: "totp_recovery_codes_regenerated",
+      action: "recovery_codes_regenerated",
       entityType: "user",
       entityId: u.id,
     });

@@ -442,7 +442,7 @@ router.post(
     await deleteAllRecoveryCodes(targetId);
     await audit({
       actor: req.currentUser!,
-      action: "totp_reset_by_admin",
+      action: "totp_reset",
       entityType: "user",
       entityId: targetId,
       details: `Cleared TOTP enrollment for ${target.email}`,

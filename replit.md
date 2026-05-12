@@ -52,9 +52,9 @@ Admin and super-admin roles **must** complete a TOTP second factor at sign-in; s
 - Settings: `GET /auth/totp/status`, `POST /auth/totp/recovery-codes/regenerate` (re-auth gated), `POST /auth/totp/disable` (re-auth gated; admin/super_admin cannot self-disable — they must downgrade or have a super_admin reset).
 - Super-admin recovery: `POST /users/:id/totp/reset` (re-auth gated) clears the target's enrollment and recovery codes, forcing re-enrollment on their next sign-in.
 
-Storage & crypto: `users.totpSecretEncrypted` (AES-256-GCM, key = scrypt(SESSION_SECRET, "ctp-totp-v1", 32)) and `users.totpEnrolledAt`. Recovery codes live in `totp_recovery_codes` (SHA-256 hex of normalized code; raw codes shown exactly once). otplib v13 functional API with `period=30s`, `epochTolerance=30s` (±1 step ≈ 90s drift). Rotating `SESSION_SECRET` invalidates every enrolled secret — operator must reset all enrollments.
+Storage & crypto: `users.totpSecretEncrypted` (AES-256-GCM, key = scrypt(SESSION_SECRET, "ctp-totp-v1", 32)) and `users.totpEnrolledAt`. Recovery codes live in `totp_recovery_codes` (bcrypt hash of normalized code, per-row salt, cost 10; raw codes shown exactly once and downloadable as a .txt). otplib v13 functional API with `period=30s`, `epochTolerance=30s` (±1 step ≈ 90s drift). Rotating `SESSION_SECRET` invalidates every enrolled secret — operator must reset all enrollments.
 
-Audit actions: `totp_enrolled`, `totp_disabled`, `totp_recovery_codes_regenerated`, `totp_reset_by_admin`, `login_with_recovery_code`.
+Audit actions: `totp_enrolled`, `totp_disabled`, `totp_used`, `recovery_codes_regenerated`, `recovery_code_used`, `totp_reset`.
 
 ## Login lockout
 

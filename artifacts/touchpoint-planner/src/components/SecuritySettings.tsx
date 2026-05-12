@@ -22,13 +22,36 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { AlertTriangle, Check, Copy, Loader2, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Copy, Download, Loader2, RotateCw, ShieldCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ReauthDialog, isReauthRequired } from "@/components/ReauthDialog";
 
 function errMsg(e: unknown, fallback: string): string {
   const x = e as any;
   return x?.data?.error ?? x?.response?.data?.error ?? fallback;
+}
+
+function downloadRecoveryCodes(codes: string[]): void {
+  const body = [
+    "NCSU Advancement Touchpoint Planner",
+    "Two-factor recovery codes",
+    `Generated: ${new Date().toISOString()}`,
+    "",
+    "Each code can be used once instead of an authenticator code.",
+    "Store this file in a password manager and delete from disk.",
+    "",
+    ...codes,
+    "",
+  ].join("\n");
+  const blob = new Blob([body], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `ctp-recovery-codes-${new Date().toISOString().slice(0, 10)}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 /**
@@ -236,6 +259,21 @@ export function SecuritySettings() {
           {enrolled && (
             <Button
               variant="outline"
+              onClick={handleStartEnroll}
+              disabled={startEnroll.isPending}
+              data-testid="button-totp-reenroll"
+            >
+              {startEnroll.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <RotateCw className="h-4 w-4 mr-2" />
+              )}
+              Reset / re-enroll authenticator
+            </Button>
+          )}
+          {enrolled && (
+            <Button
+              variant="outline"
               onClick={handleRegen}
               disabled={regen.isPending}
               data-testid="button-regen-recovery"
@@ -344,13 +382,21 @@ export function SecuritySettings() {
                   <div key={c}>{c}</div>
                 ))}
               </div>
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={() => navigator.clipboard?.writeText(shownCodes.join("\n"))}
-              >
-                <Copy className="h-4 w-4 mr-2" /> Copy all
-              </Button>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => navigator.clipboard?.writeText(shownCodes.join("\n"))}
+                >
+                  <Copy className="h-4 w-4 mr-2" /> Copy all
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => downloadRecoveryCodes(shownCodes)}
+                  data-testid="button-download-recovery"
+                >
+                  <Download className="h-4 w-4 mr-2" /> Download .txt
+                </Button>
+              </div>
             </div>
           )}
           <DialogFooter>

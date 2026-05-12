@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Form, FormControl, FormField, FormItem, FormMessage } from "@/components/ui/form";
-import { AlertTriangle, Loader2, Copy, Check, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Loader2, Copy, Check, Download, ShieldCheck } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
 const loginSchema = z.object({
@@ -34,6 +34,29 @@ type Step =
   | { kind: "totp" }
   | { kind: "enroll"; otpauthUri: string; qrDataUrl: string; secret: string }
   | { kind: "recovery"; codes: string[] };
+
+function downloadRecoveryCodesTxt(codes: string[]): void {
+  const body = [
+    "NCSU Advancement Touchpoint Planner",
+    "Two-factor recovery codes",
+    `Generated: ${new Date().toISOString()}`,
+    "",
+    "Each code can be used once instead of an authenticator code.",
+    "Store this file in a password manager and delete from disk.",
+    "",
+    ...codes,
+    "",
+  ].join("\n");
+  const blob = new Blob([body], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `ctp-recovery-codes-${new Date().toISOString().slice(0, 10)}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 function readErr(err: unknown): { status?: number; message?: string } {
   const e = err as any;
@@ -411,10 +434,20 @@ function RecoveryCodesStep({ codes, onContinue }: { codes: string[]; onContinue:
           <div key={c}>{c}</div>
         ))}
       </div>
-      <Button type="button" variant="outline" className="w-full" onClick={copy}>
-        {copied ? <Check className="h-4 w-4 mr-2" /> : <Copy className="h-4 w-4 mr-2" />}
-        {copied ? "Copied!" : "Copy all codes"}
-      </Button>
+      <div className="grid grid-cols-2 gap-2">
+        <Button type="button" variant="outline" onClick={copy}>
+          {copied ? <Check className="h-4 w-4 mr-2" /> : <Copy className="h-4 w-4 mr-2" />}
+          {copied ? "Copied!" : "Copy all"}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => downloadRecoveryCodesTxt(codes)}
+          data-testid="button-download-recovery"
+        >
+          <Download className="h-4 w-4 mr-2" /> Download .txt
+        </Button>
+      </div>
       <Button type="button" className="w-full" size="lg" onClick={onContinue}>
         I've saved my codes — continue
       </Button>
