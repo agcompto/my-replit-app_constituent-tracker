@@ -87,6 +87,13 @@ export function recordChangePasswordSuccess(userId: number, ip: string): void {
 // ──────────────────────────────────────────────────────────────────────────
 interface SlidingBucket {
   timestamps: number[];
+  // The window length the bucket was created with. Stored per-bucket so the
+  // periodic cleanup task can prune correctly even when different callers
+  // use different windows (e.g. AI per-minute vs export-per-hour vs
+  // forgot-password 15-minute). Without this, a single hardcoded purge
+  // horizon would drop still-relevant timestamps for the longer-windowed
+  // keys and silently weaken the throttle.
+  windowMs: number;
 }
 const slidingBuckets = new Map<string, SlidingBucket>();
 
@@ -99,9 +106,12 @@ export function checkSlidingRate(
   const cutoff = now - windowMs;
   const b = slidingBuckets.get(key);
   if (!b) {
-    slidingBuckets.set(key, { timestamps: [now] });
+    slidingBuckets.set(key, { timestamps: [now], windowMs });
     return { allowed: true, retryAfterSec: 0 };
   }
+  // If a caller ever uses the same key with a different window, take the
+  // larger one so the cleanup horizon stays safe.
+  if (windowMs > b.windowMs) b.windowMs = windowMs;
   // Drop expired timestamps
   while (b.timestamps.length > 0 && b.timestamps[0] < cutoff) {
     b.timestamps.shift();
@@ -144,11 +154,13 @@ export function checkForgotPasswordPerIp(ip: string): RateLimitResult {
   return checkSlidingRate(`forgot|ip|${ip}`, 5, 15 * 60_000);
 }
 
-// Periodic cleanup
+// Periodic cleanup. Each bucket carries its own windowMs so we never prune
+// a timestamp that is still within its caller's intended window.
 setInterval(() => {
   const now = Date.now();
   for (const [k, b] of slidingBuckets) {
-    while (b.timestamps.length && b.timestamps[0] < now - 60_000) b.timestamps.shift();
+    const cutoff = now - b.windowMs;
+    while (b.timestamps.length && b.timestamps[0] < cutoff) b.timestamps.shift();
     if (b.timestamps.length === 0) slidingBuckets.delete(k);
   }
 }, 5 * 60 * 1000).unref?.();

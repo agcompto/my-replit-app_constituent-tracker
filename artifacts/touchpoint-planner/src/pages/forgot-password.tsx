@@ -15,6 +15,22 @@ import {
 } from "@/components/ui/form";
 import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 
+interface ApiErrorShape {
+  status?: number;
+  data?: { error?: string };
+  response?: { status?: number; data?: { error?: string } };
+  message?: string;
+}
+
+function readApiError(err: unknown): { status?: number; message?: string } {
+  if (!err || typeof err !== "object") return {};
+  const e = err as ApiErrorShape;
+  return {
+    status: e.status ?? e.response?.status,
+    message: e.data?.error ?? e.response?.data?.error ?? e.message,
+  };
+}
+
 const schema = z.object({
   email: z.string().email("Invalid email address"),
 });
@@ -72,10 +88,9 @@ export default function ForgotPassword() {
         ) : (
           <>
             {mutation.error && (() => {
-              const err = mutation.error as any;
-              const status = err?.status ?? err?.response?.status;
-              const serverMsg =
-                err?.data?.error ?? err?.response?.data?.error;
+              const { status, message: serverMsg } = readApiError(
+                mutation.error,
+              );
               const message =
                 status === 429
                   ? serverMsg ??
