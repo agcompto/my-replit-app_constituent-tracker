@@ -92,7 +92,7 @@ function parseSearch(search: string) {
   const p = new URLSearchParams(search);
   return {
     donorId: p.get("id") ?? "",
-    preset: (p.get("preset") ?? "last12") as PresetKey,
+    preset: (p.get("preset") ?? "thisFY") as PresetKey,
     customFrom: p.get("from") ?? "",
     customTo: p.get("to") ?? "",
     channelIds: p.getAll("ch").map(Number).filter(Boolean),
@@ -114,7 +114,7 @@ function buildSearch(state: {
 }): string {
   const p = new URLSearchParams();
   if (state.donorId) p.set("id", state.donorId);
-  if (state.preset !== "last12") p.set("preset", state.preset);
+  if (state.preset !== "thisFY") p.set("preset", state.preset);
   if (state.preset === "custom" as string) {
     if (state.customFrom) p.set("from", state.customFrom);
     if (state.customTo) p.set("to", state.customTo);
