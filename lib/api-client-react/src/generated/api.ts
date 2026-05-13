@@ -32,8 +32,10 @@ import type {
   ApplyTemplatesResult,
   AudienceInput,
   AudienceUploadResult,
+  AuditEntry,
   AuditExportTooLarge,
   AuditLogPage,
+  CalendarFeed,
   Campaign,
   CampaignHealthCheck,
   CampaignInput,
@@ -59,6 +61,7 @@ import type {
   ForgotPasswordAck,
   ForgotPasswordInput,
   GetAuditLogParams,
+  GetCalendarFeedParams,
   GetCohortAnalysisParams,
   GetDashboardParams,
   GetHighVolumeDonorsParams,
@@ -8183,6 +8186,117 @@ export function useGetSaturationReport<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetSaturationReportQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Planned-touch calendar feed for a date range. Returns one row per touch,
+suitable for rendering a month or week grid. Open to every authenticated
+user; no admin gate. Date window is capped at 92 days server-side.
+Excludes voided campaigns and seed rows.
+
+ */
+export const getGetCalendarFeedUrl = (params: GetCalendarFeedParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    const explodeParameters = ["channelId", "campaignTypeId", "status"];
+
+    if (Array.isArray(value) && explodeParameters.includes(key)) {
+      value.forEach((v) => {
+        normalizedParams.append(key, v === null ? "null" : v.toString());
+      });
+      return;
+    }
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/reports/calendar?${stringifiedParams}`
+    : `/api/reports/calendar`;
+};
+
+export const getCalendarFeed = async (
+  params: GetCalendarFeedParams,
+  options?: RequestInit,
+): Promise<CalendarFeed> => {
+  return customFetch<CalendarFeed>(getGetCalendarFeedUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetCalendarFeedQueryKey = (params?: GetCalendarFeedParams) => {
+  return [`/api/reports/calendar`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetCalendarFeedQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCalendarFeed>>,
+  TError = ErrorType<void>,
+>(
+  params: GetCalendarFeedParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCalendarFeed>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetCalendarFeedQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getCalendarFeed>>> = ({
+    signal,
+  }) => getCalendarFeed(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCalendarFeed>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCalendarFeedQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCalendarFeed>>
+>;
+export type GetCalendarFeedQueryError = ErrorType<void>;
+
+/**
+ * @summary Planned-touch calendar feed for a date range. Returns one row per touch,
+suitable for rendering a month or week grid. Open to every authenticated
+user; no admin gate. Date window is capped at 92 days server-side.
+Excludes voided campaigns and seed rows.
+
+ */
+
+export function useGetCalendarFeed<
+  TData = Awaited<ReturnType<typeof getCalendarFeed>>,
+  TError = ErrorType<void>,
+>(
+  params: GetCalendarFeedParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCalendarFeed>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCalendarFeedQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

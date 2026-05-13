@@ -356,6 +356,7 @@ d("computeSaturation (DB integration)", () => {
     expect(serialized).not.toContain("donor_id");
   });
 
+
   it("respects channelId filter and renders only that channel", async () => {
     const report = await computeSaturation({
       start: fx.startMonday,
@@ -379,6 +380,7 @@ function unfilteredUnitAlphaName(fx: Fixture): string {
   return _alphaCache.get(fx.liveCampaignId)!;
 }
 const _alphaCache = new Map<number, string>();
+
 
 describe("validateChannelCapacity (pure)", () => {
   it("accepts a valid map and drops zero values", () => {

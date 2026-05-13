@@ -22,6 +22,7 @@ import Users from "@/pages/users";
 import Reports from "@/pages/reports";
 import Exports from "@/pages/exports";
 import Settings from "@/pages/settings";
+import CalendarPage from "@/pages/calendar";
 
 function AuthenticatedRoutes() {
   return (
@@ -35,6 +36,7 @@ function AuthenticatedRoutes() {
           <Route path="/campaigns/:id/summary" component={CampaignSummary} />
           <Route path="/campaigns/:id" component={CampaignDetail} />
           <Route path="/donors" component={Donors} />
+          <Route path="/calendar" component={CalendarPage} />
           <Route path="/reports" component={Reports} />
           <Route path="/exports" component={Exports} />
           <Route path="/audit" component={Audit} />

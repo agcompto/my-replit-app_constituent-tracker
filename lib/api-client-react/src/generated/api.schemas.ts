@@ -1307,6 +1307,27 @@ export interface AiUsage {
   remaining: number;
 }
 
+export interface CalendarTouch {
+  touchId: number;
+  touchName: string;
+  sendDate: string;
+  campaignId: number;
+  campaignName: string;
+  campaignStatus: string;
+  /** @nullable */
+  owningUnit?: string | null;
+  submittedByUserId: number;
+  channelId: number;
+  channelLabel: string;
+  campaignTypeLabel: string;
+  campaignTypeLabels: string[];
+  audienceCount: number;
+}
+
+export interface CalendarFeed {
+  touches: CalendarTouch[];
+}
+
 export type ListCampaignsParams = {
   mine?: boolean;
   status?: string;
@@ -1393,6 +1414,17 @@ export type GetSaturationReportParams = {
   start?: string;
   owningUnit?: string;
   channelId?: number;
+};
+
+export type GetCalendarFeedParams = {
+  startDate: string;
+  endDate: string;
+  owningUnit?: string;
+  channelId?: number[];
+  campaignTypeId?: number[];
+  status?: string[];
+  mine?: boolean;
+  nameContains?: string;
 };
 
 export type GetYoyVolumeParams = {

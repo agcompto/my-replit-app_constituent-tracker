@@ -1909,6 +1909,44 @@ export const GetSaturationReportResponse = zod.object({
   ),
 });
 
+/**
+ * @summary Planned-touch calendar feed for a date range. Returns one row per touch,
+suitable for rendering a month or week grid. Open to every authenticated
+user; no admin gate. Date window is capped at 92 days server-side.
+Excludes voided campaigns and seed rows.
+
+ */
+export const GetCalendarFeedQueryParams = zod.object({
+  startDate: zod.date(),
+  endDate: zod.date(),
+  owningUnit: zod.coerce.string().optional(),
+  channelId: zod.array(zod.coerce.number()).optional(),
+  campaignTypeId: zod.array(zod.coerce.number()).optional(),
+  status: zod.array(zod.coerce.string()).optional(),
+  mine: zod.coerce.boolean().optional(),
+  nameContains: zod.coerce.string().optional(),
+});
+
+export const GetCalendarFeedResponse = zod.object({
+  touches: zod.array(
+    zod.object({
+      touchId: zod.number(),
+      touchName: zod.string(),
+      sendDate: zod.coerce.date(),
+      campaignId: zod.number(),
+      campaignName: zod.string(),
+      campaignStatus: zod.string(),
+      owningUnit: zod.string().nullish(),
+      submittedByUserId: zod.number(),
+      channelId: zod.number(),
+      channelLabel: zod.string(),
+      campaignTypeLabel: zod.string(),
+      campaignTypeLabels: zod.array(zod.string()),
+      audienceCount: zod.number(),
+    }),
+  ),
+});
+
 export const GetYoyVolumeQueryParams = zod.object({
   currentStart: zod.date(),
   currentEnd: zod.date(),

@@ -163,6 +163,9 @@ export default function Reports() {
             if (v.viewType === "saturation" && saturationWeeksFromConfig !== undefined) {
               setSaturationWeeks(saturationWeeksFromConfig);
             }
+            if (v.viewType === "saturation" && v.config && typeof (v.config as any).weeks === "number") {
+              setSaturationWeeks((v.config as any).weeks);
+            }
             if ((VIEW_TYPES as readonly string[]).includes(v.viewType)) setTab(v.viewType as ViewType);
           }}
         />

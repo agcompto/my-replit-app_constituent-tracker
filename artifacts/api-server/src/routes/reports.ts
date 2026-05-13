@@ -1,16 +1,18 @@
 import { Router, type IRouter, type Request } from "express";
-import { desc, sql, type SQL } from "drizzle-orm";
+import { desc, sql, inArray, type SQL } from "drizzle-orm";
 import {
   db,
   touchpointsTable,
   campaignsTable,
   channelsTable,
   campaignTypesTable,
+  campaignTypeLinksTable,
+  touchesTable,
   uploadJobsTable,
   exportJobsTable,
   usersTable,
 } from "@workspace/db";
-import { requireRole } from "../lib/auth";
+import { requireRole, requireAuth } from "../lib/auth";
 import { loadCampaignSummary } from "../lib/campaigns";
 import { computeSaturation } from "../lib/saturation";
 import { computeYoyVolume } from "../lib/yoy";
@@ -383,6 +385,37 @@ router.get("/reports/saturation", requireRole("admin", "super_admin"), async (re
   res.json(report);
 });
 
+router.get("/reports/saturation", requireRole("admin", "super_admin"), async (req, res): Promise<void> => {
+  let weeks = 12;
+  const wRaw = req.query.weeks;
+  if (typeof wRaw === "string" && wRaw.trim()) {
+    const n = parseInt(wRaw, 10);
+    if (!Number.isFinite(n) || n < 1 || n > 26) {
+      res.status(400).json({ message: "weeks must be an integer between 1 and 26" });
+      return;
+    }
+    weeks = n;
+  }
+  let start: string | undefined;
+  const sRaw = req.query.start;
+  if (typeof sRaw === "string" && sRaw.trim()) {
+    const parsed = parseIsoDate(sRaw.trim());
+    if (!parsed) { res.status(400).json({ message: "Invalid start (expected YYYY-MM-DD)" }); return; }
+    start = parsed;
+  }
+  const ouRaw = req.query.owningUnit;
+  const owningUnit = typeof ouRaw === "string" && ouRaw.trim() ? ouRaw.trim() : undefined;
+  const chRaw = req.query.channelId;
+  let channelId: number | undefined;
+  if (typeof chRaw === "string" && chRaw.trim()) {
+    const n = parseInt(chRaw, 10);
+    if (!Number.isFinite(n)) { res.status(400).json({ message: "Invalid channelId" }); return; }
+    channelId = n;
+  }
+  const report = await computeSaturation({ weeks, start, owningUnit, channelId });
+  res.json(report);
+});
+
 router.get("/reports/upload-history", requireRole("admin", "super_admin"), async (_req, res): Promise<void> => {
   const rows = await db
     .select({
@@ -423,6 +456,160 @@ router.get("/reports/export-history", requireRole("admin", "super_admin"), async
     .orderBy(desc(exportJobsTable.exportedAt))
     .limit(200);
   res.json(rows.map((r) => ({ ...r, exportedAt: r.exportedAt.toISOString() })));
+});
+
+router.get("/reports/calendar", requireAuth, async (req, res): Promise<void> => {
+  const sd = req.query.startDate;
+  const ed = req.query.endDate;
+  if (typeof sd !== "string" || typeof ed !== "string") {
+    res.status(400).json({ message: "startDate and endDate are required" });
+    return;
+  }
+  const startDate = parseIsoDate(sd.trim());
+  const endDate = parseIsoDate(ed.trim());
+  if (!startDate || !endDate) {
+    res.status(400).json({ message: "Invalid date (expected YYYY-MM-DD)" });
+    return;
+  }
+  if (startDate > endDate) {
+    res.status(400).json({ message: "startDate must be on or before endDate" });
+    return;
+  }
+  // Cap to 92-day window
+  const ta = Date.UTC(+startDate.slice(0, 4), +startDate.slice(5, 7) - 1, +startDate.slice(8, 10));
+  const tb = Date.UTC(+endDate.slice(0, 4), +endDate.slice(5, 7) - 1, +endDate.slice(8, 10));
+  if ((tb - ta) / 86400000 > 92) {
+    res.status(400).json({ message: "Date range cannot exceed 92 days" });
+    return;
+  }
+
+  // Optional filters
+  const ouRaw = req.query.owningUnit;
+  const owningUnit = typeof ouRaw === "string" && ouRaw.trim() ? ouRaw.trim() : undefined;
+
+  const channelIds: number[] = [];
+  const chRaw = req.query.channelId;
+  if (Array.isArray(chRaw)) {
+    for (const c of chRaw) {
+      const n = parseInt(String(c), 10);
+      if (Number.isFinite(n)) channelIds.push(n);
+    }
+  } else if (typeof chRaw === "string" && chRaw.trim()) {
+    const n = parseInt(chRaw.trim(), 10);
+    if (Number.isFinite(n)) channelIds.push(n);
+  }
+
+  const campaignTypeIds: number[] = [];
+  const ctRaw = req.query.campaignTypeId;
+  if (Array.isArray(ctRaw)) {
+    for (const c of ctRaw) {
+      const n = parseInt(String(c), 10);
+      if (Number.isFinite(n)) campaignTypeIds.push(n);
+    }
+  } else if (typeof ctRaw === "string" && ctRaw.trim()) {
+    const n = parseInt(ctRaw.trim(), 10);
+    if (Number.isFinite(n)) campaignTypeIds.push(n);
+  }
+
+  const statuses: string[] = [];
+  const stRaw = req.query.status;
+  if (Array.isArray(stRaw)) {
+    for (const s of stRaw) statuses.push(String(s));
+  } else if (typeof stRaw === "string" && stRaw.trim()) {
+    statuses.push(stRaw.trim());
+  }
+
+  const mine = req.query.mine === "true" || req.query.mine === "1";
+  const nameContainsRaw = req.query.nameContains;
+  const nameContains = typeof nameContainsRaw === "string" && nameContainsRaw.trim()
+    ? nameContainsRaw.trim().toLowerCase()
+    : undefined;
+
+  // Build WHERE for the touch+campaign join
+  const whereParts: SQL[] = [
+    sql`${touchesTable.sendDate} >= ${startDate}::date`,
+    sql`${touchesTable.sendDate} <= ${endDate}::date`,
+    sql`${campaignsTable.status} <> 'voided'`,
+  ];
+  if (owningUnit) whereParts.push(sql`${campaignsTable.owningUnit} = ${owningUnit}`);
+  if (channelIds.length > 0) whereParts.push(sql`${touchesTable.channelId} = ANY(ARRAY[${sql.join(channelIds.map((id) => sql`${id}`), sql`, `)}]::int[])`);
+  if (campaignTypeIds.length > 0) whereParts.push(sql`${touchesTable.campaignTypeId} = ANY(ARRAY[${sql.join(campaignTypeIds.map((id) => sql`${id}`), sql`, `)}]::int[])`);
+  if (statuses.length > 0) whereParts.push(sql`${campaignsTable.status} = ANY(ARRAY[${sql.join(statuses.map((s) => sql`${s}`), sql`, `)}])`);
+  if (mine) whereParts.push(sql`${campaignsTable.submittedByUserId} = ${req.currentUser!.id}`);
+  if (nameContains) whereParts.push(sql`LOWER(${campaignsTable.name}) LIKE ${"%" + nameContains + "%"}`);
+
+  const where = sql.join(whereParts, sql` AND `);
+
+  const rows = await db
+    .select({
+      touchId: touchesTable.id,
+      touchName: touchesTable.touchName,
+      sendDate: touchesTable.sendDate,
+      audienceMode: touchesTable.audienceMode,
+      customUniqueIdCount: touchesTable.customUniqueIdCount,
+      campaignId: campaignsTable.id,
+      campaignName: campaignsTable.name,
+      campaignStatus: campaignsTable.status,
+      owningUnit: campaignsTable.owningUnit,
+      submittedByUserId: campaignsTable.submittedByUserId,
+      campaignUniqueIdCount: campaignsTable.uniqueIdCount,
+      channelId: channelsTable.id,
+      channelLabel: channelsTable.name,
+      campaignTypeId: campaignTypesTable.id,
+      campaignTypeLabel: campaignTypesTable.name,
+    })
+    .from(touchesTable)
+    .innerJoin(campaignsTable, sql`${touchesTable.campaignId} = ${campaignsTable.id}`)
+    .innerJoin(channelsTable, sql`${touchesTable.channelId} = ${channelsTable.id}`)
+    .innerJoin(campaignTypesTable, sql`${touchesTable.campaignTypeId} = ${campaignTypesTable.id}`)
+    .where(where)
+    .orderBy(touchesTable.sendDate, campaignsTable.name, touchesTable.touchName);
+
+  // Get all campaign type labels for each campaign (a campaign can have multiple types)
+  const campaignIdSet = [...new Set(rows.map((r) => r.campaignId))];
+  const ctLabelMap = new Map<number, string[]>();
+  if (campaignIdSet.length > 0) {
+    const ctLinks = await db
+      .select({
+        campaignId: campaignTypeLinksTable.campaignId,
+        typeName: campaignTypesTable.name,
+      })
+      .from(campaignTypeLinksTable)
+      .innerJoin(
+        campaignTypesTable,
+        sql`${campaignTypeLinksTable.campaignTypeId} = ${campaignTypesTable.id}`,
+      )
+      .where(inArray(campaignTypeLinksTable.campaignId, campaignIdSet));
+    for (const link of ctLinks) {
+      const arr = ctLabelMap.get(link.campaignId) ?? [];
+      arr.push(link.typeName);
+      ctLabelMap.set(link.campaignId, arr);
+    }
+  }
+
+  const touches = rows.map((r) => {
+    const audienceCount =
+      r.audienceMode === "custom" ? r.customUniqueIdCount : r.campaignUniqueIdCount;
+    const sendStr =
+      typeof r.sendDate === "string" ? r.sendDate : (r.sendDate as Date).toISOString().slice(0, 10);
+    return {
+      touchId: r.touchId,
+      touchName: r.touchName,
+      sendDate: sendStr,
+      campaignId: r.campaignId,
+      campaignName: r.campaignName,
+      campaignStatus: r.campaignStatus,
+      owningUnit: r.owningUnit ?? null,
+      submittedByUserId: r.submittedByUserId,
+      channelId: r.channelId,
+      channelLabel: r.channelLabel,
+      campaignTypeLabel: r.campaignTypeLabel,
+      campaignTypeLabels: ctLabelMap.get(r.campaignId) ?? [r.campaignTypeLabel],
+      audienceCount,
+    };
+  });
+
+  res.json({ touches });
 });
 
 export default router;

@@ -1459,6 +1459,44 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SaturationReport" }
+  /reports/calendar:
+    get:
+      operationId: getCalendarFeed
+      tags: [reports]
+      summary: |
+        Planned-touch calendar feed for a date range. Returns one row per touch,
+        suitable for rendering a month or week grid. Open to every authenticated
+        user; no admin gate. Date window is capped at 92 days server-side.
+        Excludes voided campaigns and seed rows.
+      parameters:
+        - { name: startDate, in: query, required: true, schema: { type: string, format: date } }
+        - { name: endDate, in: query, required: true, schema: { type: string, format: date } }
+        - { name: owningUnit, in: query, schema: { type: string } }
+        - name: channelId
+          in: query
+          schema: { type: array, items: { type: integer } }
+          style: form
+          explode: true
+        - name: campaignTypeId
+          in: query
+          schema: { type: array, items: { type: integer } }
+          style: form
+          explode: true
+        - name: status
+          in: query
+          schema: { type: array, items: { type: string } }
+          style: form
+          explode: true
+        - { name: mine, in: query, schema: { type: boolean } }
+        - { name: nameContains, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CalendarFeed" }
+        "400": { description: "Invalid date range or window exceeds 92 days." }
+
   /reports/yoy-volume:
     get:
       operationId: getYoyVolume
@@ -2666,3 +2704,31 @@ components:
         used: { type: integer }
         budget: { type: integer }
         remaining: { type: integer }
+
+    CalendarTouch:
+      type: object
+      required: [touchId, touchName, sendDate, campaignId, campaignName, campaignStatus, channelId, channelLabel, campaignTypeLabel, campaignTypeLabels, audienceCount, submittedByUserId]
+      properties:
+        touchId: { type: integer }
+        touchName: { type: string }
+        sendDate: { type: string, format: date }
+        campaignId: { type: integer }
+        campaignName: { type: string }
+        campaignStatus: { type: string }
+        owningUnit: { type: ["string", "null"] }
+        submittedByUserId: { type: integer }
+        channelId: { type: integer }
+        channelLabel: { type: string }
+        campaignTypeLabel: { type: string }
+        campaignTypeLabels:
+          type: array
+          items: { type: string }
+        audienceCount: { type: integer }
+
+    CalendarFeed:
+      type: object
+      required: [touches]
+      properties:
+        touches:
+          type: array
+          items: { $ref: "#/components/schemas/CalendarTouch" }
