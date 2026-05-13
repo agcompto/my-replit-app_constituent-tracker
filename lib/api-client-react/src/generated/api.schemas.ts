@@ -1334,25 +1334,138 @@ export interface AiUsage {
   remaining: number;
 }
 
+/**
+ * Campaign metadata returned once in the CalendarFeed campaigns map, referenced by campaignId in each touch row.
+ */
+export interface CalendarCampaignSummary {
+  name: string;
+  status: string;
+  /** @nullable */
+  owningUnit?: string | null;
+  submittedByUserId: number;
+  campaignTypeLabels: string[];
+  /** Number of unique donors in this campaign that would breach a threshold given planned touches plus history. 0 when not computable or not applicable. */
+  conflictDonorCount: number;
+  /** Up to 50 donor IDs that would breach a threshold. Empty when conflictDonorCount is 0. */
+  conflictDonorSample: string[];
+}
+
 export interface CalendarTouch {
   touchId: number;
   touchName: string;
   sendDate: string;
   campaignId: number;
-  campaignName: string;
-  campaignStatus: string;
-  /** @nullable */
-  owningUnit?: string | null;
-  submittedByUserId: number;
   channelId: number;
   channelLabel: string;
   campaignTypeLabel: string;
-  campaignTypeLabels: string[];
   audienceCount: number;
+  /** Number of donors in this touch's audience that are in conflict. Subset of the campaign-level conflictDonorCount. */
+  conflictDonorCount: number;
+  /** Up to 50 donor IDs from this touch's audience that are in conflict. Used client-side for deduplication across touches on the same day. */
+  conflictDonorSample: string[];
 }
 
+/**
+ * Per-touch conflict count within a single campaign on a single day.
+ */
+export interface CalendarDayTouchBreakdown {
+  touchId: number;
+  touchName: string;
+  /** Exact count of donors that breach a threshold in the rolling window centred on this touch's sendDate. */
+  donorCount: number;
+}
+
+/**
+ * For each donor ID in donorSample, the touch IDs whose rolling window caused the breach for that donor. Enables exact donor-to-touch attribution in the detail sheet without client-side approximation.
+ */
+export type CalendarDayConflictByCampaignDonorTouchIds = {
+  [key: string]: number[];
+};
+
+/**
+ * Server-authoritative conflict detail for one campaign on one calendar day.
+ */
+export interface CalendarDayConflictByCampaign {
+  /** Exact unique donors conflicted for this campaign on this day (union of per-touch conflict sets). */
+  donorCount: number;
+  /** Up to 50 donor IDs for display in the day-detail sheet. */
+  donorSample: string[];
+  /** donorCount minus donorSample.length — donors that exist but are not in the sample. */
+  overflow: number;
+  /** Per-touch conflict counts for this campaign on this day. */
+  touchBreakdown: CalendarDayTouchBreakdown[];
+  /** For each donor ID in donorSample, the touch IDs whose rolling window caused the breach for that donor. Enables exact donor-to-touch attribution in the detail sheet without client-side approximation. */
+  donorTouchIds: CalendarDayConflictByCampaignDonorTouchIds;
+}
+
+/**
+ * Per-campaign conflict breakdown keyed by campaign ID (string). Authoritative data for the day-detail sheet.
+ */
+export type CalendarDayConflictByCampaignProperty = {
+  [key: string]: CalendarDayConflictByCampaign;
+};
+
+/**
+ * Server-computed exact conflict summary for one calendar day.
+ */
+export interface CalendarDayConflict {
+  /** Exact count of unique donors over threshold across all in-window touches on this day. */
+  donorCount: number;
+  /** Number of campaigns with at least one conflicted touch on this day. */
+  campaignCount: number;
+  /** Per-campaign conflict breakdown keyed by campaign ID (string). Authoritative data for the day-detail sheet. */
+  byCampaign: CalendarDayConflictByCampaignProperty;
+}
+
+/**
+ * Campaign metadata keyed by campaign ID (as a string). Rehydrate touch rows with their campaign on the client.
+ */
+export type CalendarFeedCampaigns = { [key: string]: CalendarCampaignSummary };
+
+/**
+ * Total audience volume per calendar day (YYYY-MM-DD keys). Used to render the sparkline strip.
+ */
+export type CalendarFeedDayVolumes = { [key: string]: number };
+
+/**
+ * Exact server-computed conflict summary per calendar day (YYYY-MM-DD keys). Use for day badges instead of client-side approximation.
+ */
+export type CalendarFeedDayConflicts = { [key: string]: CalendarDayConflict };
+
 export interface CalendarFeed {
+  /** Campaign metadata keyed by campaign ID (as a string). Rehydrate touch rows with their campaign on the client. */
+  campaigns: CalendarFeedCampaigns;
   touches: CalendarTouch[];
+  /** Total audience volume per calendar day (YYYY-MM-DD keys). Used to render the sparkline strip. */
+  dayVolumes: CalendarFeedDayVolumes;
+  /** Exact server-computed conflict summary per calendar day (YYYY-MM-DD keys). Use for day badges instead of client-side approximation. */
+  dayConflicts: CalendarFeedDayConflicts;
+}
+
+/**
+ * Last-used filter state (owningUnit, channelIds, campaignTypeIds, statuses, mine, nameContains).
+ */
+export type CalendarPreferencesFilters = { [key: string]: unknown };
+
+/**
+ * Last-used display config (view, density).
+ */
+export type CalendarPreferencesConfig = { [key: string]: unknown };
+
+export interface CalendarPreferences {
+  /** Last-used filter state (owningUnit, channelIds, campaignTypeIds, statuses, mine, nameContains). */
+  filters: CalendarPreferencesFilters;
+  /** Last-used display config (view, density). */
+  config: CalendarPreferencesConfig;
+}
+
+export type CalendarPreferencesInputFilters = { [key: string]: unknown };
+
+export type CalendarPreferencesInputConfig = { [key: string]: unknown };
+
+export interface CalendarPreferencesInput {
+  filters: CalendarPreferencesInputFilters;
+  config: CalendarPreferencesInputConfig;
 }
 
 export type ListCampaignsParams = {

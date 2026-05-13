@@ -5,8 +5,17 @@
  * Constituent Touchpoint Planner API
  * OpenAPI spec version: 0.1.0
  */
+import type { CalendarFeedCampaigns } from "./calendarFeedCampaigns";
+import type { CalendarFeedDayConflicts } from "./calendarFeedDayConflicts";
+import type { CalendarFeedDayVolumes } from "./calendarFeedDayVolumes";
 import type { CalendarTouch } from "./calendarTouch";
 
 export interface CalendarFeed {
+  /** Campaign metadata keyed by campaign ID (as a string). Rehydrate touch rows with their campaign on the client. */
+  campaigns: CalendarFeedCampaigns;
   touches: CalendarTouch[];
+  /** Total audience volume per calendar day (YYYY-MM-DD keys). Used to render the sparkline strip. */
+  dayVolumes: CalendarFeedDayVolumes;
+  /** Exact server-computed conflict summary per calendar day (YYYY-MM-DD keys). Use for day badges instead of client-side approximation. */
+  dayConflicts: CalendarFeedDayConflicts;
 }

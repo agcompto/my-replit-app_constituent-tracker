@@ -31,6 +31,7 @@ tags:
   - name: thresholdTemplates
   - name: aiAssist
   - name: savedViews
+  - name: me
 
 paths:
   /healthz:
@@ -1612,6 +1613,34 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/YoyVolume" }
 
+  # ───────── Per-user calendar preferences
+  /me/calendar-preferences:
+    get:
+      operationId: getCalendarPreferences
+      tags: [me]
+      summary: Get the calling user's last-used calendar filters, density, and view. Returns empty defaults when no preferences have been saved yet.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CalendarPreferences" }
+    put:
+      operationId: putCalendarPreferences
+      tags: [me]
+      summary: Upsert the calling user's calendar preferences (debounced by the client on every filter change).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CalendarPreferencesInput" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CalendarPreferences" }
+
   # ───────── Saved report views (per-user)
   /saved-report-views:
     get:
@@ -2831,30 +2860,143 @@ components:
         budget: { type: integer }
         remaining: { type: integer }
 
+    CalendarCampaignSummary:
+      type: object
+      description: Campaign metadata returned once in the CalendarFeed campaigns map, referenced by campaignId in each touch row.
+      required: [name, status, submittedByUserId, campaignTypeLabels, conflictDonorCount, conflictDonorSample]
+      properties:
+        name: { type: string }
+        status: { type: string }
+        owningUnit: { type: ["string", "null"] }
+        submittedByUserId: { type: integer }
+        campaignTypeLabels:
+          type: array
+          items: { type: string }
+        conflictDonorCount:
+          type: integer
+          description: Number of unique donors in this campaign that would breach a threshold given planned touches plus history. 0 when not computable or not applicable.
+        conflictDonorSample:
+          type: array
+          items: { type: string }
+          description: Up to 50 donor IDs that would breach a threshold. Empty when conflictDonorCount is 0.
+
     CalendarTouch:
       type: object
-      required: [touchId, touchName, sendDate, campaignId, campaignName, campaignStatus, channelId, channelLabel, campaignTypeLabel, campaignTypeLabels, audienceCount, submittedByUserId]
+      required: [touchId, touchName, sendDate, campaignId, channelId, channelLabel, campaignTypeLabel, audienceCount, conflictDonorCount, conflictDonorSample]
       properties:
         touchId: { type: integer }
         touchName: { type: string }
         sendDate: { type: string, format: date }
         campaignId: { type: integer }
-        campaignName: { type: string }
-        campaignStatus: { type: string }
-        owningUnit: { type: ["string", "null"] }
-        submittedByUserId: { type: integer }
         channelId: { type: integer }
         channelLabel: { type: string }
         campaignTypeLabel: { type: string }
-        campaignTypeLabels:
+        audienceCount: { type: integer }
+        conflictDonorCount:
+          type: integer
+          description: Number of donors in this touch's audience that are in conflict. Subset of the campaign-level conflictDonorCount.
+        conflictDonorSample:
           type: array
           items: { type: string }
-        audienceCount: { type: integer }
+          description: Up to 50 donor IDs from this touch's audience that are in conflict. Used client-side for deduplication across touches on the same day.
+
+    CalendarDayTouchBreakdown:
+      type: object
+      required: [touchId, touchName, donorCount]
+      description: Per-touch conflict count within a single campaign on a single day.
+      properties:
+        touchId: { type: integer }
+        touchName: { type: string }
+        donorCount:
+          type: integer
+          description: Exact count of donors that breach a threshold in the rolling window centred on this touch's sendDate.
+
+    CalendarDayConflictByCampaign:
+      type: object
+      required: [donorCount, donorSample, overflow, touchBreakdown, donorTouchIds]
+      description: Server-authoritative conflict detail for one campaign on one calendar day.
+      properties:
+        donorCount:
+          type: integer
+          description: Exact unique donors conflicted for this campaign on this day (union of per-touch conflict sets).
+        donorSample:
+          type: array
+          items: { type: string }
+          description: Up to 50 donor IDs for display in the day-detail sheet.
+        overflow:
+          type: integer
+          description: donorCount minus donorSample.length — donors that exist but are not in the sample.
+        touchBreakdown:
+          type: array
+          items: { $ref: "#/components/schemas/CalendarDayTouchBreakdown" }
+          description: Per-touch conflict counts for this campaign on this day.
+        donorTouchIds:
+          type: object
+          description: For each donor ID in donorSample, the touch IDs whose rolling window caused the breach for that donor. Enables exact donor-to-touch attribution in the detail sheet without client-side approximation.
+          additionalProperties:
+            type: array
+            items: { type: integer }
+
+    CalendarDayConflict:
+      type: object
+      required: [donorCount, campaignCount, byCampaign]
+      description: Server-computed exact conflict summary for one calendar day.
+      properties:
+        donorCount:
+          type: integer
+          description: Exact count of unique donors over threshold across all in-window touches on this day.
+        campaignCount:
+          type: integer
+          description: Number of campaigns with at least one conflicted touch on this day.
+        byCampaign:
+          type: object
+          description: Per-campaign conflict breakdown keyed by campaign ID (string). Authoritative data for the day-detail sheet.
+          additionalProperties:
+            $ref: "#/components/schemas/CalendarDayConflictByCampaign"
 
     CalendarFeed:
       type: object
-      required: [touches]
+      required: [campaigns, touches, dayVolumes, dayConflicts]
       properties:
+        campaigns:
+          type: object
+          description: Campaign metadata keyed by campaign ID (as a string). Rehydrate touch rows with their campaign on the client.
+          additionalProperties:
+            $ref: "#/components/schemas/CalendarCampaignSummary"
         touches:
           type: array
           items: { $ref: "#/components/schemas/CalendarTouch" }
+        dayVolumes:
+          type: object
+          description: Total audience volume per calendar day (YYYY-MM-DD keys). Used to render the sparkline strip.
+          additionalProperties:
+            type: integer
+        dayConflicts:
+          type: object
+          description: Exact server-computed conflict summary per calendar day (YYYY-MM-DD keys). Use for day badges instead of client-side approximation.
+          additionalProperties:
+            $ref: "#/components/schemas/CalendarDayConflict"
+
+    CalendarPreferences:
+      type: object
+      required: [filters, config]
+      properties:
+        filters:
+          type: object
+          description: Last-used filter state (owningUnit, channelIds, campaignTypeIds, statuses, mine, nameContains).
+          additionalProperties: true
+        config:
+          type: object
+          description: Last-used display config (view, density).
+          additionalProperties: true
+
+    CalendarPreferencesInput:
+      type: object
+      required: [filters, config]
+      properties:
+        filters:
+          type: object
+          additionalProperties: true
+        config:
+          type: object
+          additionalProperties: true

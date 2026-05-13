@@ -11,14 +11,12 @@ export interface CalendarTouch {
   touchName: string;
   sendDate: Date;
   campaignId: number;
-  campaignName: string;
-  campaignStatus: string;
-  /** @nullable */
-  owningUnit?: string | null;
-  submittedByUserId: number;
   channelId: number;
   channelLabel: string;
   campaignTypeLabel: string;
-  campaignTypeLabels: string[];
   audienceCount: number;
+  /** Number of donors in this touch's audience that are in conflict. Subset of the campaign-level conflictDonorCount. */
+  conflictDonorCount: number;
+  /** Up to 50 donor IDs from this touch's audience that are in conflict. Used client-side for deduplication across touches on the same day. */
+  conflictDonorSample: string[];
 }

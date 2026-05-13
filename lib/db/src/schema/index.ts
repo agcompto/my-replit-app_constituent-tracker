@@ -501,6 +501,19 @@ export const savedReportViewsTable = pgTable(
   }),
 );
 
+// ─────── Per-user calendar preferences (last-used filters, view, density)
+export const calendarPreferencesTable = pgTable("calendar_preferences", {
+  userId: integer("user_id")
+    .primaryKey()
+    .references(() => usersTable.id, { onDelete: "cascade" }),
+  filtersJson: jsonb("filters_json").$type<Record<string, unknown>>().notNull().default({}),
+  configJson: jsonb("config_json").$type<Record<string, unknown>>().notNull().default({}),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});
+
 // ─────── AI usage log (per-user budget tracking)
 export const aiUsageTable = pgTable(
   "ai_usage",

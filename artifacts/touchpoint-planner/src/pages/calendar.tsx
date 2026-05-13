@@ -1,10 +1,12 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import {
+  useState, useMemo, useCallback, useRef, useEffect, type RefObject,
+} from "react";
 import { useLocation } from "wouter";
 import {
   startOfMonth, endOfMonth, startOfWeek, endOfWeek,
   addMonths, subMonths, addWeeks, subWeeks,
   eachDayOfInterval, isSameMonth, isSameDay, isToday, isWeekend,
-  format, parseISO,
+  format, parseISO, parse, isValid, nextMonday, nextSunday,
 } from "date-fns";
 import {
   useGetCalendarFeed,
@@ -16,7 +18,12 @@ import {
   useCreateSavedReportView,
   useDeleteSavedReportView,
   getListSavedReportViewsQueryKey,
+  useGetCalendarPreferences,
+  usePutCalendarPreferences,
+  getGetCalendarFeedQueryKey,
+  getGetCalendarFeedQueryOptions,
 } from "@workspace/api-client-react";
+import type { CalendarFeedCampaigns, GetCalendarFeedParams } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,6 +41,7 @@ import { Link } from "wouter";
 import {
   ChevronLeft, ChevronRight, CalendarDays, Link2, BookmarkPlus,
   X, Trash2, AlignJustify, LayoutGrid, Filter, Info, Bookmark, Settings2,
+  AlertTriangle, HelpCircle, CalendarSearch,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -51,6 +59,33 @@ interface CalendarFilters {
   nameContains: string;
 }
 
+// Touch row from the API (slim — no campaign fields)
+interface ApiTouch {
+  touchId: number;
+  touchName: string;
+  sendDate: string;
+  campaignId: number;
+  channelId: number;
+  channelLabel: string;
+  campaignTypeLabel: string;
+  audienceCount: number;
+  conflictDonorCount: number;
+  /** Up to 50 donor IDs from this touch's audience that are in conflict. */
+  conflictDonorSample: string[];
+}
+
+// Rehydrated touch: API touch + campaign metadata merged in
+interface RichCalTouch extends ApiTouch {
+  campaignName: string;
+  campaignStatus: string;
+  owningUnit?: string | null;
+  submittedByUserId: number;
+  campaignTypeLabels: string[];
+  /** Campaign-level totals for the sheet conflict header */
+  campaignConflictDonorCount: number;
+  campaignConflictDonorSample: string[];
+}
+
 interface TouchGroup {
   campaignId: number;
   campaignName: string;
@@ -58,23 +93,9 @@ interface TouchGroup {
   channelId: number;
   channelLabel: string;
   sendDate: string;
-  touches: CalTouch[];
-}
-
-interface CalTouch {
-  touchId: number;
-  touchName: string;
-  sendDate: string;
-  campaignId: number;
-  campaignName: string;
-  campaignStatus: string;
-  owningUnit?: string | null;
-  submittedByUserId: number;
-  channelId: number;
-  channelLabel: string;
-  campaignTypeLabel: string;
-  campaignTypeLabels: string[];
-  audienceCount: number;
+  touches: RichCalTouch[];
+  campaignConflictDonorCount: number;
+  campaignConflictDonorSample: string[];
 }
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -83,6 +104,7 @@ const ALL_STATUSES = ["draft", "uploaded", "previewed", "finalized", "exported",
 const DEFAULT_STATUSES = ["uploaded", "previewed", "finalized", "exported", "archived"];
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const VIEW_TYPE = "calendar";
+const PREFS_DEBOUNCE_MS = 1200;
 
 const CHANNEL_PALETTE = [
   { bg: "bg-blue-100", text: "text-blue-900", border: "border-blue-400", dot: "bg-blue-500" },
@@ -97,17 +119,12 @@ const CHANNEL_PALETTE = [
   { bg: "bg-teal-100", text: "text-teal-900", border: "border-teal-400", dot: "bg-teal-500" },
 ] as const;
 
-// Legend dots by palette index, shown in the legend popover next to channel name
 const LEGEND_COLORS = [
   "#3B82F6", "#10B981", "#8B5CF6", "#F97316", "#EC4899",
   "#06B6D4", "#F59E0B", "#F43F5E", "#6366F1", "#14B8A6",
 ];
 
 // ─── Utilities ──────────────────────────────────────────────────────────────
-
-function todayIso(): string {
-  return format(new Date(), "yyyy-MM-dd");
-}
 
 function paletteFor(channelId: number) {
   return CHANNEL_PALETTE[channelId % CHANNEL_PALETTE.length];
@@ -187,7 +204,26 @@ function gridRange(viewMode: ViewMode, anchor: Date): { gridStart: Date; gridEnd
   return { gridStart, gridEnd };
 }
 
-function groupTouches(touches: CalTouch[]): Map<string, TouchGroup[]> {
+function rehydrateTouches(
+  apiTouches: ApiTouch[],
+  campaigns: CalendarFeedCampaigns,
+): RichCalTouch[] {
+  return apiTouches.map((t) => {
+    const c = campaigns[String(t.campaignId)];
+    return {
+      ...t,
+      campaignName: c?.name ?? "",
+      campaignStatus: c?.status ?? "",
+      owningUnit: c?.owningUnit ?? null,
+      submittedByUserId: c?.submittedByUserId ?? 0,
+      campaignTypeLabels: c?.campaignTypeLabels ?? [t.campaignTypeLabel],
+      campaignConflictDonorCount: c?.conflictDonorCount ?? 0,
+      campaignConflictDonorSample: c?.conflictDonorSample ?? [],
+    };
+  });
+}
+
+function groupTouches(touches: RichCalTouch[]): Map<string, TouchGroup[]> {
   const dayMap = new Map<string, Map<string, TouchGroup>>();
   for (const t of touches) {
     if (!dayMap.has(t.sendDate)) dayMap.set(t.sendDate, new Map());
@@ -202,6 +238,8 @@ function groupTouches(touches: CalTouch[]): Map<string, TouchGroup[]> {
         channelLabel: t.channelLabel,
         sendDate: t.sendDate,
         touches: [],
+        campaignConflictDonorCount: t.campaignConflictDonorCount,
+        campaignConflictDonorSample: t.campaignConflictDonorSample,
       });
     }
     g.get(groupKey)!.touches.push(t);
@@ -211,6 +249,54 @@ function groupTouches(touches: CalTouch[]): Map<string, TouchGroup[]> {
     result.set(date, Array.from(gMap.values()));
   }
   return result;
+}
+
+// Parse natural date formats for jump-to-date
+function parseNaturalDate(str: string): Date | null {
+  const s = str.trim();
+  if (!s) return null;
+
+  // ISO format YYYY-MM-DD
+  const iso = parse(s, "yyyy-MM-dd", new Date());
+  if (isValid(iso)) return iso;
+
+  // "Jul 15" or "July 15"
+  const monthDay = parse(s, "MMM d", new Date());
+  if (isValid(monthDay)) return monthDay;
+  const monthDayFull = parse(s, "MMMM d", new Date());
+  if (isValid(monthDayFull)) return monthDayFull;
+
+  // "Jul 15, 2026" or "July 15, 2026"
+  const monthDayYear = parse(s, "MMM d, yyyy", new Date());
+  if (isValid(monthDayYear)) return monthDayYear;
+  const monthDayYearFull = parse(s, "MMMM d, yyyy", new Date());
+  if (isValid(monthDayYearFull)) return monthDayYearFull;
+
+  // Natural keywords
+  const lower = s.toLowerCase();
+  if (lower === "today") return new Date();
+  if (lower === "tomorrow") { const d = new Date(); d.setDate(d.getDate() + 1); return d; }
+  if (lower === "next monday") return nextMonday(new Date());
+  if (lower === "next sunday") return nextSunday(new Date());
+
+  return null;
+}
+
+function buildCalendarFeedParams(
+  gridStart: Date,
+  gridEnd: Date,
+  filters: CalendarFilters,
+): GetCalendarFeedParams {
+  return {
+    startDate: format(gridStart, "yyyy-MM-dd"),
+    endDate: format(gridEnd, "yyyy-MM-dd"),
+    owningUnit: filters.owningUnit || undefined,
+    channelId: filters.channelIds.length ? filters.channelIds : undefined,
+    campaignTypeId: filters.campaignTypeIds.length ? filters.campaignTypeIds : undefined,
+    status: filters.statuses.length && filters.statuses.length < ALL_STATUSES.length ? filters.statuses : undefined,
+    mine: filters.mine || undefined,
+    nameContains: filters.nameContains || undefined,
+  };
 }
 
 // ─── MultiSelectFilter ──────────────────────────────────────────────────────
@@ -287,6 +373,166 @@ function MultiSelectFilter({ label, options, selected, onChange }: MultiSelectFi
   );
 }
 
+// ─── SparklineStrip ────────────────────────────────────────────────────────
+
+interface SparklineStripProps {
+  gridDays: Date[];
+  dayVolumes: Record<string, number>;
+  onDayClick: (day: Date) => void;
+  /** Day currently selected/focused in the grid — highlighted with primary color */
+  focusedDay: Date | null;
+  /** Callback when a bar is hovered — used to highlight the matching day cell */
+  onHoverDay: (day: Date | null) => void;
+}
+
+function SparklineStrip({ gridDays, dayVolumes, onDayClick, focusedDay, onHoverDay }: SparklineStripProps) {
+  const maxVol = useMemo(() => Math.max(1, ...gridDays.map((d) => dayVolumes[format(d, "yyyy-MM-dd")] ?? 0)), [gridDays, dayVolumes]);
+
+  if (gridDays.length === 0) return null;
+
+  const STRIP_H = 24;
+
+  return (
+    <div
+      className="grid border-b bg-muted/20"
+      style={{ gridTemplateColumns: `repeat(7, 1fr)` }}
+      aria-hidden
+    >
+      {gridDays.map((day) => {
+        const dateStr = format(day, "yyyy-MM-dd");
+        const vol = dayVolumes[dateStr] ?? 0;
+        const ratio = vol > 0 ? vol / maxVol : 0;
+        const barH = Math.max(2, Math.round(ratio * (STRIP_H - 4)));
+        const isFocused = focusedDay ? isSameDay(day, focusedDay) : false;
+
+        return (
+          <Tooltip key={dateStr}>
+            <TooltipTrigger asChild>
+              <button
+                className={cn(
+                  "relative flex items-end justify-center border-r last:border-r-0 hover:bg-muted/60 transition-colors",
+                  isFocused && "bg-muted/50",
+                )}
+                style={{ height: STRIP_H }}
+                onClick={() => vol > 0 && onDayClick(day)}
+                onMouseEnter={() => onHoverDay(day)}
+                onMouseLeave={() => onHoverDay(null)}
+                tabIndex={-1}
+              >
+                {vol > 0 && (
+                  <span
+                    className={cn(
+                      "w-[70%] rounded-t-sm transition-all",
+                      isFocused ? "bg-primary/70" : "bg-primary/30",
+                    )}
+                    style={{ height: barH }}
+                  />
+                )}
+              </button>
+            </TooltipTrigger>
+            {vol > 0 && (
+              <TooltipContent side="bottom" className="text-xs">
+                {format(day, "MMM d")}: {fmtCount(vol)} recipients
+              </TooltipContent>
+            )}
+          </Tooltip>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── ShortcutHelpPopover ───────────────────────────────────────────────────
+
+const SHORTCUTS = [
+  { keys: ["M"], desc: "Switch to Month view" },
+  { keys: ["W"], desc: "Switch to Week view" },
+  { keys: ["T"], desc: "Go to today" },
+  { keys: ["/"], desc: "Focus the name search filter" },
+  { keys: ["J"], desc: "Focus the jump-to-date input" },
+  { keys: ["?"], desc: "Open this shortcut help" },
+  { keys: ["←", "→", "↑", "↓"], desc: "Navigate day cells" },
+  { keys: ["Enter"], desc: "Open day detail" },
+  { keys: ["Esc"], desc: "Close day detail / popover" },
+];
+
+function ShortcutHelpPopover({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+  return (
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0 text-muted-foreground"
+          aria-label="Keyboard shortcuts"
+        >
+          <HelpCircle className="h-4 w-4" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-3" align="end">
+        <div className="text-xs font-semibold mb-2">Keyboard shortcuts</div>
+        <div className="space-y-1.5">
+          {SHORTCUTS.map((s) => (
+            <div key={s.desc} className="flex items-center justify-between gap-2">
+              <span className="text-xs text-muted-foreground">{s.desc}</span>
+              <div className="flex gap-1 shrink-0">
+                {s.keys.map((k) => (
+                  <kbd key={k} className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">{k}</kbd>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// ─── JumpToDateInput ───────────────────────────────────────────────────────
+
+interface JumpToDateInputProps {
+  inputRef: RefObject<HTMLInputElement | null>;
+  onJump: (date: Date) => void;
+}
+
+function JumpToDateInput({ inputRef, onJump }: JumpToDateInputProps) {
+  const [value, setValue] = useState("");
+  const [error, setError] = useState(false);
+
+  function handleSubmit() {
+    const parsed = parseNaturalDate(value);
+    if (parsed) {
+      setError(false);
+      setValue("");
+      onJump(parsed);
+      inputRef.current?.blur();
+    } else {
+      setError(true);
+    }
+  }
+
+  return (
+    <div className="relative flex items-center">
+      <CalendarSearch className="absolute left-2 h-3 w-3 text-muted-foreground pointer-events-none" />
+      <Input
+        ref={inputRef}
+        value={value}
+        onChange={(e) => { setValue(e.target.value); setError(false); }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") handleSubmit();
+          if (e.key === "Escape") { setValue(""); setError(false); inputRef.current?.blur(); }
+        }}
+        placeholder="Jump to date…"
+        className={cn(
+          "h-8 text-xs w-[160px] pl-6",
+          error && "border-destructive focus-visible:ring-destructive",
+        )}
+        aria-label="Jump to date"
+      />
+    </div>
+  );
+}
+
 // ─── TouchPopoverContent ───────────────────────────────────────────────────
 
 function TouchPopoverContent({ group }: { group: TouchGroup }) {
@@ -351,29 +597,34 @@ function StatusPill({ status }: { status: string }) {
 interface TouchChipProps {
   group: TouchGroup;
   density: Density;
+  showConflicts: boolean;
   onPopoverChange?: (open: boolean) => void;
 }
 
-function TouchChip({ group, density, onPopoverChange }: TouchChipProps) {
+function TouchChip({ group, density, showConflicts, onPopoverChange }: TouchChipProps) {
   const [open, setOpen] = useState(false);
   const palette = paletteFor(group.channelId);
   const isDraft = group.campaignStatus === "draft";
+  const hasConflict = showConflicts && group.touches.some((t) => t.conflictDonorCount > 0);
 
   function handleChange(v: boolean) {
     setOpen(v);
     onPopoverChange?.(v);
   }
 
+  const chipClass = cn(
+    "cursor-pointer border select-none truncate",
+    palette.bg, palette.text, palette.border,
+    isDraft && "border-dashed",
+    hasConflict && "border-l-2 border-l-red-500",
+  );
+
   if (density === "compact") {
     return (
       <Popover open={open} onOpenChange={handleChange}>
         <PopoverTrigger asChild>
           <div
-            className={cn(
-              "flex items-center gap-1 px-1 py-0.5 rounded text-[10px] cursor-pointer border select-none truncate",
-              palette.bg, palette.text, palette.border,
-              isDraft && "border-dashed",
-            )}
+            className={cn("flex items-center gap-1 px-1 py-0.5 rounded text-[10px]", chipClass)}
             role="button"
             aria-haspopup="true"
             aria-expanded={open}
@@ -396,11 +647,7 @@ function TouchChip({ group, density, onPopoverChange }: TouchChipProps) {
     <Popover open={open} onOpenChange={handleChange}>
       <PopoverTrigger asChild>
         <div
-          className={cn(
-            "px-1.5 py-1 rounded text-[11px] cursor-pointer border select-none leading-tight",
-            palette.bg, palette.text, palette.border,
-            isDraft && "border-dashed",
-          )}
+          className={cn("px-1.5 py-1 rounded text-[11px] leading-tight", chipClass)}
           role="button"
           aria-haspopup="true"
           aria-expanded={open}
@@ -456,6 +703,10 @@ function LegendPopover({ channels }: { channels: { id: number; name: string }[] 
           <div className="flex items-center gap-2 text-xs">
             <span className="h-3 w-8 border-2 border-solid border-gray-600 rounded" />
             <span className="text-muted-foreground">Other (finalized, exported, …)</span>
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            <span className="h-3 w-8 border-2 border-l-4 border-red-500 border-gray-300 rounded" />
+            <span className="text-muted-foreground">Has threshold conflicts</span>
           </div>
         </div>
         <Separator className="my-2" />
@@ -649,9 +900,13 @@ interface DayCellProps {
   density: Density;
   viewMode: ViewMode;
   heatAlpha: number;
+  showConflicts: boolean;
   onMoreClick: (day: Date) => void;
   isFocused: boolean;
+  isSparklineHovered: boolean;
   onFocus: (day: Date) => void;
+  /** Server-computed exact conflict summary for this day; undefined when there are no conflicts. */
+  serverDayConflict?: { donorCount: number; campaignCount: number };
 }
 
 function DayCell({
@@ -661,9 +916,12 @@ function DayCell({
   density,
   viewMode,
   heatAlpha,
+  showConflicts,
   onMoreClick,
   isFocused,
+  isSparklineHovered,
   onFocus,
+  serverDayConflict,
 }: DayCellProps) {
   const today = isToday(day);
   const weekend = isWeekend(day);
@@ -672,6 +930,12 @@ function DayCell({
   const visibleGroups = groups.slice(0, chipLimit);
   const extraCount = Math.max(0, groups.length - chipLimit);
 
+  // Day conflict badge data comes directly from the server-computed exact aggregation.
+  // The server unions the full donor sets across all in-window touches for this day,
+  // so the count is authoritative — no client-side approximation or sample-based heuristic.
+  const dayConflictCount = showConflicts ? (serverDayConflict?.donorCount ?? 0) : 0;
+  const dayConflictCampaignCount = showConflicts ? (serverDayConflict?.campaignCount ?? 0) : 0;
+
   return (
     <div
       className={cn(
@@ -679,6 +943,7 @@ function DayCell({
         !inMonth && "bg-muted/30",
         weekend && inMonth && "bg-muted/10",
         isFocused && "ring-2 ring-inset ring-primary",
+        isSparklineHovered && !isFocused && "ring-1 ring-inset ring-primary/40 bg-primary/5",
         viewMode === "month" ? (density === "compact" ? "min-h-[80px]" : "min-h-[120px]") : "min-h-[200px]",
       )}
       style={heatAlpha > 0 ? { background: `rgba(249,115,22,${heatAlpha})` } : undefined}
@@ -690,7 +955,7 @@ function DayCell({
       onFocus={() => onFocus(day)}
       onDoubleClick={() => onMoreClick(day)}
     >
-      {/* Date number */}
+      {/* Date number + conflict badge */}
       <div className={cn("flex items-center justify-between px-1.5 pt-1 pb-0.5")}>
         <span
           className={cn(
@@ -700,15 +965,36 @@ function DayCell({
         >
           {format(day, "d")}
         </span>
-        {groups.length > 0 && (
-          <span className="text-[9px] text-muted-foreground">{groups.length} touch{groups.length !== 1 ? "es" : ""}</span>
-        )}
+        <div className="flex items-center gap-1">
+          {dayConflictCount > 0 && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex items-center gap-0.5 rounded-full bg-red-500 px-1 text-[9px] font-semibold text-white leading-4 cursor-default">
+                  <AlertTriangle className="h-2 w-2" />
+                  {fmtCount(dayConflictCount)}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs max-w-[200px]">
+                {dayConflictCount} donor{dayConflictCount !== 1 ? "s" : ""} over threshold
+                ({dayConflictCampaignCount} campaign{dayConflictCampaignCount !== 1 ? "s" : ""} involved)
+              </TooltipContent>
+            </Tooltip>
+          )}
+          {groups.length > 0 && (
+            <span className="text-[9px] text-muted-foreground">{groups.length} touch{groups.length !== 1 ? "es" : ""}</span>
+          )}
+        </div>
       </div>
 
       {/* Chips */}
       <div className={cn("flex flex-col gap-0.5 px-1 pb-1 flex-1 overflow-hidden", density === "compact" ? "gap-px" : "gap-0.5")}>
         {visibleGroups.map((g) => (
-          <TouchChip key={`${g.campaignId}-${g.sendDate}`} group={g} density={density} />
+          <TouchChip
+            key={`${g.campaignId}-${g.sendDate}`}
+            group={g}
+            density={density}
+            showConflicts={showConflicts}
+          />
         ))}
         {extraCount > 0 && (
           <button
@@ -729,14 +1015,65 @@ function DayCell({
 interface DayDetailSheetProps {
   day: Date | null;
   groups: TouchGroup[];
+  showConflicts: boolean;
   onClose: () => void;
+  /**
+   * Server-authoritative conflict data for this day. When present, the detail
+   * sheet reads per-campaign donor counts and breakdowns from here instead of
+   * reconstructing them client-side from capped samples.
+   */
+  dayConflict?: {
+    donorCount: number;
+    campaignCount: number;
+    byCampaign: Record<string, {
+      donorCount: number;
+      donorSample: string[];
+      overflow: number;
+      touchBreakdown: Array<{ touchId: number; touchName: string; donorCount: number }>;
+      donorTouchIds?: Record<string, number[]>;
+    }>;
+  };
 }
 
-function DayDetailSheet({ day, groups, onClose }: DayDetailSheetProps) {
+function DayDetailSheet({ day, groups, showConflicts, onClose, dayConflict }: DayDetailSheetProps) {
   const totalAudience = useMemo(() =>
     groups.flatMap((g) => g.touches).reduce((s, t) => s + t.audienceCount, 0),
     [groups],
   );
+
+  // Build the conflicts section from the server-authoritative byCampaign data.
+  // This replaces the previous client-side reconstruction from per-touch samples,
+  // which produced inaccurate totals when donors appeared in multiple touches.
+  const conflictSections = useMemo(() => {
+    if (!showConflicts || !dayConflict) return [];
+    // Only include campaigns that have touches rendered in the sheet today
+    const campaignIdsInGroups = new Set(groups.map((g) => g.campaignId));
+    return Object.entries(dayConflict.byCampaign)
+      .filter(([campaignIdStr]) => campaignIdsInGroups.has(Number(campaignIdStr)))
+      .map(([campaignIdStr, campData]) => {
+        const campaignId = Number(campaignIdStr);
+        const group = groups.find((g) => g.campaignId === campaignId);
+        // Build donor→touchName mapping from server-supplied donorTouchIds
+        const touchIdToName = Object.fromEntries(
+          campData.touchBreakdown.map((tb) => [tb.touchId, tb.touchName])
+        );
+        const donorEntries = campData.donorSample.map((donorId) => ({
+          donorId,
+          touchNames: (campData.donorTouchIds?.[donorId] ?? []).map(
+            (tid) => touchIdToName[tid] ?? String(tid)
+          ),
+        }));
+        return {
+          campaignId,
+          campaignName: group?.campaignName ?? String(campaignId),
+          totalCount: campData.donorCount,
+          donorEntries,
+          overflow: campData.overflow,
+          touchBreakdown: campData.touchBreakdown,
+        };
+      })
+      .filter((cs) => cs.totalCount > 0);
+  }, [dayConflict, groups, showConflicts]);
 
   return (
     <Sheet open={day !== null} onOpenChange={(o) => !o && onClose()}>
@@ -752,6 +1089,55 @@ function DayDetailSheet({ day, groups, onClose }: DayDetailSheetProps) {
             </p>
           )}
         </SheetHeader>
+
+        {/* Conflicts section — data sourced from server-authoritative byCampaign breakdown */}
+        {conflictSections.length > 0 && (
+          <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 space-y-2">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-red-700">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              Threshold conflicts on this day
+            </div>
+            {conflictSections.map((cs) => (
+              <div key={cs.campaignId} className="text-xs">
+                <div className="font-medium text-red-800 truncate">{cs.campaignName}</div>
+                <div className="text-red-600 mb-1.5">
+                  {cs.totalCount} donor{cs.totalCount !== 1 ? "s" : ""} over threshold on this day
+                </div>
+                {/* Per-touch counts (server-authoritative, exact per-touch donor sets) */}
+                {cs.touchBreakdown.length > 0 && (
+                  <div className="space-y-0.5 mb-1.5">
+                    {cs.touchBreakdown.map((tb) => (
+                      <div key={tb.touchId} className="flex items-center justify-between gap-1.5">
+                        <span className="text-red-700 truncate">{tb.touchName}</span>
+                        <span className="text-red-500 flex-shrink-0">{tb.donorCount} conflict{tb.donorCount !== 1 ? "s" : ""}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* Per-donor attribution: donor ID + which touches caused their breach */}
+                <div className="space-y-0.5 max-h-28 overflow-y-auto">
+                  {cs.donorEntries.map(({ donorId, touchNames }) => (
+                    <div key={donorId} className="flex items-start gap-1.5">
+                      <span className="rounded bg-red-100 px-1 py-0.5 font-mono text-[10px] text-red-800 flex-shrink-0">
+                        {donorId}
+                      </span>
+                      {touchNames.length > 0 && (
+                        <span className="text-red-600 text-[10px] leading-tight">{touchNames.join(", ")}</span>
+                      )}
+                    </div>
+                  ))}
+                  {cs.overflow > 0 && (
+                    <div className="text-[10px] text-red-500 italic">+{cs.overflow} more</div>
+                  )}
+                </div>
+                <Link to={`/campaigns/${cs.campaignId}`} className="text-[10px] text-red-600 hover:underline mt-1.5 block">
+                  Resolve in campaign →
+                </Link>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="flex-1 overflow-y-auto mt-4 space-y-2 pr-1">
           {groups.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-32 text-sm text-muted-foreground">
@@ -761,8 +1147,9 @@ function DayDetailSheet({ day, groups, onClose }: DayDetailSheetProps) {
           ) : (
             groups.map((g) => {
               const palette = paletteFor(g.channelId);
+              const hasConflict = showConflicts && g.campaignConflictDonorCount > 0;
               return (
-                <div key={`${g.campaignId}`} className="border rounded-lg p-3">
+                <div key={`${g.campaignId}`} className={cn("border rounded-lg p-3", hasConflict && "border-red-200")}>
                   <div className="flex items-start gap-2 mb-2">
                     <span className={cn("mt-0.5 inline-block h-2.5 w-2.5 rounded-full flex-shrink-0", palette.dot)} />
                     <div className="flex-1 min-w-0">
@@ -770,6 +1157,11 @@ function DayDetailSheet({ day, groups, onClose }: DayDetailSheetProps) {
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <span className="text-xs text-muted-foreground">{g.channelLabel}</span>
                         <StatusPill status={g.campaignStatus} />
+                        {hasConflict && (
+                          <span className="text-[10px] text-red-600 font-medium">
+                            {g.campaignConflictDonorCount} conflict{g.campaignConflictDonorCount !== 1 ? "s" : ""}
+                          </span>
+                        )}
                       </div>
                     </div>
                     <Link to={`/campaigns/${g.campaignId}`}>
@@ -784,12 +1176,18 @@ function DayDetailSheet({ day, groups, onClose }: DayDetailSheetProps) {
                         "rounded px-2 py-1.5 text-xs border",
                         palette.bg, palette.border,
                         g.campaignStatus === "draft" && "border-dashed",
+                        showConflicts && t.conflictDonorCount > 0 && "border-l-2 border-l-red-500",
                       )}>
                         <div className="font-medium">{t.touchName}</div>
                         <div className="flex items-center justify-between mt-0.5 text-muted-foreground">
                           <span>{t.campaignTypeLabel}</span>
                           <span>{fmtCount(t.audienceCount)} recipients</span>
                         </div>
+                        {showConflicts && t.conflictDonorCount > 0 && (
+                          <div className="text-[10px] text-red-600 mt-0.5">
+                            {t.conflictDonorCount} over threshold
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -898,24 +1296,83 @@ function ActiveFilterChips({ filters, channels, campaignTypes, onChange }: Activ
 
 // ─── CalendarPage ──────────────────────────────────────────────────────────
 
+const DEFAULT_FILTERS: CalendarFilters = {
+  owningUnit: "",
+  channelIds: [],
+  campaignTypeIds: [],
+  statuses: [...DEFAULT_STATUSES],
+  mine: false,
+  nameContains: "",
+};
+
 export default function CalendarPage() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const { data: me } = useGetMe();
   const { data: channels = [] } = useListChannels();
   const { data: owningUnits = [] } = useListOwningUnits();
   const { data: campaignTypes = [] } = useListCampaignTypes();
 
-  // Parse initial state from URL
+  // ── Preferences hydration ─────────────────────────────────────────────────
+  const { data: savedPrefs } = useGetCalendarPreferences();
+  const putPrefs = usePutCalendarPreferences();
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
+
+  // Parse initial state from URL — URL takes priority over saved prefs
   const initial = useMemo(() => parseUrlState(window.location.search), []);
   const [viewMode, setViewMode] = useState<ViewMode>(initial.viewMode);
   const [anchor, setAnchor] = useState<Date>(initial.anchor);
   const [filters, setFilters] = useState<CalendarFilters>(initial.filters);
   const [density, setDensity] = useState<Density>(initial.density);
+  const [showConflicts, setShowConflicts] = useState(true);
   const [detailDay, setDetailDay] = useState<Date | null>(null);
   const [focusedDay, setFocusedDay] = useState<Date | null>(null);
+  /** Day hovered in the sparkline strip — used to highlight the matching grid cell */
+  const [sparklineHoverDay, setSparklineHoverDay] = useState<Date | null>(null);
+  const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
+  const nameSearchRef = useRef<HTMLInputElement>(null);
+  const jumpInputRef = useRef<HTMLInputElement>(null);
+
+  // Apply saved preferences once loaded (only if URL had no explicit state)
+  useEffect(() => {
+    if (prefsLoaded || !savedPrefs) return;
+    setPrefsLoaded(true);
+    const hasUrlState = window.location.search.length > 1;
+    if (hasUrlState) return; // URL beats prefs
+    const f = savedPrefs.filters as Partial<CalendarFilters>;
+    if (Object.keys(f).length > 0) {
+      setFilters({
+        owningUnit: (f.owningUnit as string) ?? "",
+        channelIds: (f.channelIds as number[]) ?? [],
+        campaignTypeIds: (f.campaignTypeIds as number[]) ?? [],
+        statuses: (f.statuses as string[]) ?? [...DEFAULT_STATUSES],
+        mine: !!(f.mine),
+        nameContains: (f.nameContains as string) ?? "",
+      });
+    }
+    const c = savedPrefs.config as { view?: string; density?: string };
+    if (c.view === "week") setViewMode("week");
+    if (c.density === "compact") setDensity("compact");
+  }, [savedPrefs, prefsLoaded]);
+
+  // Debounced save of preferences on change
+  const prefsSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!prefsLoaded) return;
+    if (prefsSaveTimer.current) clearTimeout(prefsSaveTimer.current);
+    prefsSaveTimer.current = setTimeout(() => {
+      putPrefs.mutate({
+        data: {
+          filters: filters as unknown as Record<string, unknown>,
+          config: { view: viewMode, density } as Record<string, unknown>,
+        },
+      });
+    }, PREFS_DEBOUNCE_MS);
+    return () => { if (prefsSaveTimer.current) clearTimeout(prefsSaveTimer.current); };
+  }, [filters, viewMode, density, prefsLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync URL on state changes
   useEffect(() => {
@@ -932,24 +1389,45 @@ export default function CalendarPage() {
     [gridStart, gridEnd],
   );
 
-  // API query
-  const { data: feed, isLoading, isError, error } = useGetCalendarFeed({
-    startDate: format(gridStart, "yyyy-MM-dd"),
-    endDate: format(gridEnd, "yyyy-MM-dd"),
-    owningUnit: filters.owningUnit || undefined,
-    channelId: filters.channelIds.length ? filters.channelIds : undefined,
-    campaignTypeId: filters.campaignTypeIds.length ? filters.campaignTypeIds : undefined,
-    status: filters.statuses.length && filters.statuses.length < ALL_STATUSES.length ? filters.statuses : undefined,
-    mine: filters.mine || undefined,
-    nameContains: filters.nameContains || undefined,
+  // API query — staleTime=5min so paging back to a cached range is instant
+  const feedParams = useMemo(
+    () => buildCalendarFeedParams(gridStart, gridEnd, filters),
+    [gridStart, gridEnd, filters],
+  );
+
+  const { data: feed, isLoading, isError, error } = useGetCalendarFeed(feedParams, {
+    query: {
+      queryKey: getGetCalendarFeedQueryKey(feedParams),
+      staleTime: 5 * 60 * 1000,
+      refetchOnWindowFocus: true,
+    },
   });
 
-  // Group touches by day and campaign
-  const touches = useMemo(
-    () => (feed?.touches ?? []) as CalTouch[],
+  // ── Adjacent range prefetch ───────────────────────────────────────────────
+  useEffect(() => {
+    const prevRange = gridRange(viewMode, viewMode === "month" ? subMonths(anchor, 1) : subWeeks(anchor, 1));
+    const nextRange = gridRange(viewMode, viewMode === "month" ? addMonths(anchor, 1) : addWeeks(anchor, 1));
+    const toFetch = [prevRange, nextRange];
+    for (const r of toFetch) {
+      const params = buildCalendarFeedParams(r.gridStart, r.gridEnd, filters);
+      const opts = getGetCalendarFeedQueryOptions(params, {
+        query: {
+          queryKey: getGetCalendarFeedQueryKey(params),
+          staleTime: 5 * 60 * 1000,
+          refetchOnWindowFocus: false,
+        },
+      });
+      queryClient.prefetchQuery(opts);
+    }
+  }, [anchor, viewMode, filters, queryClient]);
+
+  // Rehydrate touches with campaign metadata
+  const richTouches = useMemo(
+    () => rehydrateTouches((feed?.touches ?? []) as ApiTouch[], feed?.campaigns ?? {}),
     [feed],
   );
-  const groupedByDay = useMemo(() => groupTouches(touches), [touches]);
+  const groupedByDay = useMemo(() => groupTouches(richTouches), [richTouches]);
+  const dayVolumes = useMemo(() => feed?.dayVolumes ?? {}, [feed]);
 
   // Heat tint: max total audience across all days in the grid
   const heatMap = useMemo(() => {
@@ -972,6 +1450,11 @@ export default function CalendarPage() {
   }
   function goNext() {
     setAnchor((a) => viewMode === "month" ? addMonths(a, 1) : addWeeks(a, 1));
+  }
+
+  function jumpToDate(date: Date) {
+    setAnchor(date);
+    setFocusedDay(date);
   }
 
   const title = viewMode === "month"
@@ -1034,39 +1517,69 @@ export default function CalendarPage() {
     });
   }
 
+  // Reset prefs to defaults
+  function resetToDefaults() {
+    setFilters({ ...DEFAULT_FILTERS });
+    setDensity("comfortable");
+    setViewMode("month");
+    setAnchor(new Date());
+    putPrefs.mutate({ data: { filters: {}, config: {} } });
+  }
+
   // Keyboard navigation
   useEffect(() => {
+    function isTyping(e: KeyboardEvent) {
+      const t = e.target;
+      return (
+        t instanceof HTMLInputElement ||
+        t instanceof HTMLTextAreaElement ||
+        t instanceof HTMLSelectElement ||
+        (t instanceof HTMLElement && t.contentEditable === "true")
+      );
+    }
+
     function onKey(e: KeyboardEvent) {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (e.key === "ArrowLeft" && !e.shiftKey) {
+      if (e.key === "ArrowLeft" && !e.shiftKey && !isTyping(e)) {
         setFocusedDay((d) => d ? new Date(d.getTime() - 86400000) : new Date());
         e.preventDefault();
-      } else if (e.key === "ArrowRight" && !e.shiftKey) {
+      } else if (e.key === "ArrowRight" && !e.shiftKey && !isTyping(e)) {
         setFocusedDay((d) => d ? new Date(d.getTime() + 86400000) : new Date());
         e.preventDefault();
-      } else if (e.key === "ArrowUp" && !e.shiftKey) {
+      } else if (e.key === "ArrowUp" && !e.shiftKey && !isTyping(e)) {
         setFocusedDay((d) => d ? new Date(d.getTime() - 7 * 86400000) : new Date());
         e.preventDefault();
-      } else if (e.key === "ArrowDown" && !e.shiftKey) {
+      } else if (e.key === "ArrowDown" && !e.shiftKey && !isTyping(e)) {
         setFocusedDay((d) => d ? new Date(d.getTime() + 7 * 86400000) : new Date());
         e.preventDefault();
-      } else if (e.key === "Enter" && focusedDay) {
+      } else if (e.key === "Enter" && focusedDay && !isTyping(e)) {
         setDetailDay(focusedDay);
         e.preventDefault();
       } else if (e.key === "Escape") {
         setDetailDay(null);
+        setShortcutHelpOpen(false);
         e.preventDefault();
-      } else if (e.key === "t" || e.key === "T") {
-        goToday();
-      } else if (e.key === "m" || e.key === "M") {
-        setViewMode("month");
-      } else if (e.key === "w" || e.key === "W") {
-        setViewMode("week");
+      } else if (!isTyping(e)) {
+        switch (e.key.toLowerCase()) {
+          case "t": goToday(); break;
+          case "m": setViewMode("month"); break;
+          case "w": setViewMode("week"); break;
+          case "/":
+            e.preventDefault();
+            nameSearchRef.current?.focus();
+            break;
+          case "j":
+            e.preventDefault();
+            jumpInputRef.current?.focus();
+            break;
+          case "?":
+            setShortcutHelpOpen((v) => !v);
+            break;
+        }
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [focusedDay]);
+  }, [focusedDay]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-navigate anchor when focused day moves out of visible range
   useEffect(() => {
@@ -1099,7 +1612,7 @@ export default function CalendarPage() {
     filters.mine ||
     !!filters.nameContains;
 
-  const touchCount = touches.length;
+  const touchCount = richTouches.length;
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -1163,11 +1676,35 @@ export default function CalendarPage() {
             {!isLoading && !isError && (
               <span className="text-xs text-muted-foreground hidden sm:inline">
                 {touchCount} touch{touchCount !== 1 ? "es" : ""}
-                {isLoading && " …"}
               </span>
             )}
 
             <div className="flex-1" />
+
+            {/* Conflicts toggle */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={showConflicts ? "secondary" : "ghost"}
+                  size="sm"
+                  className={cn(
+                    "h-8 gap-1.5 text-xs",
+                    showConflicts ? "text-red-700 bg-red-50 hover:bg-red-100 border border-red-200" : "text-muted-foreground",
+                  )}
+                  onClick={() => setShowConflicts((v) => !v)}
+                  aria-pressed={showConflicts}
+                >
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  Conflicts
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {showConflicts ? "Hide" : "Show"} threshold conflict indicators
+              </TooltipContent>
+            </Tooltip>
+
+            {/* Jump to date */}
+            <JumpToDateInput inputRef={jumpInputRef} onJump={jumpToDate} />
 
             {/* Density toggle */}
             <Tooltip>
@@ -1208,6 +1745,9 @@ export default function CalendarPage() {
 
             {/* Legend */}
             <LegendPopover channels={channels as { id: number; name: string }[]} />
+
+            {/* Shortcut help */}
+            <ShortcutHelpPopover open={shortcutHelpOpen} onOpenChange={setShortcutHelpOpen} />
           </div>
 
           {/* Row 2: Quick-filter chips + multi-select filters + name search */}
@@ -1307,6 +1847,7 @@ export default function CalendarPage() {
             {/* Name search */}
             <div className="relative">
               <Input
+                ref={nameSearchRef}
                 value={filters.nameContains}
                 onChange={(e) => setFilters((f) => ({ ...f, nameContains: e.target.value }))}
                 placeholder="Search by name…"
@@ -1323,6 +1864,16 @@ export default function CalendarPage() {
                 </button>
               )}
             </div>
+
+            {/* Reset to defaults */}
+            {hasActiveFilters && (
+              <button
+                className="text-[10px] text-muted-foreground underline hover:text-foreground"
+                onClick={resetToDefaults}
+              >
+                Reset to defaults
+              </button>
+            )}
           </div>
         </div>
 
@@ -1346,25 +1897,35 @@ export default function CalendarPage() {
 
         {/* ── Grid area ─────────────────────────────────────────────── */}
         <div className="flex-1 overflow-auto" ref={gridRef}>
-          {/* Weekday header (sticky) */}
-          <div
-            className="grid grid-cols-7 border-b sticky top-0 z-10 bg-background"
-            role="row"
-            aria-label="Week days"
-          >
-            {WEEKDAYS.map((wd) => (
-              <div
-                key={wd}
-                className="px-2 py-1 text-center text-xs font-medium text-muted-foreground border-r last:border-r-0"
-                role="columnheader"
-              >
-                {wd}
-              </div>
-            ))}
+          {/* Weekday header (sticky) + sparkline strip */}
+          <div className="sticky top-0 z-10 bg-background">
+            <div
+              className="grid grid-cols-7 border-b"
+              role="row"
+              aria-label="Week days"
+            >
+              {WEEKDAYS.map((wd) => (
+                <div
+                  key={wd}
+                  className="px-2 py-1 text-center text-xs font-medium text-muted-foreground border-r last:border-r-0"
+                  role="columnheader"
+                >
+                  {wd}
+                </div>
+              ))}
+            </div>
+            {/* Sparkline strip — aligned to 7-column grid */}
+            <SparklineStrip
+              gridDays={gridDays}
+              dayVolumes={dayVolumes as Record<string, number>}
+              onDayClick={(day) => { setFocusedDay(day); setDetailDay(day); }}
+              focusedDay={focusedDay}
+              onHoverDay={setSparklineHoverDay}
+            />
           </div>
 
           {/* Calendar grid */}
-          {isLoading && touches.length === 0 ? (
+          {isLoading && richTouches.length === 0 ? (
             <div className="grid grid-cols-7 flex-1">
               {gridDays.map((day) => (
                 <div
@@ -1399,9 +1960,12 @@ export default function CalendarPage() {
                     density={density}
                     viewMode={viewMode}
                     heatAlpha={heatAlpha}
+                    showConflicts={showConflicts}
                     onMoreClick={handleMoreClick}
                     isFocused={focusedDay !== null && isSameDay(day, focusedDay)}
+                    isSparklineHovered={sparklineHoverDay !== null && isSameDay(day, sparklineHoverDay)}
                     onFocus={setFocusedDay}
+                    serverDayConflict={feed?.dayConflicts?.[dateStr]}
                   />
                 );
               })}
@@ -1409,7 +1973,7 @@ export default function CalendarPage() {
           )}
 
           {/* Empty state */}
-          {!isLoading && !isError && touches.length === 0 && (
+          {!isLoading && !isError && richTouches.length === 0 && (
             <div className="flex flex-col items-center justify-center py-20 text-muted-foreground print:hidden">
               <CalendarDays className="h-12 w-12 mb-3 opacity-20" />
               <p className="text-sm font-medium">No touches in this period</p>
@@ -1428,13 +1992,18 @@ export default function CalendarPage() {
           <span><kbd className="rounded bg-muted px-1 font-mono">T</kbd> Today</span>
           <span><kbd className="rounded bg-muted px-1 font-mono">M</kbd> Month</span>
           <span><kbd className="rounded bg-muted px-1 font-mono">W</kbd> Week</span>
+          <span><kbd className="rounded bg-muted px-1 font-mono">/</kbd> Search</span>
+          <span><kbd className="rounded bg-muted px-1 font-mono">J</kbd> Jump</span>
+          <span><kbd className="rounded bg-muted px-1 font-mono">?</kbd> Shortcuts</span>
         </div>
 
         {/* ── Day detail sheet ──────────────────────────────────────── */}
         <DayDetailSheet
           day={detailDay}
           groups={detailGroups}
+          showConflicts={showConflicts}
           onClose={() => setDetailDay(null)}
+          dayConflict={detailDay ? feed?.dayConflicts?.[format(detailDay, "yyyy-MM-dd")] : undefined}
         />
       </div>
     </TooltipProvider>

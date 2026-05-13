@@ -194,6 +194,13 @@ export interface PreviewOutput {
   totalFlaggedDonors: number;
   totalProjectedTouchpoints: number;
   byThreshold: Array<{ thresholdId: number; thresholdName: string; flaggedCount: number }>;
+  /**
+   * Per planned-touch donor conflict sets. For each touch ID that appears in `planned`,
+   * this map contains the exact set of donors that breach a threshold specifically in the
+   * rolling window centred on that touch's sendDate — not the campaign-global set.
+   * Only populated for touches where at least one donor breaches; absent if no conflicts.
+   */
+  conflictsByTouchId: Map<number, Set<string>>;
 }
 
 export interface ThresholdRule {
@@ -234,7 +241,9 @@ export function computeThresholdConflicts(input: {
     byThreshold.set(t.id, { name: t.name, flagged: new Set() });
   }
 
-  const perDonorEvents = new Map<string, Array<{ sendDate: string; channelId: number; campaignTypeId: number; isPlanned: boolean }>>();
+  // Events carry touchId on planned entries so per-touch conflict attribution is exact.
+  type CalEvent = { sendDate: string; channelId: number; campaignTypeId: number; isPlanned: boolean; touchId?: number };
+  const perDonorEvents = new Map<string, CalEvent[]>();
   for (const h of history) {
     if (!allDonors.has(h.donorId)) continue;
     const arr = perDonorEvents.get(h.donorId) ?? [];
@@ -245,11 +254,18 @@ export function computeThresholdConflicts(input: {
     const arr = perDonorEvents.get(donorId) ?? [];
     for (const p of planned) {
       if (!audienceByTouch.get(p.id)?.has(donorId)) continue;
-      arr.push({ sendDate: p.sendDate, channelId: p.channelId, campaignTypeId: p.campaignTypeId, isPlanned: true });
+      // touchId is included so the inner loop can attribute breaches to the exact touch
+      arr.push({ sendDate: p.sendDate, channelId: p.channelId, campaignTypeId: p.campaignTypeId, isPlanned: true, touchId: p.id });
       totalProjected += 1;
     }
     perDonorEvents.set(donorId, arr);
   }
+
+  // Per-touch donor conflict sets: populated for every planned-touch/threshold pair
+  // that causes a breach — without early break — so attribution is per-touch, not
+  // campaign-global.  The `conflicts` array still uses addedToConflicts to avoid
+  // duplicating the same donor-threshold entry in that backward-compat output.
+  const conflictsByTouchId = new Map<number, Set<string>>();
 
   for (const [donorId, events] of perDonorEvents) {
     for (const t of thresholds) {
@@ -261,23 +277,32 @@ export function computeThresholdConflicts(input: {
         return true;
       });
       if (filtered.length === 0) continue;
+      let addedToConflicts = false;
       for (const plannedEvt of filtered.filter((e) => e.isPlanned)) {
         const inWindow = filtered.filter((e) => diffDays(e.sendDate, plannedEvt.sendDate) < t.windowDays);
         if (inWindow.length > t.maxTouchpoints) {
-          const explanation = `${inWindow.length} touchpoints projected in ${t.windowDays}-day window (max ${t.maxTouchpoints}) for ${t.scope === "all" ? "all communications" : t.scope.replace("_", " ")}.`;
-          conflicts.push({
-            donorId,
-            thresholdId: t.id,
-            thresholdName: t.name,
-            projectedCount: inWindow.length,
-            maxAllowed: t.maxTouchpoints,
-            windowDays: t.windowDays,
-            explanation,
-            overridden: overrides.has(donorId),
-          });
-          flaggedDonors.add(donorId);
-          byThreshold.get(t.id)!.flagged.add(donorId);
-          break;
+          // Always record per-touch attribution (no early break here)
+          if (plannedEvt.touchId !== undefined) {
+            if (!conflictsByTouchId.has(plannedEvt.touchId)) conflictsByTouchId.set(plannedEvt.touchId, new Set());
+            conflictsByTouchId.get(plannedEvt.touchId)!.add(donorId);
+          }
+          // Only push to conflicts[] once per donor-threshold (backward compat)
+          if (!addedToConflicts) {
+            const explanation = `${inWindow.length} touchpoints projected in ${t.windowDays}-day window (max ${t.maxTouchpoints}) for ${t.scope === "all" ? "all communications" : t.scope.replace("_", " ")}.`;
+            conflicts.push({
+              donorId,
+              thresholdId: t.id,
+              thresholdName: t.name,
+              projectedCount: inWindow.length,
+              maxAllowed: t.maxTouchpoints,
+              windowDays: t.windowDays,
+              explanation,
+              overridden: overrides.has(donorId),
+            });
+            flaggedDonors.add(donorId);
+            byThreshold.get(t.id)!.flagged.add(donorId);
+            addedToConflicts = true;
+          }
         }
       }
     }
@@ -292,6 +317,7 @@ export function computeThresholdConflicts(input: {
       thresholdName: v.name,
       flaggedCount: v.flagged.size,
     })),
+    conflictsByTouchId,
   };
 }
 

@@ -32,10 +32,11 @@ import type {
   ApplyTemplatesResult,
   AudienceInput,
   AudienceUploadResult,
-  AuditEntry,
   AuditExportTooLarge,
   AuditLogPage,
   CalendarFeed,
+  CalendarPreferences,
+  CalendarPreferencesInput,
   Campaign,
   CampaignHealthCheck,
   CampaignInput,
@@ -8675,6 +8676,169 @@ export function useGetYoyVolume<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Get the calling user's last-used calendar filters, density, and view. Returns empty defaults when no preferences have been saved yet.
+ */
+export const getGetCalendarPreferencesUrl = () => {
+  return `/api/me/calendar-preferences`;
+};
+
+export const getCalendarPreferences = async (
+  options?: RequestInit,
+): Promise<CalendarPreferences> => {
+  return customFetch<CalendarPreferences>(getGetCalendarPreferencesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetCalendarPreferencesQueryKey = () => {
+  return [`/api/me/calendar-preferences`] as const;
+};
+
+export const getGetCalendarPreferencesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCalendarPreferences>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getCalendarPreferences>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetCalendarPreferencesQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getCalendarPreferences>>
+  > = ({ signal }) => getCalendarPreferences({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCalendarPreferences>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCalendarPreferencesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCalendarPreferences>>
+>;
+export type GetCalendarPreferencesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get the calling user's last-used calendar filters, density, and view. Returns empty defaults when no preferences have been saved yet.
+ */
+
+export function useGetCalendarPreferences<
+  TData = Awaited<ReturnType<typeof getCalendarPreferences>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getCalendarPreferences>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCalendarPreferencesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Upsert the calling user's calendar preferences (debounced by the client on every filter change).
+ */
+export const getPutCalendarPreferencesUrl = () => {
+  return `/api/me/calendar-preferences`;
+};
+
+export const putCalendarPreferences = async (
+  calendarPreferencesInput: CalendarPreferencesInput,
+  options?: RequestInit,
+): Promise<CalendarPreferences> => {
+  return customFetch<CalendarPreferences>(getPutCalendarPreferencesUrl(), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(calendarPreferencesInput),
+  });
+};
+
+export const getPutCalendarPreferencesMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof putCalendarPreferences>>,
+    TError,
+    { data: BodyType<CalendarPreferencesInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof putCalendarPreferences>>,
+  TError,
+  { data: BodyType<CalendarPreferencesInput> },
+  TContext
+> => {
+  const mutationKey = ["putCalendarPreferences"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof putCalendarPreferences>>,
+    { data: BodyType<CalendarPreferencesInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return putCalendarPreferences(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PutCalendarPreferencesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof putCalendarPreferences>>
+>;
+export type PutCalendarPreferencesMutationBody =
+  BodyType<CalendarPreferencesInput>;
+export type PutCalendarPreferencesMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Upsert the calling user's calendar preferences (debounced by the client on every filter change).
+ */
+export const usePutCalendarPreferences = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof putCalendarPreferences>>,
+    TError,
+    { data: BodyType<CalendarPreferencesInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof putCalendarPreferences>>,
+  TError,
+  { data: BodyType<CalendarPreferencesInput> },
+  TContext
+> => {
+  return useMutation(getPutCalendarPreferencesMutationOptions(options));
+};
 
 export const getListSavedReportViewsUrl = (
   params?: ListSavedReportViewsParams,

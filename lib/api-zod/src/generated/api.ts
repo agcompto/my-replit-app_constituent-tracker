@@ -1987,23 +1987,136 @@ export const GetCalendarFeedQueryParams = zod.object({
 });
 
 export const GetCalendarFeedResponse = zod.object({
+  campaigns: zod
+    .record(
+      zod.string(),
+      zod
+        .object({
+          name: zod.string(),
+          status: zod.string(),
+          owningUnit: zod.string().nullish(),
+          submittedByUserId: zod.number(),
+          campaignTypeLabels: zod.array(zod.string()),
+          conflictDonorCount: zod
+            .number()
+            .describe(
+              "Number of unique donors in this campaign that would breach a threshold given planned touches plus history. 0 when not computable or not applicable.",
+            ),
+          conflictDonorSample: zod
+            .array(zod.string())
+            .describe(
+              "Up to 50 donor IDs that would breach a threshold. Empty when conflictDonorCount is 0.",
+            ),
+        })
+        .describe(
+          "Campaign metadata returned once in the CalendarFeed campaigns map, referenced by campaignId in each touch row.",
+        ),
+    )
+    .describe(
+      "Campaign metadata keyed by campaign ID (as a string). Rehydrate touch rows with their campaign on the client.",
+    ),
   touches: zod.array(
     zod.object({
       touchId: zod.number(),
       touchName: zod.string(),
       sendDate: zod.coerce.date(),
       campaignId: zod.number(),
-      campaignName: zod.string(),
-      campaignStatus: zod.string(),
-      owningUnit: zod.string().nullish(),
-      submittedByUserId: zod.number(),
       channelId: zod.number(),
       channelLabel: zod.string(),
       campaignTypeLabel: zod.string(),
-      campaignTypeLabels: zod.array(zod.string()),
       audienceCount: zod.number(),
+      conflictDonorCount: zod
+        .number()
+        .describe(
+          "Number of donors in this touch's audience that are in conflict. Subset of the campaign-level conflictDonorCount.",
+        ),
+      conflictDonorSample: zod
+        .array(zod.string())
+        .describe(
+          "Up to 50 donor IDs from this touch's audience that are in conflict. Used client-side for deduplication across touches on the same day.",
+        ),
     }),
   ),
+  dayVolumes: zod
+    .record(zod.string(), zod.number())
+    .describe(
+      "Total audience volume per calendar day (YYYY-MM-DD keys). Used to render the sparkline strip.",
+    ),
+  dayConflicts: zod
+    .record(
+      zod.string(),
+      zod
+        .object({
+          donorCount: zod
+            .number()
+            .describe(
+              "Exact count of unique donors over threshold across all in-window touches on this day.",
+            ),
+          campaignCount: zod
+            .number()
+            .describe(
+              "Number of campaigns with at least one conflicted touch on this day.",
+            ),
+          byCampaign: zod
+            .record(
+              zod.string(),
+              zod
+                .object({
+                  donorCount: zod
+                    .number()
+                    .describe(
+                      "Exact unique donors conflicted for this campaign on this day (union of per-touch conflict sets).",
+                    ),
+                  donorSample: zod
+                    .array(zod.string())
+                    .describe(
+                      "Up to 50 donor IDs for display in the day-detail sheet.",
+                    ),
+                  overflow: zod
+                    .number()
+                    .describe(
+                      "donorCount minus donorSample.length — donors that exist but are not in the sample.",
+                    ),
+                  touchBreakdown: zod
+                    .array(
+                      zod
+                        .object({
+                          touchId: zod.number(),
+                          touchName: zod.string(),
+                          donorCount: zod
+                            .number()
+                            .describe(
+                              "Exact count of donors that breach a threshold in the rolling window centred on this touch's sendDate.",
+                            ),
+                        })
+                        .describe(
+                          "Per-touch conflict count within a single campaign on a single day.",
+                        ),
+                    )
+                    .describe(
+                      "Per-touch conflict counts for this campaign on this day.",
+                    ),
+                  donorTouchIds: zod
+                    .record(zod.string(), zod.array(zod.number()))
+                    .describe(
+                      "For each donor ID in donorSample, the touch IDs whose rolling window caused the breach for that donor. Enables exact donor-to-touch attribution in the detail sheet without client-side approximation.",
+                    ),
+                })
+                .describe(
+                  "Server-authoritative conflict detail for one campaign on one calendar day.",
+                ),
+            )
+            .describe(
+              "Per-campaign conflict breakdown keyed by campaign ID (string). Authoritative data for the day-detail sheet.",
+            ),
+        })
+        .describe(
+          "Server-computed exact conflict summary for one calendar day.",
+        ),
+    )
+    .describe(
+      "Exact server-computed conflict summary per calendar day (YYYY-MM-DD keys). Use for day badges instead of client-side approximation.",
+    ),
 });
 
 export const GetYoyVolumeQueryParams = zod.object({
@@ -2042,6 +2155,39 @@ export const GetYoyVolumeResponse = zod.object({
       prior: zod.number(),
     }),
   ),
+});
+
+/**
+ * @summary Get the calling user's last-used calendar filters, density, and view. Returns empty defaults when no preferences have been saved yet.
+ */
+export const GetCalendarPreferencesResponse = zod.object({
+  filters: zod
+    .record(zod.string(), zod.unknown())
+    .describe(
+      "Last-used filter state (owningUnit, channelIds, campaignTypeIds, statuses, mine, nameContains).",
+    ),
+  config: zod
+    .record(zod.string(), zod.unknown())
+    .describe("Last-used display config (view, density)."),
+});
+
+/**
+ * @summary Upsert the calling user's calendar preferences (debounced by the client on every filter change).
+ */
+export const PutCalendarPreferencesBody = zod.object({
+  filters: zod.record(zod.string(), zod.unknown()),
+  config: zod.record(zod.string(), zod.unknown()),
+});
+
+export const PutCalendarPreferencesResponse = zod.object({
+  filters: zod
+    .record(zod.string(), zod.unknown())
+    .describe(
+      "Last-used filter state (owningUnit, channelIds, campaignTypeIds, statuses, mine, nameContains).",
+    ),
+  config: zod
+    .record(zod.string(), zod.unknown())
+    .describe("Last-used display config (view, density)."),
 });
 
 export const ListSavedReportViewsQueryParams = zod.object({

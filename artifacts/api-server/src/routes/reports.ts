@@ -16,6 +16,7 @@ import { requireRole, requireAuth } from "../lib/auth";
 import { loadCampaignSummary } from "../lib/campaigns";
 import { computeSaturation } from "../lib/saturation";
 import { computeYoyVolume } from "../lib/yoy";
+import { computeThresholdConflicts, getCampaignTouchesForPreview, getEffectiveAudienceByTouch, getHistoricalTouchpoints, getOverrides, getThresholds, type ThresholdRule } from "../lib/threshold";
 
 const router: IRouter = Router();
 
@@ -587,29 +588,244 @@ router.get("/reports/calendar", requireAuth, async (req, res): Promise<void> => 
     }
   }
 
+  // ── Conflict computation ──────────────────────────────────────────────────
+  // For campaigns with planned (not-yet-exported) touches that appear in the
+  // requested window, compute threshold conflicts bounded to that window.
+  // "Bounded to the window" means: only touches with sendDate in [startDate, endDate]
+  // are treated as planned work; historical touchpoints (already-sent) still serve
+  // as rolling-window context so the threshold arithmetic remains accurate.
+  // This ensures the conflict overlay reflects what would happen if the user
+  // executed the visible-range touches — not touches outside the viewed period.
+  // No campaign-count cap is applied; the window naturally limits scope.
+  const CONFLICT_COMPUTABLE_STATUSES = new Set(["uploaded", "previewed", "finalized"]);
+  const campaignStatusMap = new Map<number, string>();
+  for (const r of rows) campaignStatusMap.set(r.campaignId, r.campaignStatus);
+
+  const conflictableCampaignIds = [...campaignStatusMap.entries()]
+    .filter(([, status]) => CONFLICT_COMPUTABLE_STATUSES.has(status))
+    .map(([id]) => id);
+
+  // conflictDonorCount + sample per touch ID (in-window touches only).
+  // `donors` holds the exact Set for server-side day aggregation; `sample` is the
+  // capped slice returned to the client for the detail-sheet breakdown.
+  const touchConflictMap = new Map<number, { count: number; sample: string[]; donors: Set<string> }>();
+  // conflictDonorCount + sample per campaign ID
+  const campaignConflictMap = new Map<number, { count: number; sample: string[] }>();
+
+  if (conflictableCampaignIds.length > 0) {
+    await Promise.all(
+      conflictableCampaignIds.map(async (campaignId) => {
+        try {
+          // Quick gate: skip if campaign has no thresholds defined
+          const thresholdRows = await getThresholds(campaignId);
+          if (thresholdRows.length === 0) return;
+
+          // Explicit mapping to ThresholdRule — avoids unsafe cast and validates
+          // that all required fields are present before passing to the engine.
+          const thresholdRules: ThresholdRule[] = thresholdRows.map((t) => ({
+            id: t.id,
+            name: t.name,
+            scope: t.scope as ThresholdRule["scope"],
+            channelId: t.channelId ?? null,
+            campaignTypeId: t.campaignTypeId ?? null,
+            windowDays: t.windowDays,
+            maxTouchpoints: t.maxTouchpoints,
+          }));
+
+          // Bound to the calendar window: get all planned touches then keep only
+          // those whose sendDate falls within [startDate, endDate].
+          const allPlannedTouches = await getCampaignTouchesForPreview(campaignId);
+          const windowTouches = allPlannedTouches.filter(
+            (t) => t.sendDate >= startDate && t.sendDate <= endDate,
+          );
+          // If this campaign has no touches in the window, nothing to show
+          if (windowTouches.length === 0) return;
+
+          // Fetch audience, history, and overrides in parallel
+          const [audienceByTouch, history, overrides] = await Promise.all([
+            getEffectiveAudienceByTouch(campaignId, windowTouches),
+            getHistoricalTouchpoints(campaignId),
+            getOverrides(campaignId),
+          ]);
+
+          const preview = computeThresholdConflicts({
+            planned: windowTouches,
+            history,
+            thresholds: thresholdRules,
+            overrides,
+            audienceByTouch,
+          });
+          if (preview.totalFlaggedDonors === 0) return;
+
+          // Use the engine's per-touch attribution directly.
+          // conflictsByTouchId[touchId] = exact set of donors that breach a threshold
+          // in the rolling window centred on THAT touch's sendDate — not a campaign-global
+          // projection that would incorrectly mark donors on every touch they appear in.
+          for (const [touchId, donorSet] of preview.conflictsByTouchId) {
+            const donorArray = [...donorSet];
+            touchConflictMap.set(touchId, {
+              count: donorArray.length,
+              sample: donorArray.slice(0, 50),
+              donors: donorSet,
+            });
+          }
+
+          // Campaign-level summary: union of all per-touch conflict donor sets
+          const allCampaignConflictedDonors = new Set<string>();
+          for (const donorSet of preview.conflictsByTouchId.values()) {
+            for (const d of donorSet) allCampaignConflictedDonors.add(d);
+          }
+          const campaignConflictArray = [...allCampaignConflictedDonors];
+          campaignConflictMap.set(campaignId, {
+            count: allCampaignConflictedDonors.size,
+            sample: campaignConflictArray.slice(0, 50),
+          });
+        } catch (err) {
+          // Log but do not fail the whole request — other campaigns render normally
+          req.log.warn({ campaignId, err }, "calendar conflict computation failed for campaign");
+        }
+      }),
+    );
+  }
+
+  // ── Exact server-side day conflict aggregation ────────────────────────────
+  // Group the exact per-touch donor sets by sendDate to produce authoritative
+  // per-day conflict counts AND per-campaign breakdowns for the detail sheet.
+  // No sample-based approximation; donor sets are unioned exactly.
+  type DayCampData = { donorSet: Set<string>; touches: Map<number, string> }; // touchId → touchName
+  const dayConflictsAgg = new Map<string, {
+    donorSet: Set<string>;
+    campaignIds: Set<number>;
+    byCampaign: Map<number, DayCampData>;
+  }>();
+
+  for (const r of rows) {
+    const touchConflict = touchConflictMap.get(r.touchId);
+    if (!touchConflict) continue;
+    const sendStr =
+      typeof r.sendDate === "string" ? r.sendDate : (r.sendDate as Date).toISOString().slice(0, 10);
+    if (!dayConflictsAgg.has(sendStr)) {
+      dayConflictsAgg.set(sendStr, { donorSet: new Set(), campaignIds: new Set(), byCampaign: new Map() });
+    }
+    const dayData = dayConflictsAgg.get(sendStr)!;
+    for (const d of touchConflict.donors) dayData.donorSet.add(d);
+    dayData.campaignIds.add(r.campaignId);
+
+    // Per-campaign breakdown: union per-touch donor sets; track touchId → name
+    if (!dayData.byCampaign.has(r.campaignId)) {
+      dayData.byCampaign.set(r.campaignId, { donorSet: new Set(), touches: new Map() });
+    }
+    const campData = dayData.byCampaign.get(r.campaignId)!;
+    for (const d of touchConflict.donors) campData.donorSet.add(d);
+    campData.touches.set(r.touchId, r.touchName);
+  }
+
+  type ByCampaignEntry = {
+    donorCount: number;
+    donorSample: string[];
+    overflow: number;
+    touchBreakdown: Array<{ touchId: number; touchName: string; donorCount: number }>;
+    donorTouchIds: Record<string, number[]>;
+  };
+  const dayConflictsObj: Record<string, {
+    donorCount: number;
+    campaignCount: number;
+    byCampaign: Record<string, ByCampaignEntry>;
+  }> = {};
+  for (const [date, data] of dayConflictsAgg) {
+    const byCampaign: Record<string, ByCampaignEntry> = {};
+    for (const [campaignId, campData] of data.byCampaign) {
+      const donorArray = [...campData.donorSet];
+      const donorSample = donorArray.slice(0, 50);
+      const touchBreakdown = [...campData.touches.entries()].map(([touchId, touchName]) => ({
+        touchId,
+        touchName,
+        donorCount: touchConflictMap.get(touchId)?.count ?? 0,
+      }));
+      // donorTouchIds: for each sampled donor, which touch IDs caused their breach.
+      // Derived from the exact per-touch donor sets — no approximation.
+      const donorTouchIds: Record<string, number[]> = {};
+      for (const donorId of donorSample) {
+        const tids: number[] = [];
+        for (const [touchId] of campData.touches) {
+          if (touchConflictMap.get(touchId)?.donors.has(donorId)) tids.push(touchId);
+        }
+        if (tids.length > 0) donorTouchIds[donorId] = tids;
+      }
+      byCampaign[String(campaignId)] = {
+        donorCount: campData.donorSet.size,
+        donorSample,
+        overflow: campData.donorSet.size - donorSample.length,
+        touchBreakdown,
+        donorTouchIds,
+      };
+    }
+    dayConflictsObj[date] = {
+      donorCount: data.donorSet.size,
+      campaignCount: data.campaignIds.size,
+      byCampaign,
+    };
+  }
+
+  // ── Build response ────────────────────────────────────────────────────────
+  // Slim payload: campaign metadata in a map, touches reference campaignId only
+  const campaignsMap: Record<
+    string,
+    {
+      name: string;
+      status: string;
+      owningUnit: string | null;
+      submittedByUserId: number;
+      campaignTypeLabels: string[];
+      conflictDonorCount: number;
+      conflictDonorSample: string[];
+    }
+  > = {};
+
+  for (const r of rows) {
+    const idStr = String(r.campaignId);
+    if (!campaignsMap[idStr]) {
+      const conflictInfo = campaignConflictMap.get(r.campaignId);
+      campaignsMap[idStr] = {
+        name: r.campaignName,
+        status: r.campaignStatus,
+        owningUnit: r.owningUnit ?? null,
+        submittedByUserId: r.submittedByUserId,
+        campaignTypeLabels: ctLabelMap.get(r.campaignId) ?? [r.campaignTypeLabel],
+        conflictDonorCount: conflictInfo?.count ?? 0,
+        conflictDonorSample: conflictInfo?.sample ?? [],
+      };
+    }
+  }
+
+  // dayVolumes: total audience per date for the sparkline
+  const dayVolumeMap: Record<string, number> = {};
+
   const touches = rows.map((r) => {
     const audienceCount =
       r.audienceMode === "custom" ? r.customUniqueIdCount : r.campaignUniqueIdCount;
     const sendStr =
       typeof r.sendDate === "string" ? r.sendDate : (r.sendDate as Date).toISOString().slice(0, 10);
+
+    // Accumulate dayVolumes
+    dayVolumeMap[sendStr] = (dayVolumeMap[sendStr] ?? 0) + audienceCount;
+
+    const touchConflict = touchConflictMap.get(r.touchId);
     return {
       touchId: r.touchId,
       touchName: r.touchName,
       sendDate: sendStr,
       campaignId: r.campaignId,
-      campaignName: r.campaignName,
-      campaignStatus: r.campaignStatus,
-      owningUnit: r.owningUnit ?? null,
-      submittedByUserId: r.submittedByUserId,
       channelId: r.channelId,
       channelLabel: r.channelLabel,
       campaignTypeLabel: r.campaignTypeLabel,
-      campaignTypeLabels: ctLabelMap.get(r.campaignId) ?? [r.campaignTypeLabel],
       audienceCount,
+      conflictDonorCount: touchConflict?.count ?? 0,
+      conflictDonorSample: touchConflict?.sample ?? [],
     };
   });
 
-  res.json({ touches });
+  res.json({ campaigns: campaignsMap, touches, dayVolumes: dayVolumeMap, dayConflicts: dayConflictsObj });
 });
 
 export default router;
