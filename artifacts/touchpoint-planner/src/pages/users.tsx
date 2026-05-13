@@ -445,8 +445,6 @@ function EditUserDialog({
       : undefined,
   });
 
-  if (!user) return null;
-
   const [reauthOpen, setReauthOpen] = useState(false);
   const [pendingData, setPendingData] = useState<z.infer<typeof editSchema> | null>(null);
   // Granting super_admin requires recent password auth. If the server says
@@ -454,6 +452,8 @@ function EditUserDialog({
   useEffect(() => {
     if (isReauthRequired(mutation.error)) setReauthOpen(true);
   }, [mutation.error]);
+
+  if (!user) return null;
 
   const submit = (data: z.infer<typeof editSchema>) => {
     mutation.mutate(
