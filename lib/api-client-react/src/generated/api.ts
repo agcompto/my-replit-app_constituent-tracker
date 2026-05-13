@@ -91,6 +91,10 @@ import type {
   ReauthInput,
   RetentionInput,
   RetentionResult,
+  RetentionSchedule,
+  RetentionScheduleRunNowInput,
+  RetentionScheduleRunNowResponse,
+  RetentionScheduleUpdate,
   SaturationReport,
   SavedReportView,
   SavedReportViewInput,
@@ -6816,6 +6820,262 @@ export const useRunRetentionDelete = <
   TContext
 > => {
   return useMutation(getRunRetentionDeleteMutationOptions(options));
+};
+
+/**
+ * @summary Read the scheduled retention configuration. Super-admin only.
+ */
+export const getGetRetentionScheduleUrl = () => {
+  return `/api/retention/schedule`;
+};
+
+export const getRetentionSchedule = async (
+  options?: RequestInit,
+): Promise<RetentionSchedule> => {
+  return customFetch<RetentionSchedule>(getGetRetentionScheduleUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetRetentionScheduleQueryKey = () => {
+  return [`/api/retention/schedule`] as const;
+};
+
+export const getGetRetentionScheduleQueryOptions = <
+  TData = Awaited<ReturnType<typeof getRetentionSchedule>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getRetentionSchedule>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetRetentionScheduleQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getRetentionSchedule>>
+  > = ({ signal }) => getRetentionSchedule({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getRetentionSchedule>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetRetentionScheduleQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getRetentionSchedule>>
+>;
+export type GetRetentionScheduleQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Read the scheduled retention configuration. Super-admin only.
+ */
+
+export function useGetRetentionSchedule<
+  TData = Awaited<ReturnType<typeof getRetentionSchedule>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getRetentionSchedule>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetRetentionScheduleQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Update the scheduled retention configuration. Super-admin + recent-auth.
+ */
+export const getUpdateRetentionScheduleUrl = () => {
+  return `/api/retention/schedule`;
+};
+
+export const updateRetentionSchedule = async (
+  retentionScheduleUpdate: RetentionScheduleUpdate,
+  options?: RequestInit,
+): Promise<RetentionSchedule> => {
+  return customFetch<RetentionSchedule>(getUpdateRetentionScheduleUrl(), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(retentionScheduleUpdate),
+  });
+};
+
+export const getUpdateRetentionScheduleMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateRetentionSchedule>>,
+    TError,
+    { data: BodyType<RetentionScheduleUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateRetentionSchedule>>,
+  TError,
+  { data: BodyType<RetentionScheduleUpdate> },
+  TContext
+> => {
+  const mutationKey = ["updateRetentionSchedule"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateRetentionSchedule>>,
+    { data: BodyType<RetentionScheduleUpdate> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return updateRetentionSchedule(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateRetentionScheduleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateRetentionSchedule>>
+>;
+export type UpdateRetentionScheduleMutationBody =
+  BodyType<RetentionScheduleUpdate>;
+export type UpdateRetentionScheduleMutationError = ErrorType<void>;
+
+/**
+ * @summary Update the scheduled retention configuration. Super-admin + recent-auth.
+ */
+export const useUpdateRetentionSchedule = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateRetentionSchedule>>,
+    TError,
+    { data: BodyType<RetentionScheduleUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateRetentionSchedule>>,
+  TError,
+  { data: BodyType<RetentionScheduleUpdate> },
+  TContext
+> => {
+  return useMutation(getUpdateRetentionScheduleMutationOptions(options));
+};
+
+/**
+ * @summary Execute the configured retention schedule immediately. Super-admin only.
+Recent-auth required when the run will actually delete (not dry-run).
+
+ */
+export const getRunScheduledRetentionNowUrl = () => {
+  return `/api/retention/schedule/run-now`;
+};
+
+export const runScheduledRetentionNow = async (
+  retentionScheduleRunNowInput?: RetentionScheduleRunNowInput,
+  options?: RequestInit,
+): Promise<RetentionScheduleRunNowResponse> => {
+  return customFetch<RetentionScheduleRunNowResponse>(
+    getRunScheduledRetentionNowUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(retentionScheduleRunNowInput),
+    },
+  );
+};
+
+export const getRunScheduledRetentionNowMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runScheduledRetentionNow>>,
+    TError,
+    { data: BodyType<RetentionScheduleRunNowInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof runScheduledRetentionNow>>,
+  TError,
+  { data: BodyType<RetentionScheduleRunNowInput> },
+  TContext
+> => {
+  const mutationKey = ["runScheduledRetentionNow"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof runScheduledRetentionNow>>,
+    { data: BodyType<RetentionScheduleRunNowInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return runScheduledRetentionNow(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RunScheduledRetentionNowMutationResult = NonNullable<
+  Awaited<ReturnType<typeof runScheduledRetentionNow>>
+>;
+export type RunScheduledRetentionNowMutationBody =
+  BodyType<RetentionScheduleRunNowInput>;
+export type RunScheduledRetentionNowMutationError = ErrorType<void>;
+
+/**
+ * @summary Execute the configured retention schedule immediately. Super-admin only.
+Recent-auth required when the run will actually delete (not dry-run).
+
+ */
+export const useRunScheduledRetentionNow = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runScheduledRetentionNow>>,
+    TError,
+    { data: BodyType<RetentionScheduleRunNowInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof runScheduledRetentionNow>>,
+  TError,
+  { data: BodyType<RetentionScheduleRunNowInput> },
+  TContext
+> => {
+  return useMutation(getRunScheduledRetentionNowMutationOptions(options));
 };
 
 export const getListThresholdTemplatesUrl = () => {

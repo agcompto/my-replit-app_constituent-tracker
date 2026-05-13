@@ -470,6 +470,38 @@ export const appSettingsTable = pgTable("app_settings", {
     .$type<Record<string, number>>()
     .notNull()
     .default({}),
+  // ─── Scheduled retention runs (singleton config; one schedule per deployment) ───
+  // When enabled the in-process scheduler runs the retention pipeline at the
+  // configured cadence. `dryRunOnly` records what would be deleted without
+  // actually deleting. `lastRunResult` is the JSON-encoded outcome of the
+  // most recent run for surfacing in the UI.
+  retentionScheduleEnabled: boolean("retention_schedule_enabled").notNull().default(false),
+  // daily | weekly | monthly
+  retentionScheduleCadence: text("retention_schedule_cadence").notNull().default("daily"),
+  // 0–23 UTC hour at which the run fires.
+  retentionScheduleHour: integer("retention_schedule_hour").notNull().default(3),
+  // 0–59 minute.
+  retentionScheduleMinute: integer("retention_schedule_minute").notNull().default(0),
+  // 0=Sunday … 6=Saturday. Required when cadence=weekly.
+  retentionScheduleDayOfWeek: integer("retention_schedule_day_of_week"),
+  // 1–28 (clamped to keep every month valid). Required when cadence=monthly.
+  retentionScheduleDayOfMonth: integer("retention_schedule_day_of_month"),
+  // Records older than this many days will be deleted (mirrors the manual
+  // tool's "older than" date but expressed relative to "now" so a long-lived
+  // schedule keeps making sense).
+  retentionScheduleOlderThanDays: integer("retention_schedule_older_than_days").notNull().default(2555),
+  // When true the schedule logs what would be deleted but performs no deletes.
+  retentionScheduleDryRunOnly: boolean("retention_schedule_dry_run_only").notNull().default(true),
+  retentionScheduleLastRunAt: timestamp("retention_schedule_last_run_at", { withTimezone: true }),
+  retentionScheduleLastRunResult: jsonb("retention_schedule_last_run_result").$type<{
+    runAt: string;
+    olderThan: string;
+    dryRun: boolean;
+    skipped?: string;
+    campaignsDeleted: number;
+    touchpointsDeleted: number;
+    error?: string;
+  } | null>(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .defaultNow()

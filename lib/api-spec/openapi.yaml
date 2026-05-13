@@ -1275,6 +1275,53 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/RetentionResult" }
+  /retention/schedule:
+    get:
+      operationId: getRetentionSchedule
+      tags: [retention]
+      summary: Read the scheduled retention configuration. Super-admin only.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RetentionSchedule" }
+    patch:
+      operationId: updateRetentionSchedule
+      tags: [retention]
+      summary: Update the scheduled retention configuration. Super-admin + recent-auth.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RetentionScheduleUpdate" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RetentionSchedule" }
+        "403": { description: Forbidden or re-auth required. }
+  /retention/schedule/run-now:
+    post:
+      operationId: runScheduledRetentionNow
+      tags: [retention]
+      summary: |
+        Execute the configured retention schedule immediately. Super-admin only.
+        Recent-auth required when the run will actually delete (not dry-run).
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RetentionScheduleRunNowInput" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RetentionScheduleRunNowResponse" }
+        "403": { description: Forbidden or re-auth required. }
+        "409": { description: Another retention run is already in progress. }
 
   # ───────── Threshold templates (admin-managed default rule library)
   /threshold-templates:
@@ -2522,6 +2569,63 @@ components:
       properties:
         campaignsDeleted: { type: integer }
         touchpointsDeleted: { type: integer }
+
+    RetentionRunOutcome:
+      type: object
+      required: [runAt, olderThan, dryRun, campaignsDeleted, touchpointsDeleted]
+      properties:
+        runAt: { type: string, format: date-time }
+        olderThan: { type: string }
+        dryRun: { type: boolean }
+        campaignsDeleted: { type: integer }
+        touchpointsDeleted: { type: integer }
+        skipped: { type: ["string", "null"], description: "Set when the run short-circuited (e.g. retention deletion is disabled in settings)." }
+        error: { type: ["string", "null"] }
+    RetentionSchedule:
+      type: object
+      required:
+        - enabled
+        - cadence
+        - hour
+        - minute
+        - olderThanDays
+        - dryRunOnly
+      properties:
+        enabled: { type: boolean }
+        cadence: { type: string, enum: [daily, weekly, monthly] }
+        hour: { type: integer, minimum: 0, maximum: 23 }
+        minute: { type: integer, minimum: 0, maximum: 59 }
+        dayOfWeek: { type: ["integer", "null"], minimum: 0, maximum: 6, description: "0=Sunday … 6=Saturday. Required when cadence=weekly." }
+        dayOfMonth: { type: ["integer", "null"], minimum: 1, maximum: 31, description: "Day of the month. Clamped to 28 internally so every month is valid." }
+        olderThanDays: { type: integer, minimum: 1, maximum: 36500 }
+        dryRunOnly: { type: boolean }
+        lastRunAt: { type: ["string", "null"], format: date-time }
+        lastRunResult:
+          oneOf:
+            - { $ref: "#/components/schemas/RetentionRunOutcome" }
+            - { type: "null" }
+        nextRunAt: { type: ["string", "null"], format: date-time }
+    RetentionScheduleUpdate:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        cadence: { type: string, enum: [daily, weekly, monthly] }
+        hour: { type: integer, minimum: 0, maximum: 23 }
+        minute: { type: integer, minimum: 0, maximum: 59 }
+        dayOfWeek: { type: ["integer", "null"], minimum: 0, maximum: 6 }
+        dayOfMonth: { type: ["integer", "null"], minimum: 1, maximum: 31 }
+        olderThanDays: { type: integer, minimum: 1, maximum: 36500 }
+        dryRunOnly: { type: boolean }
+    RetentionScheduleRunNowInput:
+      type: object
+      properties:
+        dryRun: { type: boolean, description: "Override the schedule's dryRunOnly setting for this single run only." }
+    RetentionScheduleRunNowResponse:
+      type: object
+      required: [result, schedule]
+      properties:
+        result: { $ref: "#/components/schemas/RetentionRunOutcome" }
+        schedule: { $ref: "#/components/schemas/RetentionSchedule" }
 
     ThresholdTemplate:
       type: object

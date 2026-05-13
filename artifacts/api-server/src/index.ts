@@ -2,6 +2,7 @@ import { closeDb } from "@workspace/db";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { seedDefaults } from "./lib/seed";
+import { startRetentionScheduler, stopRetentionScheduler } from "./lib/retention";
 
 const rawPort = process.env["PORT"];
 
@@ -20,6 +21,11 @@ if (Number.isNaN(port) || port <= 0) {
 seedDefaults().catch((err) => {
   logger.error({ err }, "Failed to seed defaults");
 });
+
+// Start the in-process retention scheduler. The scheduler is a no-op until
+// a super-admin enables it via PATCH /retention/schedule, and serializes
+// across replicas via a Postgres advisory lock.
+startRetentionScheduler();
 
 const server = app.listen(port, (err) => {
   if (err) {
@@ -52,6 +58,7 @@ function gracefulShutdown(signal: NodeJS.Signals) {
   }, SHUTDOWN_TIMEOUT_MS);
   // Don't block process exit on the timer itself.
   forceExit.unref();
+  stopRetentionScheduler();
   server.close((err) => {
     if (err) {
       logger.error({ err }, "Error closing HTTP server");

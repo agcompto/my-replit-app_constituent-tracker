@@ -1,9 +1,10 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
-import { db, appSettingsTable, campaignsTable } from "@workspace/db";
+import { db, appSettingsTable } from "@workspace/db";
 import { UpdateSettingsBody, RunRetentionDeleteBody } from "@workspace/api-zod";
 import { requireAuth, requireRole, audit } from "../lib/auth";
 import { validateChannelCapacity } from "../lib/saturation";
+import { runRetentionPipeline } from "../lib/retention";
 
 const router: IRouter = Router();
 
@@ -106,28 +107,20 @@ router.post(
       res.status(400).json({ error: "Confirmation required." });
       return;
     }
-    // Count touchpoints before deletion
-    const olderThan = parsed.data.olderThan;
-    const { sql } = await import("drizzle-orm");
-    const { touchpointsTable } = await import("@workspace/db");
-    const [counts] = await db
-      .select({
-        campaigns: sql<number>`(select count(*)::int from ${campaignsTable} where created_at < ${olderThan}::date)`,
-        touchpoints: sql<number>`(select count(*)::int from ${touchpointsTable} where send_date < ${olderThan}::date)`,
-      })
-      .from(sql`(select 1) t`);
-    await db.execute(
-      sql`delete from ${campaignsTable} where created_at < ${olderThan}::date`,
-    );
+    const olderThan =
+      parsed.data.olderThan instanceof Date
+        ? parsed.data.olderThan.toISOString().slice(0, 10)
+        : (parsed.data.olderThan as string);
+    const result = await runRetentionPipeline({ olderThan, dryRun: false });
     await audit({
       actor: req.currentUser!,
       action: "retention_delete",
       entityType: "system",
-      details: `older_than=${olderThan} campaigns=${counts?.campaigns ?? 0} touchpoints=${counts?.touchpoints ?? 0}`,
+      details: `older_than=${olderThan} campaigns=${result.campaignsDeleted} touchpoints=${result.touchpointsDeleted}`,
     });
     res.json({
-      campaignsDeleted: counts?.campaigns ?? 0,
-      touchpointsDeleted: counts?.touchpoints ?? 0,
+      campaignsDeleted: result.campaignsDeleted,
+      touchpointsDeleted: result.touchpointsDeleted,
     });
   },
 );

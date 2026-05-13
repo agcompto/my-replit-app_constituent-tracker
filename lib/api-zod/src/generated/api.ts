@@ -1515,6 +1515,284 @@ export const RunRetentionDeleteResponse = zod.object({
   touchpointsDeleted: zod.number(),
 });
 
+/**
+ * @summary Read the scheduled retention configuration. Super-admin only.
+ */
+export const getRetentionScheduleResponseHourMin = 0;
+export const getRetentionScheduleResponseHourMax = 23;
+
+export const getRetentionScheduleResponseMinuteMin = 0;
+export const getRetentionScheduleResponseMinuteMax = 59;
+
+export const getRetentionScheduleResponseDayOfWeekMin = 0;
+export const getRetentionScheduleResponseDayOfWeekMax = 6;
+
+export const getRetentionScheduleResponseDayOfMonthMax = 31;
+
+export const getRetentionScheduleResponseOlderThanDaysMax = 36500;
+
+export const GetRetentionScheduleResponse = zod.object({
+  enabled: zod.boolean(),
+  cadence: zod.enum(["daily", "weekly", "monthly"]),
+  hour: zod
+    .number()
+    .min(getRetentionScheduleResponseHourMin)
+    .max(getRetentionScheduleResponseHourMax),
+  minute: zod
+    .number()
+    .min(getRetentionScheduleResponseMinuteMin)
+    .max(getRetentionScheduleResponseMinuteMax),
+  dayOfWeek: zod
+    .number()
+    .min(getRetentionScheduleResponseDayOfWeekMin)
+    .max(getRetentionScheduleResponseDayOfWeekMax)
+    .nullish()
+    .describe("0=Sunday … 6=Saturday. Required when cadence=weekly."),
+  dayOfMonth: zod
+    .number()
+    .min(1)
+    .max(getRetentionScheduleResponseDayOfMonthMax)
+    .nullish()
+    .describe(
+      "Day of the month. Clamped to 28 internally so every month is valid.",
+    ),
+  olderThanDays: zod
+    .number()
+    .min(1)
+    .max(getRetentionScheduleResponseOlderThanDaysMax),
+  dryRunOnly: zod.boolean(),
+  lastRunAt: zod.coerce.date().nullish(),
+  lastRunResult: zod
+    .union([
+      zod.object({
+        runAt: zod.coerce.date(),
+        olderThan: zod.string(),
+        dryRun: zod.boolean(),
+        campaignsDeleted: zod.number(),
+        touchpointsDeleted: zod.number(),
+        skipped: zod
+          .string()
+          .nullish()
+          .describe(
+            "Set when the run short-circuited (e.g. retention deletion is disabled in settings).",
+          ),
+        error: zod.string().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional(),
+  nextRunAt: zod.coerce.date().nullish(),
+});
+
+/**
+ * @summary Update the scheduled retention configuration. Super-admin + recent-auth.
+ */
+export const updateRetentionScheduleBodyHourMin = 0;
+export const updateRetentionScheduleBodyHourMax = 23;
+
+export const updateRetentionScheduleBodyMinuteMin = 0;
+export const updateRetentionScheduleBodyMinuteMax = 59;
+
+export const updateRetentionScheduleBodyDayOfWeekMin = 0;
+export const updateRetentionScheduleBodyDayOfWeekMax = 6;
+
+export const updateRetentionScheduleBodyDayOfMonthMax = 31;
+
+export const updateRetentionScheduleBodyOlderThanDaysMax = 36500;
+
+export const UpdateRetentionScheduleBody = zod.object({
+  enabled: zod.boolean().optional(),
+  cadence: zod.enum(["daily", "weekly", "monthly"]).optional(),
+  hour: zod
+    .number()
+    .min(updateRetentionScheduleBodyHourMin)
+    .max(updateRetentionScheduleBodyHourMax)
+    .optional(),
+  minute: zod
+    .number()
+    .min(updateRetentionScheduleBodyMinuteMin)
+    .max(updateRetentionScheduleBodyMinuteMax)
+    .optional(),
+  dayOfWeek: zod
+    .number()
+    .min(updateRetentionScheduleBodyDayOfWeekMin)
+    .max(updateRetentionScheduleBodyDayOfWeekMax)
+    .nullish(),
+  dayOfMonth: zod
+    .number()
+    .min(1)
+    .max(updateRetentionScheduleBodyDayOfMonthMax)
+    .nullish(),
+  olderThanDays: zod
+    .number()
+    .min(1)
+    .max(updateRetentionScheduleBodyOlderThanDaysMax)
+    .optional(),
+  dryRunOnly: zod.boolean().optional(),
+});
+
+export const updateRetentionScheduleResponseHourMin = 0;
+export const updateRetentionScheduleResponseHourMax = 23;
+
+export const updateRetentionScheduleResponseMinuteMin = 0;
+export const updateRetentionScheduleResponseMinuteMax = 59;
+
+export const updateRetentionScheduleResponseDayOfWeekMin = 0;
+export const updateRetentionScheduleResponseDayOfWeekMax = 6;
+
+export const updateRetentionScheduleResponseDayOfMonthMax = 31;
+
+export const updateRetentionScheduleResponseOlderThanDaysMax = 36500;
+
+export const UpdateRetentionScheduleResponse = zod.object({
+  enabled: zod.boolean(),
+  cadence: zod.enum(["daily", "weekly", "monthly"]),
+  hour: zod
+    .number()
+    .min(updateRetentionScheduleResponseHourMin)
+    .max(updateRetentionScheduleResponseHourMax),
+  minute: zod
+    .number()
+    .min(updateRetentionScheduleResponseMinuteMin)
+    .max(updateRetentionScheduleResponseMinuteMax),
+  dayOfWeek: zod
+    .number()
+    .min(updateRetentionScheduleResponseDayOfWeekMin)
+    .max(updateRetentionScheduleResponseDayOfWeekMax)
+    .nullish()
+    .describe("0=Sunday … 6=Saturday. Required when cadence=weekly."),
+  dayOfMonth: zod
+    .number()
+    .min(1)
+    .max(updateRetentionScheduleResponseDayOfMonthMax)
+    .nullish()
+    .describe(
+      "Day of the month. Clamped to 28 internally so every month is valid.",
+    ),
+  olderThanDays: zod
+    .number()
+    .min(1)
+    .max(updateRetentionScheduleResponseOlderThanDaysMax),
+  dryRunOnly: zod.boolean(),
+  lastRunAt: zod.coerce.date().nullish(),
+  lastRunResult: zod
+    .union([
+      zod.object({
+        runAt: zod.coerce.date(),
+        olderThan: zod.string(),
+        dryRun: zod.boolean(),
+        campaignsDeleted: zod.number(),
+        touchpointsDeleted: zod.number(),
+        skipped: zod
+          .string()
+          .nullish()
+          .describe(
+            "Set when the run short-circuited (e.g. retention deletion is disabled in settings).",
+          ),
+        error: zod.string().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional(),
+  nextRunAt: zod.coerce.date().nullish(),
+});
+
+/**
+ * @summary Execute the configured retention schedule immediately. Super-admin only.
+Recent-auth required when the run will actually delete (not dry-run).
+
+ */
+export const RunScheduledRetentionNowBody = zod.object({
+  dryRun: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Override the schedule's dryRunOnly setting for this single run only.",
+    ),
+});
+
+export const runScheduledRetentionNowResponseScheduleHourMin = 0;
+export const runScheduledRetentionNowResponseScheduleHourMax = 23;
+
+export const runScheduledRetentionNowResponseScheduleMinuteMin = 0;
+export const runScheduledRetentionNowResponseScheduleMinuteMax = 59;
+
+export const runScheduledRetentionNowResponseScheduleDayOfWeekMin = 0;
+export const runScheduledRetentionNowResponseScheduleDayOfWeekMax = 6;
+
+export const runScheduledRetentionNowResponseScheduleDayOfMonthMax = 31;
+
+export const runScheduledRetentionNowResponseScheduleOlderThanDaysMax = 36500;
+
+export const RunScheduledRetentionNowResponse = zod.object({
+  result: zod.object({
+    runAt: zod.coerce.date(),
+    olderThan: zod.string(),
+    dryRun: zod.boolean(),
+    campaignsDeleted: zod.number(),
+    touchpointsDeleted: zod.number(),
+    skipped: zod
+      .string()
+      .nullish()
+      .describe(
+        "Set when the run short-circuited (e.g. retention deletion is disabled in settings).",
+      ),
+    error: zod.string().nullish(),
+  }),
+  schedule: zod.object({
+    enabled: zod.boolean(),
+    cadence: zod.enum(["daily", "weekly", "monthly"]),
+    hour: zod
+      .number()
+      .min(runScheduledRetentionNowResponseScheduleHourMin)
+      .max(runScheduledRetentionNowResponseScheduleHourMax),
+    minute: zod
+      .number()
+      .min(runScheduledRetentionNowResponseScheduleMinuteMin)
+      .max(runScheduledRetentionNowResponseScheduleMinuteMax),
+    dayOfWeek: zod
+      .number()
+      .min(runScheduledRetentionNowResponseScheduleDayOfWeekMin)
+      .max(runScheduledRetentionNowResponseScheduleDayOfWeekMax)
+      .nullish()
+      .describe("0=Sunday … 6=Saturday. Required when cadence=weekly."),
+    dayOfMonth: zod
+      .number()
+      .min(1)
+      .max(runScheduledRetentionNowResponseScheduleDayOfMonthMax)
+      .nullish()
+      .describe(
+        "Day of the month. Clamped to 28 internally so every month is valid.",
+      ),
+    olderThanDays: zod
+      .number()
+      .min(1)
+      .max(runScheduledRetentionNowResponseScheduleOlderThanDaysMax),
+    dryRunOnly: zod.boolean(),
+    lastRunAt: zod.coerce.date().nullish(),
+    lastRunResult: zod
+      .union([
+        zod.object({
+          runAt: zod.coerce.date(),
+          olderThan: zod.string(),
+          dryRun: zod.boolean(),
+          campaignsDeleted: zod.number(),
+          touchpointsDeleted: zod.number(),
+          skipped: zod
+            .string()
+            .nullish()
+            .describe(
+              "Set when the run short-circuited (e.g. retention deletion is disabled in settings).",
+            ),
+          error: zod.string().nullish(),
+        }),
+        zod.null(),
+      ])
+      .optional(),
+    nextRunAt: zod.coerce.date().nullish(),
+  }),
+});
+
 export const ListThresholdTemplatesResponseItem = zod.object({
   id: zod.number(),
   name: zod.string(),

@@ -913,6 +913,122 @@ export interface RetentionResult {
   touchpointsDeleted: number;
 }
 
+export interface RetentionRunOutcome {
+  runAt: string;
+  olderThan: string;
+  dryRun: boolean;
+  campaignsDeleted: number;
+  touchpointsDeleted: number;
+  /**
+   * Set when the run short-circuited (e.g. retention deletion is disabled in settings).
+   * @nullable
+   */
+  skipped?: string | null;
+  /** @nullable */
+  error?: string | null;
+}
+
+export type RetentionScheduleCadence =
+  (typeof RetentionScheduleCadence)[keyof typeof RetentionScheduleCadence];
+
+export const RetentionScheduleCadence = {
+  daily: "daily",
+  weekly: "weekly",
+  monthly: "monthly",
+} as const;
+
+export interface RetentionSchedule {
+  enabled: boolean;
+  cadence: RetentionScheduleCadence;
+  /**
+   * @minimum 0
+   * @maximum 23
+   */
+  hour: number;
+  /**
+   * @minimum 0
+   * @maximum 59
+   */
+  minute: number;
+  /**
+   * 0=Sunday … 6=Saturday. Required when cadence=weekly.
+   * @minimum 0
+   * @maximum 6
+   * @nullable
+   */
+  dayOfWeek?: number | null;
+  /**
+   * Day of the month. Clamped to 28 internally so every month is valid.
+   * @minimum 1
+   * @maximum 31
+   * @nullable
+   */
+  dayOfMonth?: number | null;
+  /**
+   * @minimum 1
+   * @maximum 36500
+   */
+  olderThanDays: number;
+  dryRunOnly: boolean;
+  /** @nullable */
+  lastRunAt?: string | null;
+  lastRunResult?: RetentionRunOutcome | null;
+  /** @nullable */
+  nextRunAt?: string | null;
+}
+
+export type RetentionScheduleUpdateCadence =
+  (typeof RetentionScheduleUpdateCadence)[keyof typeof RetentionScheduleUpdateCadence];
+
+export const RetentionScheduleUpdateCadence = {
+  daily: "daily",
+  weekly: "weekly",
+  monthly: "monthly",
+} as const;
+
+export interface RetentionScheduleUpdate {
+  enabled?: boolean;
+  cadence?: RetentionScheduleUpdateCadence;
+  /**
+   * @minimum 0
+   * @maximum 23
+   */
+  hour?: number;
+  /**
+   * @minimum 0
+   * @maximum 59
+   */
+  minute?: number;
+  /**
+   * @minimum 0
+   * @maximum 6
+   * @nullable
+   */
+  dayOfWeek?: number | null;
+  /**
+   * @minimum 1
+   * @maximum 31
+   * @nullable
+   */
+  dayOfMonth?: number | null;
+  /**
+   * @minimum 1
+   * @maximum 36500
+   */
+  olderThanDays?: number;
+  dryRunOnly?: boolean;
+}
+
+export interface RetentionScheduleRunNowInput {
+  /** Override the schedule's dryRunOnly setting for this single run only. */
+  dryRun?: boolean;
+}
+
+export interface RetentionScheduleRunNowResponse {
+  result: RetentionRunOutcome;
+  schedule: RetentionSchedule;
+}
+
 export type ThresholdTemplateScope =
   (typeof ThresholdTemplateScope)[keyof typeof ThresholdTemplateScope];
 

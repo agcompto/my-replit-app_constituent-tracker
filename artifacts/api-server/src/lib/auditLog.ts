@@ -45,6 +45,7 @@ export const AUDIT_ACTIONS = [
   "resend_invite",
   "reset_password",
   "retention_delete",
+  "retention_scheduled_run",
   "self_service_password_reset_requested",
   "set_overrides",
   "totp_disabled",

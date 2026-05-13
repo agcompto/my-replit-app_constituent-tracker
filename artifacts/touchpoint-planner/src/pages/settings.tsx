@@ -1,4 +1,4 @@
-import { useGetSettings, useUpdateSettings, useListCampaignTypes, useCreateCampaignType, useUpdateCampaignType, useListChannels, useCreateChannel, useUpdateChannel, useListOwningUnits, useCreateOwningUnit, useUpdateOwningUnit, useRunRetentionDelete, useListSuppressionReasons, useCreateSuppressionReason, useUpdateSuppressionReason, useListThresholdTemplates, useCreateThresholdTemplate, useUpdateThresholdTemplate, useDeleteThresholdTemplate, getListCampaignTypesQueryKey, getListChannelsQueryKey, getListOwningUnitsQueryKey, getGetSettingsQueryKey, getListSuppressionReasonsQueryKey, getListThresholdTemplatesQueryKey } from "@workspace/api-client-react";
+import { useGetSettings, useUpdateSettings, useListCampaignTypes, useCreateCampaignType, useUpdateCampaignType, useListChannels, useCreateChannel, useUpdateChannel, useListOwningUnits, useCreateOwningUnit, useUpdateOwningUnit, useRunRetentionDelete, useListSuppressionReasons, useCreateSuppressionReason, useUpdateSuppressionReason, useListThresholdTemplates, useCreateThresholdTemplate, useUpdateThresholdTemplate, useDeleteThresholdTemplate, useGetRetentionSchedule, useUpdateRetentionSchedule, useRunScheduledRetentionNow, getListCampaignTypesQueryKey, getListChannelsQueryKey, getListOwningUnitsQueryKey, getGetSettingsQueryKey, getListSuppressionReasonsQueryKey, getListThresholdTemplatesQueryKey, getGetRetentionScheduleQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -8,7 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, Plus, AlertTriangle, Trash2, Sparkles } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useGetMe } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -439,6 +439,7 @@ export default function Settings() {
 
         {isSuperAdmin && (
           <TabsContent value="retention" className="space-y-6">
+            <RetentionSchedulePanel />
             <Card className="border-destructive">
               <CardHeader>
                 <CardTitle className="text-destructive flex items-center"><AlertTriangle className="h-5 w-5 mr-2" /> Data Retention Tool</CardTitle>
@@ -905,6 +906,260 @@ function ThresholdTemplatesPanel({ isSuperAdmin }: { isSuperAdmin: boolean }) {
             )}
           </TableBody>
         </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
+function RetentionSchedulePanel() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const { data: schedule, isLoading } = useGetRetentionSchedule();
+  const updateSchedule = useUpdateRetentionSchedule();
+  const runNow = useRunScheduledRetentionNow();
+
+  const [enabled, setEnabled] = useState(false);
+  const [cadence, setCadence] = useState<"daily" | "weekly" | "monthly">("daily");
+  const [hour, setHour] = useState(3);
+  const [minute, setMinute] = useState(0);
+  const [dayOfWeek, setDayOfWeek] = useState<number>(0);
+  const [dayOfMonth, setDayOfMonth] = useState<number>(1);
+  const [olderThanDays, setOlderThanDays] = useState(365);
+  const [dryRunOnly, setDryRunOnly] = useState(true);
+  const [seeded, setSeeded] = useState(false);
+
+  // Hydrate the form from the server response exactly once, in an effect so
+  // we don't trigger setState during render (React anti-pattern that breaks
+  // under StrictMode remounts).
+  useEffect(() => {
+    if (schedule && !seeded) {
+      setEnabled(schedule.enabled);
+      setCadence(schedule.cadence);
+      setHour(schedule.hour);
+      setMinute(schedule.minute);
+      setDayOfWeek(schedule.dayOfWeek ?? 0);
+      setDayOfMonth(schedule.dayOfMonth ?? 1);
+      setOlderThanDays(schedule.olderThanDays);
+      setDryRunOnly(schedule.dryRunOnly);
+      setSeeded(true);
+    }
+  }, [schedule, seeded]);
+
+  const handleReauth = (err: any, retry: () => void) => {
+    if (err?.response?.data?.code === "reauth_required") {
+      window.dispatchEvent(new CustomEvent("ctp:reauth-required", { detail: { retry } }));
+      return true;
+    }
+    return false;
+  };
+
+  const handleSave = () => {
+    const payload = {
+      enabled,
+      cadence,
+      hour,
+      minute,
+      dayOfWeek: cadence === "weekly" ? dayOfWeek : null,
+      dayOfMonth: cadence === "monthly" ? dayOfMonth : null,
+      olderThanDays,
+      dryRunOnly,
+    };
+    updateSchedule.mutate(
+      { data: payload },
+      {
+        onSuccess: () => {
+          toast({ title: "Schedule saved" });
+          queryClient.invalidateQueries({ queryKey: getGetRetentionScheduleQueryKey() });
+        },
+        onError: (err: any) => {
+          if (handleReauth(err, () => handleSave())) return;
+          toast({
+            title: "Could not save schedule",
+            description: err?.response?.data?.error || err?.message || "Unknown error",
+            variant: "destructive",
+          });
+        },
+      },
+    );
+  };
+
+  const handleRunNow = (forceDryRun: boolean) => {
+    runNow.mutate(
+      { data: { dryRun: forceDryRun ? true : undefined } },
+      {
+        onSuccess: (res) => {
+          toast({
+            title: res.result.skipped
+              ? `Run skipped (${res.result.skipped})`
+              : res.result.dryRun
+                ? `Dry run complete — ${res.result.campaignsDeleted} campaigns / ${res.result.touchpointsDeleted} touchpoints would be deleted`
+                : `Deleted ${res.result.campaignsDeleted} campaigns and ${res.result.touchpointsDeleted} touchpoints`,
+          });
+          queryClient.invalidateQueries({ queryKey: getGetRetentionScheduleQueryKey() });
+        },
+        onError: (err: any) => {
+          if (handleReauth(err, () => handleRunNow(forceDryRun))) return;
+          if (err?.response?.status === 409) {
+            toast({
+              title: "Another retention run is in progress",
+              variant: "destructive",
+            });
+            return;
+          }
+          toast({
+            title: "Run failed",
+            description: err?.response?.data?.error || err?.message || "Unknown error",
+            variant: "destructive",
+          });
+        },
+      },
+    );
+  };
+
+  if (isLoading || !schedule) {
+    return (
+      <Card>
+        <CardContent className="py-8 flex items-center justify-center text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin mr-2" /> Loading schedule…
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card data-testid="retention-schedule-panel">
+      <CardHeader>
+        <CardTitle>Scheduled Retention</CardTitle>
+        <CardDescription>
+          Run the retention pipeline automatically on a recurring cadence. Defaults to dry-run so an
+          operator can review before flipping to live deletion.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="flex items-center gap-3">
+          <Switch checked={enabled} onCheckedChange={setEnabled} id="ret-enabled" />
+          <Label htmlFor="ret-enabled">Schedule enabled</Label>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl">
+          <div className="space-y-2">
+            <Label>Cadence</Label>
+            <Select value={cadence} onValueChange={(v) => setCadence(v as typeof cadence)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="daily">Daily</SelectItem>
+                <SelectItem value="weekly">Weekly</SelectItem>
+                <SelectItem value="monthly">Monthly</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Time of day (UTC)</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                min={0}
+                max={23}
+                value={hour}
+                onChange={(e) => setHour(Math.max(0, Math.min(23, Number(e.target.value) || 0)))}
+                className="w-20"
+              />
+              <span>:</span>
+              <Input
+                type="number"
+                min={0}
+                max={59}
+                value={minute}
+                onChange={(e) => setMinute(Math.max(0, Math.min(59, Number(e.target.value) || 0)))}
+                className="w-20"
+              />
+            </div>
+          </div>
+
+          {cadence === "weekly" && (
+            <div className="space-y-2">
+              <Label>Day of week</Label>
+              <Select value={String(dayOfWeek)} onValueChange={(v) => setDayOfWeek(Number(v))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map((d, i) => (
+                    <SelectItem key={i} value={String(i)}>{d}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {cadence === "monthly" && (
+            <div className="space-y-2">
+              <Label>Day of month (clamped to 28)</Label>
+              <Input
+                type="number"
+                min={1}
+                max={31}
+                value={dayOfMonth}
+                onChange={(e) => setDayOfMonth(Math.max(1, Math.min(31, Number(e.target.value) || 1)))}
+                className="w-24"
+              />
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label>Retain records younger than (days)</Label>
+            <Input
+              type="number"
+              min={1}
+              max={36500}
+              value={olderThanDays}
+              onChange={(e) => setOlderThanDays(Math.max(1, Math.min(36500, Number(e.target.value) || 1)))}
+              className="w-32"
+            />
+          </div>
+
+          <div className="flex items-center gap-3 self-end">
+            <Switch checked={dryRunOnly} onCheckedChange={setDryRunOnly} id="ret-dry" />
+            <Label htmlFor="ret-dry">Dry-run only (no deletion)</Label>
+          </div>
+        </div>
+
+        <div className="flex gap-3">
+          <Button onClick={handleSave} disabled={updateSchedule.isPending}>
+            {updateSchedule.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+            Save schedule
+          </Button>
+          <Button variant="outline" onClick={() => handleRunNow(true)} disabled={runNow.isPending}>
+            Run dry-run now
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={() => handleRunNow(false)}
+            disabled={runNow.isPending || dryRunOnly}
+            title={dryRunOnly ? "Disable dry-run-only to run a live deletion." : undefined}
+          >
+            {runNow.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+            Run now
+          </Button>
+        </div>
+
+        <div className="rounded border bg-muted/30 px-4 py-3 text-sm space-y-1">
+          <div>
+            <span className="text-muted-foreground">Next scheduled run:&nbsp;</span>
+            <strong>{schedule.nextRunAt ? new Date(schedule.nextRunAt).toLocaleString() : "—"}</strong>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Last run:&nbsp;</span>
+            <strong>{schedule.lastRunAt ? new Date(schedule.lastRunAt).toLocaleString() : "never"}</strong>
+            {schedule.lastRunResult && (
+              <span className="ml-2 text-muted-foreground">
+                ({schedule.lastRunResult.dryRun ? "dry-run" : "live"} —{" "}
+                {schedule.lastRunResult.campaignsDeleted} campaigns,{" "}
+                {schedule.lastRunResult.touchpointsDeleted} touchpoints
+                {schedule.lastRunResult.skipped ? `, skipped: ${schedule.lastRunResult.skipped}` : ""}
+                {schedule.lastRunResult.error ? `, error: ${schedule.lastRunResult.error}` : ""}
+                )
+              </span>
+            )}
+          </div>
+        </div>
       </CardContent>
     </Card>
   );
