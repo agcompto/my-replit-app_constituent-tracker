@@ -1134,6 +1134,15 @@ export const GetDonorTouchpointsParams = zod.object({
   donorId: zod.coerce.string(),
 });
 
+export const GetDonorTouchpointsQueryParams = zod.object({
+  startDate: zod.date().optional(),
+  endDate: zod.date().optional(),
+  channelId: zod.array(zod.coerce.number()).optional(),
+  campaignTypeId: zod.array(zod.coerce.number()).optional(),
+  status: zod.array(zod.coerce.string()).optional(),
+  countsTowardThresholdOnly: zod.coerce.boolean().optional(),
+});
+
 export const GetDonorTouchpointsResponse = zod.object({
   donorId: zod.string(),
   touchpoints: zod.array(
@@ -1142,12 +1151,62 @@ export const GetDonorTouchpointsResponse = zod.object({
       campaignName: zod.string(),
       campaignStatus: zod.string(),
       touchId: zod.number(),
+      channelId: zod.number(),
       channelLabel: zod.string(),
+      campaignTypeId: zod.number(),
       campaignTypeLabel: zod.string(),
       sendDate: zod.coerce.date(),
       countsTowardThreshold: zod.boolean(),
     }),
   ),
+});
+
+export const GetDonorTouchpointsSummaryParams = zod.object({
+  donorId: zod.coerce.string(),
+});
+
+export const GetDonorTouchpointsSummaryQueryParams = zod.object({
+  startDate: zod.date().optional(),
+  endDate: zod.date().optional(),
+  channelId: zod.array(zod.coerce.number()).optional(),
+  campaignTypeId: zod.array(zod.coerce.number()).optional(),
+  status: zod.array(zod.coerce.string()).optional(),
+  countsTowardThresholdOnly: zod.coerce.boolean().optional(),
+});
+
+export const GetDonorTouchpointsSummaryResponse = zod.object({
+  total: zod.number(),
+  byChannel: zod.array(
+    zod.object({
+      channelId: zod.number(),
+      label: zod.string(),
+      count: zod.number(),
+      percent: zod.number(),
+    }),
+  ),
+  byCampaignType: zod.array(
+    zod.object({
+      campaignTypeId: zod.number(),
+      label: zod.string(),
+      count: zod.number(),
+    }),
+  ),
+  longestGapDays: zod.number().nullable(),
+  mostRecentDate: zod.coerce.date().nullable(),
+  earliestDate: zod.coerce.date().nullable(),
+});
+
+export const ExportDonorTouchpointsCsvParams = zod.object({
+  donorId: zod.coerce.string(),
+});
+
+export const ExportDonorTouchpointsCsvQueryParams = zod.object({
+  startDate: zod.date().optional(),
+  endDate: zod.date().optional(),
+  channelId: zod.array(zod.coerce.number()).optional(),
+  campaignTypeId: zod.array(zod.coerce.number()).optional(),
+  status: zod.array(zod.coerce.string()).optional(),
+  countsTowardThresholdOnly: zod.coerce.boolean().optional(),
 });
 
 export const GetDashboardQueryParams = zod.object({

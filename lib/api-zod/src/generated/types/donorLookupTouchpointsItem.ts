@@ -11,7 +11,9 @@ export type DonorLookupTouchpointsItem = {
   campaignName: string;
   campaignStatus: string;
   touchId: number;
+  channelId: number;
   channelLabel: string;
+  campaignTypeId: number;
   campaignTypeLabel: string;
   sendDate: Date;
   countsTowardThreshold: boolean;

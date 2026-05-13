@@ -728,7 +728,9 @@ export type DonorLookupTouchpointsItem = {
   campaignName: string;
   campaignStatus: string;
   touchId: number;
+  channelId: number;
   channelLabel: string;
+  campaignTypeId: number;
   campaignTypeLabel: string;
   sendDate: string;
   countsTowardThreshold: boolean;
@@ -737,6 +739,31 @@ export type DonorLookupTouchpointsItem = {
 export interface DonorLookup {
   donorId: string;
   touchpoints: DonorLookupTouchpointsItem[];
+}
+
+export type DonorLookupSummaryByChannelItem = {
+  channelId: number;
+  label: string;
+  count: number;
+  percent: number;
+};
+
+export type DonorLookupSummaryByCampaignTypeItem = {
+  campaignTypeId: number;
+  label: string;
+  count: number;
+};
+
+export interface DonorLookupSummary {
+  total: number;
+  byChannel: DonorLookupSummaryByChannelItem[];
+  byCampaignType: DonorLookupSummaryByCampaignTypeItem[];
+  /** @nullable */
+  longestGapDays: number | null;
+  /** @nullable */
+  mostRecentDate: string | null;
+  /** @nullable */
+  earliestDate: string | null;
 }
 
 export type DashboardByChannelItem = {
@@ -1332,6 +1359,33 @@ export type ListCampaignsParams = {
   mine?: boolean;
   status?: string;
   q?: string;
+};
+
+export type GetDonorTouchpointsParams = {
+  startDate?: string;
+  endDate?: string;
+  channelId?: number[];
+  campaignTypeId?: number[];
+  status?: string[];
+  countsTowardThresholdOnly?: boolean;
+};
+
+export type GetDonorTouchpointsSummaryParams = {
+  startDate?: string;
+  endDate?: string;
+  channelId?: number[];
+  campaignTypeId?: number[];
+  status?: string[];
+  countsTowardThresholdOnly?: boolean;
+};
+
+export type ExportDonorTouchpointsCsvParams = {
+  startDate?: string;
+  endDate?: string;
+  channelId?: number[];
+  campaignTypeId?: number[];
+  status?: string[];
+  countsTowardThresholdOnly?: boolean;
 };
 
 export type GetDashboardParams = {

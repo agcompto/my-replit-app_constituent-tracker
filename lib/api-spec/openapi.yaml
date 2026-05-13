@@ -993,12 +993,109 @@ paths:
       tags: [donors]
       parameters:
         - { name: donorId, in: path, required: true, schema: { type: string } }
+        - { name: startDate, in: query, schema: { type: string, format: date } }
+        - { name: endDate, in: query, schema: { type: string, format: date } }
+        - name: channelId
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: campaignTypeId
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: status
+          in: query
+          schema:
+            type: array
+            items: { type: string }
+          style: form
+          explode: true
+        - { name: countsTowardThresholdOnly, in: query, schema: { type: boolean } }
       responses:
         "200":
           description: OK
           content:
             application/json:
               schema: { $ref: "#/components/schemas/DonorLookup" }
+  /donors/{donorId}/touchpoints/summary:
+    get:
+      operationId: getDonorTouchpointsSummary
+      tags: [donors]
+      parameters:
+        - { name: donorId, in: path, required: true, schema: { type: string } }
+        - { name: startDate, in: query, schema: { type: string, format: date } }
+        - { name: endDate, in: query, schema: { type: string, format: date } }
+        - name: channelId
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: campaignTypeId
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: status
+          in: query
+          schema:
+            type: array
+            items: { type: string }
+          style: form
+          explode: true
+        - { name: countsTowardThresholdOnly, in: query, schema: { type: boolean } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DonorLookupSummary" }
+  /donors/{donorId}/touchpoints/export.csv:
+    get:
+      operationId: exportDonorTouchpointsCsv
+      tags: [donors]
+      parameters:
+        - { name: donorId, in: path, required: true, schema: { type: string } }
+        - { name: startDate, in: query, schema: { type: string, format: date } }
+        - { name: endDate, in: query, schema: { type: string, format: date } }
+        - name: channelId
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: campaignTypeId
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: status
+          in: query
+          schema:
+            type: array
+            items: { type: string }
+          style: form
+          explode: true
+        - { name: countsTowardThresholdOnly, in: query, schema: { type: boolean } }
+      responses:
+        "200":
+          description: CSV file download
+          content:
+            text/csv:
+              schema: { type: string }
+        "429": { description: Export quota exceeded }
 
   # ───────── Reports
   /reports/dashboard:
@@ -2204,16 +2301,45 @@ components:
           type: array
           items:
             type: object
-            required: [campaignId, campaignName, campaignStatus, touchId, channelLabel, campaignTypeLabel, sendDate, countsTowardThreshold]
+            required: [campaignId, campaignName, campaignStatus, touchId, channelId, channelLabel, campaignTypeId, campaignTypeLabel, sendDate, countsTowardThreshold]
             properties:
               campaignId: { type: integer }
               campaignName: { type: string }
               campaignStatus: { type: string }
               touchId: { type: integer }
+              channelId: { type: integer }
               channelLabel: { type: string }
+              campaignTypeId: { type: integer }
               campaignTypeLabel: { type: string }
               sendDate: { type: string, format: date }
               countsTowardThreshold: { type: boolean }
+    DonorLookupSummary:
+      type: object
+      required: [total, byChannel, byCampaignType, longestGapDays, mostRecentDate, earliestDate]
+      properties:
+        total: { type: integer }
+        byChannel:
+          type: array
+          items:
+            type: object
+            required: [channelId, label, count, percent]
+            properties:
+              channelId: { type: integer }
+              label: { type: string }
+              count: { type: integer }
+              percent: { type: number }
+        byCampaignType:
+          type: array
+          items:
+            type: object
+            required: [campaignTypeId, label, count]
+            properties:
+              campaignTypeId: { type: integer }
+              label: { type: string }
+              count: { type: integer }
+        longestGapDays: { type: ["integer", "null"] }
+        mostRecentDate: { type: ["string", "null"], format: date }
+        earliestDate: { type: ["string", "null"], format: date }
 
     Dashboard:
       type: object

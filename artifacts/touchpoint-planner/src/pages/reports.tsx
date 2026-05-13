@@ -90,7 +90,6 @@ export default function Reports() {
       window.history.replaceState(null, "", next);
     }
   }, [tab, filters, cohortMonths, saturationWeeks]);
-
   const saturationParams = {
     weeks: saturationWeeks,
     ...(filters.owningUnit ? { owningUnit: filters.owningUnit } : {}),

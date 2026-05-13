@@ -55,7 +55,9 @@ import type {
   CompletePasswordSetupInput,
   Dashboard,
   DonorLookup,
+  DonorLookupSummary,
   ExportAuditLogCsvParams,
+  ExportDonorTouchpointsCsvParams,
   ExportJob,
   ExportResult,
   ForgotPasswordAck,
@@ -64,6 +66,8 @@ import type {
   GetCalendarFeedParams,
   GetCohortAnalysisParams,
   GetDashboardParams,
+  GetDonorTouchpointsParams,
+  GetDonorTouchpointsSummaryParams,
   GetHighVolumeDonorsParams,
   GetSaturationReportParams,
   GetUpcomingVolumeParams,
@@ -5605,22 +5609,53 @@ export const useUpdateSuppressionReason = <
   return useMutation(getUpdateSuppressionReasonMutationOptions(options));
 };
 
-export const getGetDonorTouchpointsUrl = (donorId: string) => {
-  return `/api/donors/${donorId}/touchpoints`;
+export const getGetDonorTouchpointsUrl = (
+  donorId: string,
+  params?: GetDonorTouchpointsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    const explodeParameters = ["channelId", "campaignTypeId", "status"];
+
+    if (Array.isArray(value) && explodeParameters.includes(key)) {
+      value.forEach((v) => {
+        normalizedParams.append(key, v === null ? "null" : v.toString());
+      });
+      return;
+    }
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/donors/${donorId}/touchpoints?${stringifiedParams}`
+    : `/api/donors/${donorId}/touchpoints`;
 };
 
 export const getDonorTouchpoints = async (
   donorId: string,
+  params?: GetDonorTouchpointsParams,
   options?: RequestInit,
 ): Promise<DonorLookup> => {
-  return customFetch<DonorLookup>(getGetDonorTouchpointsUrl(donorId), {
+  return customFetch<DonorLookup>(getGetDonorTouchpointsUrl(donorId, params), {
     ...options,
     method: "GET",
   });
 };
 
-export const getGetDonorTouchpointsQueryKey = (donorId: string) => {
-  return [`/api/donors/${donorId}/touchpoints`] as const;
+export const getGetDonorTouchpointsQueryKey = (
+  donorId: string,
+  params?: GetDonorTouchpointsParams,
+) => {
+  return [
+    `/api/donors/${donorId}/touchpoints`,
+    ...(params ? [params] : []),
+  ] as const;
 };
 
 export const getGetDonorTouchpointsQueryOptions = <
@@ -5628,6 +5663,7 @@ export const getGetDonorTouchpointsQueryOptions = <
   TError = ErrorType<unknown>,
 >(
   donorId: string,
+  params?: GetDonorTouchpointsParams,
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof getDonorTouchpoints>>,
@@ -5640,12 +5676,12 @@ export const getGetDonorTouchpointsQueryOptions = <
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey =
-    queryOptions?.queryKey ?? getGetDonorTouchpointsQueryKey(donorId);
+    queryOptions?.queryKey ?? getGetDonorTouchpointsQueryKey(donorId, params);
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof getDonorTouchpoints>>
   > = ({ signal }) =>
-    getDonorTouchpoints(donorId, { signal, ...requestOptions });
+    getDonorTouchpoints(donorId, params, { signal, ...requestOptions });
 
   return {
     queryKey,
@@ -5669,6 +5705,7 @@ export function useGetDonorTouchpoints<
   TError = ErrorType<unknown>,
 >(
   donorId: string,
+  params?: GetDonorTouchpointsParams,
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof getDonorTouchpoints>>,
@@ -5678,7 +5715,254 @@ export function useGetDonorTouchpoints<
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetDonorTouchpointsQueryOptions(donorId, options);
+  const queryOptions = getGetDonorTouchpointsQueryOptions(
+    donorId,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getGetDonorTouchpointsSummaryUrl = (
+  donorId: string,
+  params?: GetDonorTouchpointsSummaryParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    const explodeParameters = ["channelId", "campaignTypeId", "status"];
+
+    if (Array.isArray(value) && explodeParameters.includes(key)) {
+      value.forEach((v) => {
+        normalizedParams.append(key, v === null ? "null" : v.toString());
+      });
+      return;
+    }
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/donors/${donorId}/touchpoints/summary?${stringifiedParams}`
+    : `/api/donors/${donorId}/touchpoints/summary`;
+};
+
+export const getDonorTouchpointsSummary = async (
+  donorId: string,
+  params?: GetDonorTouchpointsSummaryParams,
+  options?: RequestInit,
+): Promise<DonorLookupSummary> => {
+  return customFetch<DonorLookupSummary>(
+    getGetDonorTouchpointsSummaryUrl(donorId, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetDonorTouchpointsSummaryQueryKey = (
+  donorId: string,
+  params?: GetDonorTouchpointsSummaryParams,
+) => {
+  return [
+    `/api/donors/${donorId}/touchpoints/summary`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetDonorTouchpointsSummaryQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDonorTouchpointsSummary>>,
+  TError = ErrorType<unknown>,
+>(
+  donorId: string,
+  params?: GetDonorTouchpointsSummaryParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDonorTouchpointsSummary>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getGetDonorTouchpointsSummaryQueryKey(donorId, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getDonorTouchpointsSummary>>
+  > = ({ signal }) =>
+    getDonorTouchpointsSummary(donorId, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!donorId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDonorTouchpointsSummary>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetDonorTouchpointsSummaryQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDonorTouchpointsSummary>>
+>;
+export type GetDonorTouchpointsSummaryQueryError = ErrorType<unknown>;
+
+export function useGetDonorTouchpointsSummary<
+  TData = Awaited<ReturnType<typeof getDonorTouchpointsSummary>>,
+  TError = ErrorType<unknown>,
+>(
+  donorId: string,
+  params?: GetDonorTouchpointsSummaryParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDonorTouchpointsSummary>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetDonorTouchpointsSummaryQueryOptions(
+    donorId,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getExportDonorTouchpointsCsvUrl = (
+  donorId: string,
+  params?: ExportDonorTouchpointsCsvParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    const explodeParameters = ["channelId", "campaignTypeId", "status"];
+
+    if (Array.isArray(value) && explodeParameters.includes(key)) {
+      value.forEach((v) => {
+        normalizedParams.append(key, v === null ? "null" : v.toString());
+      });
+      return;
+    }
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/donors/${donorId}/touchpoints/export.csv?${stringifiedParams}`
+    : `/api/donors/${donorId}/touchpoints/export.csv`;
+};
+
+export const exportDonorTouchpointsCsv = async (
+  donorId: string,
+  params?: ExportDonorTouchpointsCsvParams,
+  options?: RequestInit,
+): Promise<string> => {
+  return customFetch<string>(getExportDonorTouchpointsCsvUrl(donorId, params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getExportDonorTouchpointsCsvQueryKey = (
+  donorId: string,
+  params?: ExportDonorTouchpointsCsvParams,
+) => {
+  return [
+    `/api/donors/${donorId}/touchpoints/export.csv`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getExportDonorTouchpointsCsvQueryOptions = <
+  TData = Awaited<ReturnType<typeof exportDonorTouchpointsCsv>>,
+  TError = ErrorType<void>,
+>(
+  donorId: string,
+  params?: ExportDonorTouchpointsCsvParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportDonorTouchpointsCsv>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getExportDonorTouchpointsCsvQueryKey(donorId, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof exportDonorTouchpointsCsv>>
+  > = ({ signal }) =>
+    exportDonorTouchpointsCsv(donorId, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!donorId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof exportDonorTouchpointsCsv>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ExportDonorTouchpointsCsvQueryResult = NonNullable<
+  Awaited<ReturnType<typeof exportDonorTouchpointsCsv>>
+>;
+export type ExportDonorTouchpointsCsvQueryError = ErrorType<void>;
+
+export function useExportDonorTouchpointsCsv<
+  TData = Awaited<ReturnType<typeof exportDonorTouchpointsCsv>>,
+  TError = ErrorType<void>,
+>(
+  donorId: string,
+  params?: ExportDonorTouchpointsCsvParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportDonorTouchpointsCsv>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getExportDonorTouchpointsCsvQueryOptions(
+    donorId,
+    params,
+    options,
+  );
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
