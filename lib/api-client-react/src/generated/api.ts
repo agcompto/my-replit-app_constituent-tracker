@@ -28,7 +28,8 @@ import type {
   ApplyTemplatesResult,
   AudienceInput,
   AudienceUploadResult,
-  AuditEntry,
+  AuditExportTooLarge,
+  AuditLogPage,
   Campaign,
   CampaignHealthCheck,
   CampaignInput,
@@ -48,6 +49,7 @@ import type {
   CompletePasswordSetupInput,
   Dashboard,
   DonorLookup,
+  ExportAuditLogCsvParams,
   ExportJob,
   ExportResult,
   ForgotPasswordAck,
@@ -6087,10 +6089,22 @@ export function useGetExportHistory<
   return { ...query, queryKey: queryOptions.queryKey };
 }
 
+/**
+ * @summary Search the audit log with cursor-based pagination. Admin/super_admin only.
+ */
 export const getGetAuditLogUrl = (params?: GetAuditLogParams) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
+    const explodeParameters = ["action"];
+
+    if (Array.isArray(value) && explodeParameters.includes(key)) {
+      value.forEach((v) => {
+        normalizedParams.append(key, v === null ? "null" : v.toString());
+      });
+      return;
+    }
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? "null" : value.toString());
     }
@@ -6106,8 +6120,8 @@ export const getGetAuditLogUrl = (params?: GetAuditLogParams) => {
 export const getAuditLog = async (
   params?: GetAuditLogParams,
   options?: RequestInit,
-): Promise<AuditEntry[]> => {
-  return customFetch<AuditEntry[]>(getGetAuditLogUrl(params), {
+): Promise<AuditLogPage> => {
+  return customFetch<AuditLogPage>(getGetAuditLogUrl(params), {
     ...options,
     method: "GET",
   });
@@ -6151,6 +6165,10 @@ export type GetAuditLogQueryResult = NonNullable<
 >;
 export type GetAuditLogQueryError = ErrorType<unknown>;
 
+/**
+ * @summary Search the audit log with cursor-based pagination. Admin/super_admin only.
+ */
+
 export function useGetAuditLog<
   TData = Awaited<ReturnType<typeof getAuditLog>>,
   TError = ErrorType<unknown>,
@@ -6166,6 +6184,112 @@ export function useGetAuditLog<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetAuditLogQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Download the current audit-log filter set as CSV. Admin/super_admin only. Capped at 50,000 rows.
+ */
+export const getExportAuditLogCsvUrl = (params?: ExportAuditLogCsvParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    const explodeParameters = ["action"];
+
+    if (Array.isArray(value) && explodeParameters.includes(key)) {
+      value.forEach((v) => {
+        normalizedParams.append(key, v === null ? "null" : v.toString());
+      });
+      return;
+    }
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/audit-log/export.csv?${stringifiedParams}`
+    : `/api/audit-log/export.csv`;
+};
+
+export const exportAuditLogCsv = async (
+  params?: ExportAuditLogCsvParams,
+  options?: RequestInit,
+): Promise<string> => {
+  return customFetch<string>(getExportAuditLogCsvUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getExportAuditLogCsvQueryKey = (
+  params?: ExportAuditLogCsvParams,
+) => {
+  return [`/api/audit-log/export.csv`, ...(params ? [params] : [])] as const;
+};
+
+export const getExportAuditLogCsvQueryOptions = <
+  TData = Awaited<ReturnType<typeof exportAuditLogCsv>>,
+  TError = ErrorType<AuditExportTooLarge>,
+>(
+  params?: ExportAuditLogCsvParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportAuditLogCsv>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getExportAuditLogCsvQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof exportAuditLogCsv>>
+  > = ({ signal }) => exportAuditLogCsv(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof exportAuditLogCsv>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ExportAuditLogCsvQueryResult = NonNullable<
+  Awaited<ReturnType<typeof exportAuditLogCsv>>
+>;
+export type ExportAuditLogCsvQueryError = ErrorType<AuditExportTooLarge>;
+
+/**
+ * @summary Download the current audit-log filter set as CSV. Admin/super_admin only. Capped at 50,000 rows.
+ */
+
+export function useExportAuditLogCsv<
+  TData = Awaited<ReturnType<typeof exportAuditLogCsv>>,
+  TError = ErrorType<AuditExportTooLarge>,
+>(
+  params?: ExportAuditLogCsvParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportAuditLogCsv>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getExportAuditLogCsvQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

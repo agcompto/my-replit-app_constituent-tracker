@@ -7,9 +7,26 @@
  */
 
 export type GetAuditLogParams = {
-  actor?: string;
-  action?: string;
-  entityType?: string;
-  startDate?: Date;
-  endDate?: Date;
+  actorId?: number;
+  /**
+   * One or more action names. Repeat the parameter for multiple values.
+   */
+  action?: string[];
+  campaignId?: number;
+  targetUserId?: number;
+  from?: Date;
+  to?: Date;
+  /**
+   * Free-text search over action, entity type, actor name, and details.
+   */
+  q?: string;
+  /**
+   * Opaque pagination cursor returned as `nextCursor` from a prior call.
+   */
+  cursor?: string;
+  /**
+   * @minimum 1
+   * @maximum 200
+   */
+  limit?: number;
 };

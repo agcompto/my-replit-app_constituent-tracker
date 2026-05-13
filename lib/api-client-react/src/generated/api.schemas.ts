@@ -814,6 +814,24 @@ export interface AuditEntry {
   createdAt: string;
 }
 
+export interface AuditLogPage {
+  items: AuditEntry[];
+  /**
+   * Pass back as `cursor` to fetch the next page. `null` when this is the last page.
+   * @nullable
+   */
+  nextCursor: string | null;
+  /** Total rows matching the current filter set (independent of pagination). */
+  totalCount: number;
+}
+
+export interface AuditExportTooLarge {
+  error: string;
+  code: "audit_export_row_cap_exceeded";
+  totalCount: number;
+  maxRows: number;
+}
+
 /**
  * Per-channel weekly volume capacity (channel ID → max touchpoints/week). Used by the saturation heatmap report.
  */
@@ -1259,11 +1277,38 @@ export type GetHighVolumeDonorsParams = {
 };
 
 export type GetAuditLogParams = {
-  actor?: string;
-  action?: string;
-  entityType?: string;
-  startDate?: string;
-  endDate?: string;
+  actorId?: number;
+  /**
+   * One or more action names. Repeat the parameter for multiple values.
+   */
+  action?: string[];
+  campaignId?: number;
+  targetUserId?: number;
+  from?: string;
+  to?: string;
+  /**
+   * Free-text search over action, entity type, actor name, and details.
+   */
+  q?: string;
+  /**
+   * Opaque pagination cursor returned as `nextCursor` from a prior call.
+   */
+  cursor?: string;
+  /**
+   * @minimum 1
+   * @maximum 200
+   */
+  limit?: number;
+};
+
+export type ExportAuditLogCsvParams = {
+  actorId?: number;
+  action?: string[];
+  campaignId?: number;
+  targetUserId?: number;
+  from?: string;
+  to?: string;
+  q?: string;
 };
 
 export type GetCohortAnalysisParams = {

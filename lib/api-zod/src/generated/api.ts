@@ -1271,25 +1271,81 @@ export const GetExportHistoryResponseItem = zod.object({
 });
 export const GetExportHistoryResponse = zod.array(GetExportHistoryResponseItem);
 
+/**
+ * @summary Search the audit log with cursor-based pagination. Admin/super_admin only.
+ */
+export const getAuditLogQueryLimitDefault = 50;
+export const getAuditLogQueryLimitMax = 200;
+
 export const GetAuditLogQueryParams = zod.object({
-  actor: zod.coerce.string().optional(),
-  action: zod.coerce.string().optional(),
-  entityType: zod.coerce.string().optional(),
-  startDate: zod.date().optional(),
-  endDate: zod.date().optional(),
+  actorId: zod.coerce.number().optional(),
+  action: zod
+    .array(zod.coerce.string())
+    .optional()
+    .describe(
+      "One or more action names. Repeat the parameter for multiple values.",
+    ),
+  campaignId: zod.coerce.number().optional(),
+  targetUserId: zod.coerce.number().optional(),
+  from: zod.date().optional(),
+  to: zod.date().optional(),
+  q: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Free-text search over action, entity type, actor name, and details.",
+    ),
+  cursor: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Opaque pagination cursor returned as `nextCursor` from a prior call.",
+    ),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(getAuditLogQueryLimitMax)
+    .default(getAuditLogQueryLimitDefault),
 });
 
-export const GetAuditLogResponseItem = zod.object({
-  id: zod.number(),
-  actorName: zod.string(),
-  actorRole: zod.string().optional(),
-  action: zod.string(),
-  entityType: zod.string(),
-  entityId: zod.number().nullish(),
-  details: zod.string().nullish(),
-  createdAt: zod.coerce.date(),
+export const GetAuditLogResponse = zod.object({
+  items: zod.array(
+    zod.object({
+      id: zod.number(),
+      actorName: zod.string(),
+      actorRole: zod.string().optional(),
+      action: zod.string(),
+      entityType: zod.string(),
+      entityId: zod.number().nullish(),
+      details: zod.string().nullish(),
+      createdAt: zod.coerce.date(),
+    }),
+  ),
+  nextCursor: zod
+    .string()
+    .nullable()
+    .describe(
+      "Pass back as `cursor` to fetch the next page. `null` when this is the last page.",
+    ),
+  totalCount: zod
+    .number()
+    .describe(
+      "Total rows matching the current filter set (independent of pagination).",
+    ),
 });
-export const GetAuditLogResponse = zod.array(GetAuditLogResponseItem);
+
+/**
+ * @summary Download the current audit-log filter set as CSV. Admin/super_admin only. Capped at 50,000 rows.
+ */
+export const ExportAuditLogCsvQueryParams = zod.object({
+  actorId: zod.coerce.number().optional(),
+  action: zod.array(zod.coerce.string()).optional(),
+  campaignId: zod.coerce.number().optional(),
+  targetUserId: zod.coerce.number().optional(),
+  from: zod.date().optional(),
+  to: zod.date().optional(),
+  q: zod.coerce.string().optional(),
+});
 
 export const getSettingsResponseFiscalYearStartMonthMax = 12;
 

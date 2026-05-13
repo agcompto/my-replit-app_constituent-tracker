@@ -446,7 +446,12 @@ export const auditLogTable = pgTable(
     details: text("details"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => ({ createdIdx: index("audit_log_created_idx").on(t.createdAt) }),
+  (t) => ({
+    createdIdx: index("audit_log_created_idx").on(t.createdAt),
+    actorIdx: index("audit_log_actor_idx").on(t.actorUserId),
+    actionIdx: index("audit_log_action_idx").on(t.action),
+    entityIdx: index("audit_log_entity_idx").on(t.entityType, t.entityId),
+  }),
 );
 
 // ─────── App settings (single row id=1)

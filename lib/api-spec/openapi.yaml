@@ -1082,20 +1082,62 @@ paths:
     get:
       operationId: getAuditLog
       tags: [audit]
+      summary: Search the audit log with cursor-based pagination. Admin/super_admin only.
       parameters:
-        - { name: actor, in: query, schema: { type: string } }
-        - { name: action, in: query, schema: { type: string } }
-        - { name: entityType, in: query, schema: { type: string } }
-        - { name: startDate, in: query, schema: { type: string, format: date } }
-        - { name: endDate, in: query, schema: { type: string, format: date } }
+        - { name: actorId, in: query, schema: { type: integer } }
+        - name: action
+          in: query
+          description: One or more action names. Repeat the parameter for multiple values.
+          schema: { type: array, items: { type: string } }
+          style: form
+          explode: true
+        - { name: campaignId, in: query, schema: { type: integer } }
+        - { name: targetUserId, in: query, schema: { type: integer } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - name: q
+          in: query
+          schema: { type: string }
+          description: Free-text search over action, entity type, actor name, and details.
+        - name: cursor
+          in: query
+          schema: { type: string }
+          description: Opaque pagination cursor returned as `nextCursor` from a prior call.
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
       responses:
         "200":
           description: OK
           content:
             application/json:
-              schema:
-                type: array
-                items: { $ref: "#/components/schemas/AuditEntry" }
+              schema: { $ref: "#/components/schemas/AuditLogPage" }
+  /audit-log/export.csv:
+    get:
+      operationId: exportAuditLogCsv
+      tags: [audit]
+      summary: Download the current audit-log filter set as CSV. Admin/super_admin only. Capped at 50,000 rows.
+      parameters:
+        - { name: actorId, in: query, schema: { type: integer } }
+        - name: action
+          in: query
+          schema: { type: array, items: { type: string } }
+          style: form
+          explode: true
+        - { name: campaignId, in: query, schema: { type: integer } }
+        - { name: targetUserId, in: query, schema: { type: integer } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: q, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: CSV file (one header row + one row per audit entry).
+          content:
+            text/csv:
+              schema: { type: string }
+        "413":
+          description: Filter matches more rows than the export cap allows.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuditExportTooLarge" }
   /settings:
     get:
       operationId: getSettings
@@ -2192,6 +2234,27 @@ components:
         entityId: { type: ["integer", "null"] }
         details: { type: ["string", "null"] }
         createdAt: { type: string, format: date-time }
+    AuditLogPage:
+      type: object
+      required: [items, nextCursor, totalCount]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AuditEntry" }
+        nextCursor:
+          type: ["string", "null"]
+          description: Pass back as `cursor` to fetch the next page. `null` when this is the last page.
+        totalCount:
+          type: integer
+          description: Total rows matching the current filter set (independent of pagination).
+    AuditExportTooLarge:
+      type: object
+      required: [error, code, totalCount, maxRows]
+      properties:
+        error: { type: string }
+        code: { type: string, const: audit_export_row_cap_exceeded }
+        totalCount: { type: integer }
+        maxRows: { type: integer }
 
     AppSettings:
       type: object

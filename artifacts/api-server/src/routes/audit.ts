@@ -1,86 +1,149 @@
 import { Router, type IRouter } from "express";
-import { and, desc, gte, ilike, lt, sql, type SQL } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { db, auditLogTable } from "@workspace/db";
 import { requireRole } from "../lib/auth";
+import { buildCsv } from "../lib/donor";
+import {
+  AUDIT_ORDER,
+  MAX_AUDIT_EXPORT_ROWS,
+  buildAuditWhere,
+  buildCursorPredicate,
+  combineWhere,
+  decodeCursor,
+  encodeCursor,
+  errorResponse,
+  parseAuditFilters,
+  parseLimit,
+  toAuditEntryDto,
+} from "../lib/auditLog";
 
 const router: IRouter = Router();
-
-const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
-
-function isValidIsoDate(s: string): boolean {
-  const m = ISO_DATE.exec(s);
-  if (!m) return false;
-  const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
-  if (mo < 1 || mo > 12 || d < 1 || d > 31) return false;
-  const dt = new Date(Date.UTC(y, mo - 1, d));
-  return (
-    dt.getUTCFullYear() === y &&
-    dt.getUTCMonth() === mo - 1 &&
-    dt.getUTCDate() === d
-  );
-}
 
 // Audit log exposes actor names, roles, and the full timeline of administrative
 // actions (user invites, password resets, deletes, settings changes, retention
 // runs). That is privileged operational data and must not be readable by
 // standard staff users — only admins/super-admins.
-router.get("/audit-log", requireRole("admin", "super_admin"), async (req, res): Promise<void> => {
-  const parts: SQL[] = [];
-
-  const actor = typeof req.query.actor === "string" ? req.query.actor.trim() : "";
-  if (actor) parts.push(ilike(auditLogTable.actorName, `%${actor}%`));
-
-  const action = typeof req.query.action === "string" ? req.query.action.trim() : "";
-  if (action) parts.push(ilike(auditLogTable.action, `%${action}%`));
-
-  const entityType = typeof req.query.entityType === "string" ? req.query.entityType.trim() : "";
-  if (entityType) parts.push(ilike(auditLogTable.entityType, `%${entityType}%`));
-
-  const startDate = typeof req.query.startDate === "string" ? req.query.startDate.trim() : "";
-  if (startDate) {
-    if (!isValidIsoDate(startDate)) {
-      res.status(400).json({ error: "Invalid startDate (expected YYYY-MM-DD)" });
+router.get(
+  "/audit-log",
+  requireRole("admin", "super_admin"),
+  async (req, res): Promise<void> => {
+    const filtersRes = parseAuditFilters(req.query as Record<string, unknown>);
+    if (!filtersRes.ok) {
+      const { status, body } = errorResponse(filtersRes.error);
+      res.status(status).json(body);
       return;
     }
-    parts.push(gte(auditLogTable.createdAt, new Date(`${startDate}T00:00:00Z`)));
-  }
-
-  const endDate = typeof req.query.endDate === "string" ? req.query.endDate.trim() : "";
-  if (endDate) {
-    if (!isValidIsoDate(endDate)) {
-      res.status(400).json({ error: "Invalid endDate (expected YYYY-MM-DD)" });
+    const limitRes = parseLimit(req.query.limit);
+    if (!limitRes.ok) {
+      const { status, body } = errorResponse(limitRes.error);
+      res.status(status).json(body);
       return;
     }
-    if (startDate && startDate > endDate) {
-      res.status(400).json({ error: "startDate must be on or before endDate" });
+    const limit = limitRes.value;
+
+    const baseWhere = buildAuditWhere(filtersRes.value);
+
+    let cursorWhere = baseWhere;
+    if (typeof req.query.cursor === "string" && req.query.cursor) {
+      const cur = decodeCursor(req.query.cursor);
+      if (!cur.ok) {
+        const { status, body } = errorResponse(cur.error);
+        res.status(status).json(body);
+        return;
+      }
+      cursorWhere = combineWhere(baseWhere, buildCursorPredicate(cur.value));
+    }
+
+    // Fetch limit+1 to know if a next page exists without an extra round-trip.
+    const rowsQ = db
+      .select()
+      .from(auditLogTable)
+      .where(cursorWhere ?? sql`true`)
+      .orderBy(...AUDIT_ORDER)
+      .limit(limit + 1);
+
+    const countQ = db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(auditLogTable)
+      .where(baseWhere ?? sql`true`);
+
+    const [rows, countRows] = await Promise.all([rowsQ, countQ]);
+    const totalCount = countRows[0]?.n ?? 0;
+
+    let nextCursor: string | null = null;
+    let page = rows;
+    if (rows.length > limit) {
+      page = rows.slice(0, limit);
+      const last = page[page.length - 1];
+      nextCursor = encodeCursor({ ts: last.createdAt.getTime(), id: last.id });
+    }
+
+    res.json({
+      items: page.map(toAuditEntryDto),
+      nextCursor,
+      totalCount,
+    });
+  },
+);
+
+router.get(
+  "/audit-log/export.csv",
+  requireRole("admin", "super_admin"),
+  async (req, res): Promise<void> => {
+    const filtersRes = parseAuditFilters(req.query as Record<string, unknown>);
+    if (!filtersRes.ok) {
+      const { status, body } = errorResponse(filtersRes.error);
+      res.status(status).json(body);
       return;
     }
-    // Inclusive end: < endDate + 1 day
-    const end = new Date(`${endDate}T00:00:00Z`);
-    end.setUTCDate(end.getUTCDate() + 1);
-    parts.push(lt(auditLogTable.createdAt, end));
-  }
+    const where = buildAuditWhere(filtersRes.value);
 
-  const where = parts.length ? and(...parts) : sql`true`;
+    // Count first so we can refuse cleanly with 413 instead of half-streaming a CSV.
+    const countRows = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(auditLogTable)
+      .where(where ?? sql`true`);
+    const total = countRows[0]?.n ?? 0;
+    if (total > MAX_AUDIT_EXPORT_ROWS) {
+      res.status(413).json({
+        error: `Filter matches ${total.toLocaleString()} rows, which exceeds the export cap of ${MAX_AUDIT_EXPORT_ROWS.toLocaleString()}. Narrow the filter and try again.`,
+        code: "audit_export_row_cap_exceeded",
+        totalCount: total,
+        maxRows: MAX_AUDIT_EXPORT_ROWS,
+      });
+      return;
+    }
 
-  const rows = await db
-    .select()
-    .from(auditLogTable)
-    .where(where)
-    .orderBy(desc(auditLogTable.createdAt))
-    .limit(500);
-  res.json(
-    rows.map((r) => ({
-      id: r.id,
-      actorName: r.actorName,
-      actorRole: r.actorRole,
-      action: r.action,
-      entityType: r.entityType,
-      entityId: r.entityId,
-      details: r.details,
-      createdAt: r.createdAt.toISOString(),
-    })),
-  );
-});
+    const rows = await db
+      .select()
+      .from(auditLogTable)
+      .where(where ?? sql`true`)
+      .orderBy(...AUDIT_ORDER)
+      .limit(MAX_AUDIT_EXPORT_ROWS);
+
+    const csv = buildCsv(
+      ["id", "createdAt", "actorName", "actorRole", "action", "entityType", "entityId", "details"],
+      rows.map((r) => [
+        r.id,
+        r.createdAt.toISOString(),
+        r.actorName,
+        r.actorRole,
+        r.action,
+        r.entityType,
+        r.entityId ?? "",
+        r.details ?? "",
+      ]),
+    );
+
+    const stamp = new Date().toISOString().slice(0, 10);
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="audit-log-${stamp}.csv"`,
+    );
+    res.setHeader("Cache-Control", "no-store");
+    res.send(csv);
+  },
+);
 
 export default router;
