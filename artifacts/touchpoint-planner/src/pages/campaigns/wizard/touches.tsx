@@ -561,10 +561,10 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
-            <Tabs defaultValue="paste">
+            <Tabs defaultValue="file">
               <TabsList className="mb-4">
-                <TabsTrigger value="paste">Paste / CSV Text</TabsTrigger>
                 <TabsTrigger value="file"><Upload className="h-4 w-4 mr-1.5" /> Upload CSV</TabsTrigger>
+                <TabsTrigger value="paste">Paste / CSV Text</TabsTrigger>
                 {settings?.googleSheetImportEnabled && (
                   <TabsTrigger value="sheet">Google Sheet URL</TabsTrigger>
                 )}
