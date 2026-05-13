@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Sparkles, Copy, Check } from "lucide-react";
 import { useAiSuggestOverrideReason } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
@@ -14,18 +15,22 @@ interface Props {
 
 export function AiSuggestReasonPopover({ campaignId, thresholdId, projectedCount, ariaLabel }: Props) {
   const [open, setOpen] = useState(false);
-  const [reason, setReason] = useState<string | null>(null);
+  const [reason, setReason] = useState<string>("");
+  const [edited, setEdited] = useState(false);
   const [copied, setCopied] = useState(false);
   const mutation = useAiSuggestOverrideReason();
   const { toast } = useToast();
 
+  useEffect(() => { if (!open) { setCopied(false); } }, [open]);
+
   const handleGenerate = () => {
-    setReason(null);
+    setReason("");
+    setEdited(false);
     setCopied(false);
     mutation.mutate(
       { id: campaignId, data: { thresholdId, projectedCount } },
       {
-        onSuccess: (data) => setReason(data.reason),
+        onSuccess: (data) => { setReason(data.reason); setEdited(false); },
         onError: (err: any) => {
           const code = err?.response?.status;
           const msg = err?.response?.data?.error || String(err?.message ?? err);
@@ -50,8 +55,10 @@ export function AiSuggestReasonPopover({ campaignId, thresholdId, projectedCount
     }
   };
 
+  const hasReason = reason.length > 0;
+
   return (
-    <Popover open={open} onOpenChange={(o) => { setOpen(o); if (o && !reason && !mutation.isPending) handleGenerate(); }}>
+    <Popover open={open} onOpenChange={(o) => { setOpen(o); if (o && !hasReason && !mutation.isPending) handleGenerate(); }}>
       <PopoverTrigger asChild>
         <Button
           variant="ghost"
@@ -70,11 +77,17 @@ export function AiSuggestReasonPopover({ campaignId, thresholdId, projectedCount
             <Loader2 className="h-3 w-3 animate-spin" /> Generating...
           </div>
         )}
-        {reason && (
+        {hasReason && (
           <>
-            <p className="text-sm bg-muted/40 rounded p-2 whitespace-pre-wrap">{reason}</p>
+            <Textarea
+              value={reason}
+              onChange={(e) => { setReason(e.target.value); setEdited(true); setCopied(false); }}
+              rows={4}
+              className="text-sm"
+              aria-label="Override reason"
+            />
             <p className="text-[11px] text-muted-foreground">
-              A starting point — edit and add specific business context before recording it.
+              {edited ? "Edited locally — copy to use it." : "A starting point — edit and add specific business context before recording it."}
             </p>
             <div className="flex gap-2">
               <Button type="button" size="sm" variant="outline" onClick={handleCopy}>
@@ -87,7 +100,7 @@ export function AiSuggestReasonPopover({ campaignId, thresholdId, projectedCount
             </div>
           </>
         )}
-        {!mutation.isPending && !reason && (
+        {!mutation.isPending && !hasReason && (
           <Button type="button" size="sm" onClick={handleGenerate}>Generate</Button>
         )}
       </PopoverContent>

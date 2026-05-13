@@ -14,6 +14,7 @@ import { PiiWarning } from "@/components/ui/PiiWarning";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { AiBriefPanel, type BriefExtraction } from "@/components/ai-brief-panel";
+import { useGetSettings } from "@workspace/api-client-react";
 
 const setupSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -74,6 +75,8 @@ export default function SetupStep({ campaign }: { campaign: any }) {
   };
 
   const isPending = createMutation.isPending || updateMutation.isPending;
+  const { data: appSettings } = useGetSettings();
+  const aiAssistEnabled = !!appSettings?.aiAssistEnabled;
 
   const handleApplyBrief = (extraction: BriefExtraction) => {
     if (extraction.name) form.setValue("name", extraction.name, { shouldDirty: true });
@@ -84,7 +87,7 @@ export default function SetupStep({ campaign }: { campaign: any }) {
 
   return (
     <div className="space-y-4">
-      {isNew && <AiBriefPanel onApply={handleApplyBrief} />}
+      {isNew && aiAssistEnabled && <AiBriefPanel onApply={handleApplyBrief} />}
       <Card>
       <CardContent className="pt-6">
         <Form {...form}>

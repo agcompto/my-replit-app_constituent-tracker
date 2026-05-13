@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useListThresholds, useCreateThreshold, useUpdateThreshold, useDeleteThreshold, usePreviewThresholds, useSetThresholdOverrides, useListChannels, useCreateSuppression, useListThresholdTemplates, useApplyThresholdTemplates, getListThresholdsQueryKey, getListSuppressionsQueryKey } from "@workspace/api-client-react";
+import { useListThresholds, useCreateThreshold, useUpdateThreshold, useDeleteThreshold, usePreviewThresholds, useSetThresholdOverrides, useListChannels, useCreateSuppression, useListThresholdTemplates, useApplyThresholdTemplates, useGetSettings, getListThresholdsQueryKey, getListSuppressionsQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,6 +56,8 @@ export default function ThresholdsStep({ campaign }: { campaign: any }) {
   const deleteMutation = useDeleteThreshold();
   const previewMutation = usePreviewThresholds();
   const overrideMutation = useSetThresholdOverrides();
+  const { data: appSettings } = useGetSettings();
+  const aiAssistEnabled = !!appSettings?.aiAssistEnabled;
   const suppressMutation = useCreateSuppression();
 
   const [form, setForm] = useState({
@@ -620,12 +622,14 @@ export default function ThresholdsStep({ campaign }: { campaign: any }) {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="inline-flex items-center justify-end gap-1">
-                          <AiSuggestReasonPopover
-                            campaignId={campaign.id}
-                            thresholdId={c.thresholdId}
-                            projectedCount={c.projectedCount}
-                            ariaLabel={`Suggest override reason for constituent ${c.donorId}`}
-                          />
+                          {aiAssistEnabled && (
+                            <AiSuggestReasonPopover
+                              campaignId={campaign.id}
+                              thresholdId={c.thresholdId}
+                              projectedCount={c.projectedCount}
+                              ariaLabel={`Suggest override reason for constituent ${c.donorId}`}
+                            />
+                          )}
                           <Button
                             variant="ghost"
                             size="icon"
