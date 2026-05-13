@@ -405,6 +405,18 @@ export default function CampaignDetail() {
                 <p className="font-medium text-amber-600">{campaign.duplicateIdCount?.toLocaleString() || 0}</p>
               </div>
             </div>
+            <div className="pt-3 border-t">
+              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider mb-1">
+                Unique Constituents Across All Touchpoints
+              </p>
+              <p className="font-medium text-2xl text-primary" data-testid="text-deduped-across-touches">
+                {campaign.dedupedUniqueIdCountAcrossTouches?.toLocaleString() ?? 0}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Distinct constituents who will receive at least one touch in this campaign,
+                deduped across the campaign-wide audience and any per-touch custom audiences.
+              </p>
+            </div>
           </CardContent>
         </Card>
       </div>

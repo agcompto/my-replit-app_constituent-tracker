@@ -33,6 +33,31 @@ export async function loadCampaignFull(id: number) {
     .from(campaignTypeLinksTable)
     .innerJoin(campaignTypesTable, eq(campaignTypeLinksTable.campaignTypeId, campaignTypesTable.id))
     .where(eq(campaignTypeLinksTable.campaignId, id));
+  // Deduped audience size across every touch in this campaign:
+  //   - touches with audienceMode = "campaign" pull from the campaign-wide audience
+  //   - touches with audienceMode = "custom" pull from their own per-touch list
+  // Union the donor IDs from whichever sources are actually used by this
+  // campaign's touches, then count distinct donor IDs. Same query shape as
+  // loadCampaignSummary so the two endpoints agree.
+  const audRows = await db.execute<{ aud: number }>(sql`
+    SELECT COUNT(DISTINCT donor_id)::int AS aud FROM (
+      SELECT ${audienceDonorsTable.donorId} AS donor_id
+        FROM ${audienceDonorsTable}
+       WHERE ${audienceDonorsTable.campaignId} = ${id}
+         AND EXISTS (
+           SELECT 1 FROM ${touchesTable}
+            WHERE ${touchesTable.campaignId} = ${id}
+              AND ${touchesTable.audienceMode} = 'campaign'
+         )
+      UNION
+      SELECT ${touchAudienceDonorsTable.donorId} AS donor_id
+        FROM ${touchAudienceDonorsTable}
+        JOIN ${touchesTable} ON ${touchesTable.id} = ${touchAudienceDonorsTable.touchId}
+       WHERE ${touchesTable.campaignId} = ${id}
+         AND ${touchesTable.audienceMode} = 'custom'
+    ) x
+  `).then((r: any) => r.rows ?? r);
+  const dedupedAcrossTouches = audRows[0]?.aud ?? 0;
   return {
     id: c.id,
     name: c.name,
@@ -53,6 +78,7 @@ export async function loadCampaignFull(id: number) {
     uniqueIdCount: c.uniqueIdCount,
     duplicateIdCount: c.duplicateIdCount,
     rejectedIdCount: c.rejectedIdCount,
+    dedupedUniqueIdCountAcrossTouches: dedupedAcrossTouches,
     extraColumnsIgnored: c.extraColumnsIgnored,
     createdAt: c.createdAt.toISOString(),
     updatedAt: c.updatedAt.toISOString(),

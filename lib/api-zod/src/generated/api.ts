@@ -469,6 +469,12 @@ export const GetCampaignResponse = zod.object({
   uniqueIdCount: zod.number().optional(),
   duplicateIdCount: zod.number().optional(),
   rejectedIdCount: zod.number().optional(),
+  dedupedUniqueIdCountAcrossTouches: zod
+    .number()
+    .optional()
+    .describe(
+      'Distinct donor IDs that will be sent to across every touch in this\ncampaign — i.e. the union of the campaign-wide audience (for touches\nusing audienceMode=\"campaign\") and each per-touch custom audience\n(for touches using audienceMode=\"custom\"), deduplicated.\n',
+    ),
   extraColumnsIgnored: zod.boolean().optional(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date().optional(),
@@ -517,6 +523,12 @@ export const UpdateCampaignResponse = zod.object({
   uniqueIdCount: zod.number().optional(),
   duplicateIdCount: zod.number().optional(),
   rejectedIdCount: zod.number().optional(),
+  dedupedUniqueIdCountAcrossTouches: zod
+    .number()
+    .optional()
+    .describe(
+      'Distinct donor IDs that will be sent to across every touch in this\ncampaign — i.e. the union of the campaign-wide audience (for touches\nusing audienceMode=\"campaign\") and each per-touch custom audience\n(for touches using audienceMode=\"custom\"), deduplicated.\n',
+    ),
   extraColumnsIgnored: zod.boolean().optional(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date().optional(),
@@ -590,6 +602,12 @@ export const ArchiveCampaignResponse = zod.object({
   uniqueIdCount: zod.number().optional(),
   duplicateIdCount: zod.number().optional(),
   rejectedIdCount: zod.number().optional(),
+  dedupedUniqueIdCountAcrossTouches: zod
+    .number()
+    .optional()
+    .describe(
+      'Distinct donor IDs that will be sent to across every touch in this\ncampaign — i.e. the union of the campaign-wide audience (for touches\nusing audienceMode=\"campaign\") and each per-touch custom audience\n(for touches using audienceMode=\"custom\"), deduplicated.\n',
+    ),
   extraColumnsIgnored: zod.boolean().optional(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date().optional(),
@@ -628,6 +646,12 @@ export const VoidCampaignResponse = zod.object({
   uniqueIdCount: zod.number().optional(),
   duplicateIdCount: zod.number().optional(),
   rejectedIdCount: zod.number().optional(),
+  dedupedUniqueIdCountAcrossTouches: zod
+    .number()
+    .optional()
+    .describe(
+      'Distinct donor IDs that will be sent to across every touch in this\ncampaign — i.e. the union of the campaign-wide audience (for touches\nusing audienceMode=\"campaign\") and each per-touch custom audience\n(for touches using audienceMode=\"custom\"), deduplicated.\n',
+    ),
   extraColumnsIgnored: zod.boolean().optional(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date().optional(),
@@ -1032,6 +1056,12 @@ export const FinalizeCampaignResponse = zod.object({
   uniqueIdCount: zod.number().optional(),
   duplicateIdCount: zod.number().optional(),
   rejectedIdCount: zod.number().optional(),
+  dedupedUniqueIdCountAcrossTouches: zod
+    .number()
+    .optional()
+    .describe(
+      'Distinct donor IDs that will be sent to across every touch in this\ncampaign — i.e. the union of the campaign-wide audience (for touches\nusing audienceMode=\"campaign\") and each per-touch custom audience\n(for touches using audienceMode=\"custom\"), deduplicated.\n',
+    ),
   extraColumnsIgnored: zod.boolean().optional(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date().optional(),

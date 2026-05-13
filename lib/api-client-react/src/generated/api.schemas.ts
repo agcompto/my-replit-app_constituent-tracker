@@ -299,6 +299,12 @@ export interface Campaign {
   uniqueIdCount?: number;
   duplicateIdCount?: number;
   rejectedIdCount?: number;
+  /** Distinct donor IDs that will be sent to across every touch in this
+campaign — i.e. the union of the campaign-wide audience (for touches
+using audienceMode="campaign") and each per-touch custom audience
+(for touches using audienceMode="custom"), deduplicated.
+ */
+  dedupedUniqueIdCountAcrossTouches?: number;
   extraColumnsIgnored?: boolean;
   createdAt: string;
   updatedAt?: string;
