@@ -53,25 +53,28 @@ export default function CampaignWizard() {
   }
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto pb-20">
+    <div className="space-y-4 sm:space-y-6 max-w-5xl mx-auto pb-20">
       <div className="flex items-center gap-4 text-sm text-muted-foreground">
-        <button onClick={() => setLocation(isNew ? "/campaigns" : `/campaigns/${id}`)} className="hover:text-foreground flex items-center">
+        <button onClick={() => setLocation(isNew ? "/campaigns" : `/campaigns/${id}`)} className="hover:text-foreground flex items-center min-h-[44px]">
           <ArrowLeft className="h-4 w-4 mr-1" /> {isNew ? "Back to Campaigns" : "Back to Campaign"}
         </button>
       </div>
 
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">{isNew ? "New Campaign" : `Edit: ${campaign?.name}`}</h1>
+        <h1 className="text-xl sm:text-2xl font-bold tracking-tight">{isNew ? "New Campaign" : `Edit: ${campaign?.name}`}</h1>
         <p className="text-muted-foreground text-sm">Follow the steps to configure your campaign and touchpoints.</p>
       </div>
 
-      <div className="flex items-center space-x-2 overflow-x-auto pb-2 -mx-2 px-2 border-b">
+      <div className="sm:hidden text-xs text-muted-foreground -mb-1">
+        Step {(steps.findIndex(s => s.id === stepMatch) + 1) || 1} of {steps.length}
+      </div>
+      <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto pb-2 -mx-2 px-2 border-b snap-x">
         {steps.map((step, i) => (
           <button
             key={step.id}
             disabled={step.disabled}
             onClick={() => setLocation(`/campaigns/${id}/edit?step=${step.id}`)}
-            className={`flex items-center px-3 py-2 text-sm font-medium rounded-md whitespace-nowrap transition-colors ${
+            className={`flex items-center px-2.5 sm:px-3 py-2 min-h-[44px] text-xs sm:text-sm font-medium rounded-md whitespace-nowrap snap-start transition-colors ${
               stepMatch === step.id 
                 ? "bg-primary text-primary-foreground" 
                 : step.disabled 

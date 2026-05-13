@@ -105,7 +105,7 @@ export default function AudienceStep({ campaign }: { campaign: any }) {
             <CardTitle className="text-lg text-blue-900 flex items-center gap-2"><Info className="h-5 w-5" /> Current Campaign-Wide Audience</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div><p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Valid IDs</p><p className="text-xl font-medium">{campaign.validIdCount?.toLocaleString()}</p></div>
               <div><p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Unique IDs</p><p className="text-xl font-medium text-primary">{campaign.uniqueIdCount?.toLocaleString()}</p></div>
               <div><p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Duplicates</p><p className="text-xl font-medium text-amber-600">{campaign.duplicateIdCount?.toLocaleString()}</p></div>
@@ -122,7 +122,7 @@ export default function AudienceStep({ campaign }: { campaign: any }) {
             <CardDescription>Audience processed and saved.</CardDescription>
           </CardHeader>
           <CardContent className="pt-6 space-y-6">
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 text-center">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 text-center">
               <div className="bg-gray-50 p-3 rounded"><p className="text-2xl font-semibold">{result.originalRowCount.toLocaleString()}</p><p className="text-xs text-muted-foreground mt-1">Total Rows</p></div>
               <div className="bg-emerald-50 p-3 rounded"><p className="text-2xl font-semibold text-emerald-700">{result.validCount.toLocaleString()}</p><p className="text-xs text-emerald-700/70 mt-1">Valid IDs</p></div>
               <div className="bg-emerald-100 p-3 rounded"><p className="text-2xl font-semibold text-emerald-800">{result.uniqueCount.toLocaleString()}</p><p className="text-xs text-emerald-800/70 mt-1">Unique IDs</p></div>
@@ -172,18 +172,19 @@ export default function AudienceStep({ campaign }: { campaign: any }) {
 
               <TabsContent value="paste" className="space-y-4">
                 <Textarea
-                  className="font-mono text-sm h-64"
+                  className="font-mono text-sm h-48 sm:h-64"
+                  rows={10}
                   placeholder="Paste Constituent IDs here... (one per line or comma separated)"
                   value={rawText}
                   onChange={(e) => setRawText(e.target.value)}
                 />
-                <div className="flex items-center gap-6">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6">
                   <div className="flex items-center space-x-2">
                     <Checkbox id="hasHeaderPaste" checked={hasHeader} onCheckedChange={(c) => setHasHeader(!!c)} />
                     <Label htmlFor="hasHeaderPaste">First row is header</Label>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <Label htmlFor="colIndexPaste">Constituent ID Column Index (0-based)</Label>
+                    <Label htmlFor="colIndexPaste" className="text-sm">Column Index (0-based)</Label>
                     <Input id="colIndexPaste" type="number" min="0" value={columnIndex} onChange={(e) => setColumnIndex(Number(e.target.value))} className="w-20" />
                   </div>
                 </div>
@@ -247,13 +248,13 @@ export default function AudienceStep({ campaign }: { campaign: any }) {
                     </div>
                   )}
                 </div>
-                <div className="flex items-center gap-6">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6">
                   <div className="flex items-center space-x-2">
                     <Checkbox id="hasHeaderFile" checked={hasHeader} onCheckedChange={(c) => setHasHeader(!!c)} />
                     <Label htmlFor="hasHeaderFile">First row is header</Label>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <Label htmlFor="colIndexFile">Constituent ID Column Index (0-based)</Label>
+                    <Label htmlFor="colIndexFile" className="text-sm">Column Index (0-based)</Label>
                     <Input id="colIndexFile" type="number" min="0" value={columnIndex} onChange={(e) => setColumnIndex(Number(e.target.value))} className="w-20" />
                   </div>
                 </div>
@@ -277,13 +278,13 @@ export default function AudienceStep({ campaign }: { campaign: any }) {
                     Sheet must be shared as <strong>"Anyone with the link &mdash; Viewer"</strong>. Include <code className="text-xs">#gid=...</code> in the URL to target a specific tab.
                   </p>
                 </div>
-                <div className="flex items-center gap-6">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6">
                   <div className="flex items-center space-x-2">
                     <Checkbox id="hasHeaderSheet" checked={hasHeader} onCheckedChange={(c) => setHasHeader(!!c)} />
                     <Label htmlFor="hasHeaderSheet">First row is header</Label>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <Label htmlFor="colIndexSheet">Constituent ID Column Index (0-based)</Label>
+                    <Label htmlFor="colIndexSheet" className="text-sm">Column Index (0-based)</Label>
                     <Input id="colIndexSheet" type="number" min="0" value={columnIndex} onChange={(e) => setColumnIndex(Number(e.target.value))} className="w-20" />
                   </div>
                 </div>

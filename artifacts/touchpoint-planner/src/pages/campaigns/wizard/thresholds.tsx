@@ -360,7 +360,7 @@ export default function ThresholdsStep({ campaign }: { campaign: any }) {
             </div>
           </div>
 
-          <Table>
+          <Table className="hidden md:table">
             <TableHeader>
               <TableRow>
                 <TableHead>Rule Name</TableHead>
@@ -399,6 +399,36 @@ export default function ThresholdsStep({ campaign }: { campaign: any }) {
               )}
             </TableBody>
           </Table>
+
+          {/* Mobile threshold cards */}
+          <div className="md:hidden border rounded-md divide-y">
+            {thresholdsLoading ? (
+              <div className="p-6 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-primary" /></div>
+            ) : !thresholds?.length ? (
+              <div className="p-6 text-center text-muted-foreground text-sm">No custom thresholds defined.</div>
+            ) : (
+              thresholds.map(t => (
+                <div key={t.id} className="p-3 flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <div className="font-medium text-sm">{t.name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      Max <strong className="text-foreground">{t.maxTouchpoints}</strong> in <strong className="text-foreground">{t.windowDays}d</strong>
+                      <span className="capitalize"> · {t.scope.replace(/_/g, ' ')}</span>
+                      <span className="capitalize"> · {t.actionMode}</span>
+                    </div>
+                  </div>
+                  <div className="flex gap-1 -mt-1 -mr-1">
+                    <Button variant="ghost" size="icon" className="h-12 w-12" onClick={() => handleEdit(t)} aria-label={`Edit rule ${t.name}`}>
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-12 w-12 text-destructive hover:text-destructive" onClick={() => handleDelete(t.id)} aria-label={`Remove rule ${t.name}`}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
 
           <Dialog open={editingId !== null} onOpenChange={(open) => { if (!open) setEditingId(null); }}>
             <DialogContent className="max-w-2xl">
@@ -550,7 +580,7 @@ export default function ThresholdsStep({ campaign }: { campaign: any }) {
               Showing {visibleConflicts.length} of {previewData.conflicts.length}
             </div>
 
-            <Table>
+            <Table className="hidden md:table">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-12">
@@ -647,6 +677,59 @@ export default function ThresholdsStep({ campaign }: { campaign: any }) {
                 )}
               </TableBody>
             </Table>
+
+            {/* Mobile conflict cards */}
+            <div className="md:hidden border rounded-md divide-y">
+              {previewData.conflicts.length === 0 ? (
+                <div className="p-6 text-center text-muted-foreground text-sm">No conflicts detected.</div>
+              ) : visibleConflicts.length === 0 ? (
+                <div className="p-6 text-center text-muted-foreground text-sm">No constituents match the current filters.</div>
+              ) : (
+                visibleConflicts.map((c: any, i: number) => (
+                  <div key={`m-${c.donorId}-${i}`} className="p-3 space-y-2">
+                    <div className="flex items-start gap-3">
+                      <Checkbox
+                        className="mt-1"
+                        checked={selectedOverrides.includes(c.donorId)}
+                        onCheckedChange={(checked) => toggleSelectId(c.donorId, !!checked)}
+                        disabled={c.overridden}
+                        aria-label={`Select constituent ${c.donorId}`}
+                      />
+                      <div className="flex-1 min-w-0 space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="font-mono text-sm">{c.donorId}</div>
+                          {c.overridden
+                            ? <span className="text-xs bg-emerald-100 text-emerald-800 px-2 py-1 rounded">Overridden</span>
+                            : <span className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">Flagged</span>}
+                        </div>
+                        <div className="text-xs"><span className="text-muted-foreground">Threshold:</span> {c.thresholdName}</div>
+                        <div className="text-xs text-muted-foreground">{c.explanation}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-end gap-1 pt-1">
+                      {aiAssistEnabled && (
+                        <AiSuggestReasonPopover
+                          campaignId={campaign.id}
+                          thresholdId={c.thresholdId}
+                          projectedCount={c.projectedCount}
+                          ariaLabel={`Suggest override reason for constituent ${c.donorId}`}
+                        />
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-destructive hover:text-destructive h-12 w-12"
+                        aria-label={`Remove constituent ${c.donorId} from campaign`}
+                        disabled={suppressMutation.isPending}
+                        onClick={() => handleSuppress([c.donorId])}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
 
             {uniqueSelectedCount > 0 && (
               <div className="flex flex-wrap gap-2 justify-end pt-4 border-t">

@@ -222,7 +222,7 @@ export default function SuppressionsSeedsStep({ campaign }: { campaign: any }) {
               </Button>
             </div>
 
-            <Table>
+            <Table className="hidden md:table">
               <TableHeader>
                 <TableRow>
                   <TableHead>Scope</TableHead>
@@ -253,6 +253,30 @@ export default function SuppressionsSeedsStep({ campaign }: { campaign: any }) {
                 }
               </TableBody>
             </Table>
+
+            {/* Mobile suppression cards */}
+            <div className="md:hidden border rounded-md divide-y">
+              {suppLoading ? (
+                <div className="p-6 text-center"><Loader2 className="h-4 w-4 animate-spin mx-auto text-primary"/></div>
+              ) : !suppressions?.length ? (
+                <div className="p-6 text-center text-muted-foreground text-sm">No suppressions.</div>
+              ) : (
+                suppressions.map((s: any) => (
+                  <div key={s.id} className="p-3 flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <div className="text-sm capitalize font-medium">{s.scope.replace('_', ' ')}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {s.reasonCodeName || s.reason || <span className="italic">Uncategorized</span>}
+                        <span> · {s.donorIdCount.toLocaleString()} IDs</span>
+                      </div>
+                    </div>
+                    <Button variant="ghost" size="icon" className="h-12 w-12 -mt-2 -mr-2 text-destructive" aria-label="Delete suppression" onClick={() => deleteSupp.mutate({ id: campaign.id, suppressionId: s.id }, { onSuccess: () => queryClient.invalidateQueries({ queryKey: getListSuppressionsQueryKey(campaign.id) })})}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
           </CardContent>
         </Card>
 
@@ -308,7 +332,7 @@ export default function SuppressionsSeedsStep({ campaign }: { campaign: any }) {
               </Button>
             </div>
 
-            <Table>
+            <Table className="hidden md:table">
               <TableHeader>
                 <TableRow>
                   <TableHead>Scope</TableHead>
@@ -333,6 +357,27 @@ export default function SuppressionsSeedsStep({ campaign }: { campaign: any }) {
                 }
               </TableBody>
             </Table>
+
+            {/* Mobile seed cards */}
+            <div className="md:hidden border rounded-md divide-y">
+              {seedsLoading ? (
+                <div className="p-6 text-center"><Loader2 className="h-4 w-4 animate-spin mx-auto text-primary"/></div>
+              ) : !seeds?.length ? (
+                <div className="p-6 text-center text-muted-foreground text-sm">No seeds.</div>
+              ) : (
+                seeds.map(s => (
+                  <div key={s.id} className="p-3 flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm capitalize font-medium">{s.scope.replace('_', ' ')}</div>
+                      <div className="text-xs text-muted-foreground">{s.seedCount.toLocaleString()} seed IDs</div>
+                    </div>
+                    <Button variant="ghost" size="icon" className="h-12 w-12 -mt-2 -mr-2 text-destructive" aria-label="Delete seed group" onClick={() => deleteSeed.mutate({ id: campaign.id, seedId: s.id }, { onSuccess: () => queryClient.invalidateQueries({ queryKey: getListSeedsQueryKey(campaign.id) })})}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>

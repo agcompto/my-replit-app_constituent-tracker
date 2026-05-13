@@ -283,7 +283,7 @@ export default function PreviewStep({ campaign }: { campaign: any }) {
           <CardDescription>Your touchpoint files are ready for download.</CardDescription>
         </CardHeader>
         <CardContent className="pt-6">
-          <Table>
+          <Table className="hidden md:table">
             <TableHeader>
               <TableRow>
                 <TableHead>File Name</TableHead>
@@ -306,6 +306,21 @@ export default function PreviewStep({ campaign }: { campaign: any }) {
             </TableBody>
           </Table>
 
+          {/* Mobile export-result cards */}
+          <div className="md:hidden space-y-3">
+            {exportResult.files.map((f: any, i: number) => (
+              <div key={i} className="border rounded-md p-3 space-y-2">
+                <div className="font-mono text-xs break-all">{f.fileName}</div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-xs text-muted-foreground">{f.rowCount.toLocaleString()} rows</div>
+                  <Button size="sm" asChild>
+                    <a href={f.downloadUrl} download><Download className="h-4 w-4 mr-2"/> Download</a>
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+
           <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between pt-6 mt-6 border-t">
             <Button variant="outline" asChild>
               <a
@@ -324,7 +339,7 @@ export default function PreviewStep({ campaign }: { campaign: any }) {
 
   return (
     <div className="space-y-6">
-      <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
         <Card className="lg:col-span-1 bg-muted/30">
           <CardContent className="p-4 text-center">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Audience</p>
@@ -363,7 +378,7 @@ export default function PreviewStep({ campaign }: { campaign: any }) {
           <CardDescription>Review the files that will be generated and their specific row counts.</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
-          <Table>
+          <Table className="hidden md:table">
             <TableHeader>
               <TableRow>
                 <TableHead className="pl-6">File</TableHead>
@@ -401,6 +416,39 @@ export default function PreviewStep({ campaign }: { campaign: any }) {
               )}
             </TableBody>
           </Table>
+
+          {/* Mobile manifest cards */}
+          <div className="md:hidden divide-y">
+            {!preview?.perTouch.length ? (
+              <div className="p-6 text-center text-muted-foreground text-sm">No touchpoints defined.</div>
+            ) : (
+              preview.perTouch.map((t: any) => (
+                <div key={t.touchId} className="p-4 space-y-2">
+                  <div className="font-mono text-xs break-all">{t.fileName}</div>
+                  <div className="text-xs flex items-center flex-wrap gap-x-3 gap-y-1">
+                    <span><span className="text-muted-foreground">Channel:</span> {t.channelLabel}</span>
+                    <span className="inline-flex items-center">
+                      <span className="text-muted-foreground">Date:</span>&nbsp;{format(new Date(t.sendDate), "MMM d, yyyy")}
+                      <TouchDateHistoryPopover
+                        campaignId={campaign.id}
+                        touchId={t.touchId}
+                        touchName={t.touchName ?? t.fileName ?? `Touch #${t.touchId}`}
+                      />
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-xs pt-1">
+                    <div><div className="text-muted-foreground">Eligible</div><div className="font-medium">{t.eligibleCount.toLocaleString()}</div></div>
+                    <div><div className="text-muted-foreground">Suppressed</div><div className="font-medium text-destructive">{t.suppressedCount > 0 ? `-${t.suppressedCount}` : '0'}</div></div>
+                    <div><div className="text-muted-foreground">Seeds</div><div className="font-medium text-emerald-600">{t.seedCount > 0 ? `+${t.seedCount}` : '0'}</div></div>
+                  </div>
+                  <div className="flex items-center justify-between pt-2 border-t">
+                    <span className="text-xs text-muted-foreground">Final Export</span>
+                    <span className="font-bold">{t.totalRowsInExport.toLocaleString()}</span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         </CardContent>
       </Card>
 

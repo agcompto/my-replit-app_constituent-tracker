@@ -335,14 +335,14 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <CardTitle>Touch Builder</CardTitle>
             <CardDescription>
               Define the individual planned communications. Each touch sends to the campaign-wide audience by default, or you can set a per-touch list.
             </CardDescription>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             {settings?.aiAssistEnabled && (
               <Button onClick={handleSuggestCadence} size="sm" variant="outline" disabled={suggestCadence.isPending}>
                 {suggestCadence.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2 text-primary" />} Suggest Cadence
@@ -352,7 +352,7 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          <Table>
+          <Table className="hidden md:table">
             <TableHeader>
               <TableRow>
                 <TableHead className="pl-6">Name</TableHead>
@@ -424,6 +424,57 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
               )}
             </TableBody>
           </Table>
+
+          {/* Mobile card list */}
+          <div className="md:hidden divide-y">
+            {isLoading ? (
+              <div className="p-6 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></div>
+            ) : !touches?.length ? (
+              <div className="p-6 text-center text-muted-foreground text-sm">No touchpoints defined yet. Add one to get started.</div>
+            ) : (
+              touches.map((t: any) => {
+                const custom = t.audienceMode === "custom";
+                return (
+                  <div key={t.id} className="p-4 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="font-medium">{t.touchName}</div>
+                      <div className="flex gap-1 -mt-1 -mr-1">
+                        <Button variant="ghost" size="icon" className="h-12 w-12" onClick={() => handleOpenEdit(t)} aria-label={`Edit ${t.touchName}`}><Edit2 className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-12 w-12 text-destructive hover:text-destructive" onClick={() => handleDelete(t.id)} aria-label={`Delete ${t.touchName}`}><Trash2 className="h-4 w-4" /></Button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                      <div><span className="text-muted-foreground">Channel:</span> {t.channelLabel}</div>
+                      <div><span className="text-muted-foreground">Type:</span> {t.campaignTypeLabel}</div>
+                      <div className="col-span-2 flex items-center flex-wrap gap-1">
+                        <span className="text-muted-foreground">Send Date:</span> {format(new Date(t.sendDate), "MMM d, yyyy")}
+                        <TouchDateHistoryPopover campaignId={campaign.id} touchId={t.id} touchName={t.touchName} />
+                      </div>
+                    </div>
+                    <UndoableManualDateEdit campaignId={campaign.id} touchId={t.id} touchName={t.touchName} wizardLocked={wizardLocked} />
+                    <div className="flex items-center gap-2 flex-wrap pt-1">
+                      {custom ? (
+                        <>
+                          <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/30">
+                            Custom · {t.customUniqueIdCount?.toLocaleString() ?? 0}
+                          </Badge>
+                          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => openAudienceDialog(t)}>Replace</Button>
+                          <Button variant="outline" size="sm" className="h-8 text-xs text-muted-foreground" onClick={() => clearAudience(t)}><X className="h-3.5 w-3.5 mr-1" /> Revert</Button>
+                        </>
+                      ) : (
+                        <>
+                          <Badge variant="outline" className="text-muted-foreground">Campaign-wide</Badge>
+                          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => openAudienceDialog(t)}>
+                            <Users className="h-3.5 w-3.5 mr-1" /> Set custom
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -453,7 +504,7 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
               <Input id="touchName" autoFocus value={form.touchName} onChange={e => setForm({...form, touchName: e.target.value})} placeholder="e.g. Email #1 - Announcement" />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium">Channel *</label>
                 <Select value={form.channelId} onValueChange={v => setForm({...form, channelId: v})}>
