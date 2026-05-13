@@ -342,7 +342,7 @@ export default function Reports() {
             <CardHeader className="flex flex-row justify-between items-center gap-3 flex-wrap">
               <div>
                 <CardTitle>Cohort Analysis</CardTitle>
-                <CardDescription>Donors grouped by their first-touch month, with average touchpoints per donor.</CardDescription>
+                <CardDescription>Constituents grouped by their first-touch month, with average touchpoints per constituent.</CardDescription>
               </div>
               <div className="flex items-end gap-2">
                 <div className="flex flex-col gap-1.5 w-32">
@@ -377,9 +377,9 @@ export default function Reports() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Cohort Month</TableHead>
-                        <TableHead className="text-right">Donors</TableHead>
+                        <TableHead className="text-right">Constituents</TableHead>
                         <TableHead className="text-right">Total Touchpoints</TableHead>
-                        <TableHead className="text-right">Avg / Donor</TableHead>
+                        <TableHead className="text-right">Avg / Constituent</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>

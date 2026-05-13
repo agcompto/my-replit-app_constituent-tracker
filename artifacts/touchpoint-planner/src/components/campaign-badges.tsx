@@ -142,7 +142,7 @@ function specsFor(c: BadgeFields): BadgeSpec[] {
       label: "Extra Columns Ignored",
       icon: <Columns3 className="h-3 w-3 mr-1" />,
       className: "bg-slate-50 text-slate-700 border-slate-200",
-      title: "Only the donor-ID column was used from the upload",
+      title: "Only the constituent-ID column was used from the upload",
     });
   }
 

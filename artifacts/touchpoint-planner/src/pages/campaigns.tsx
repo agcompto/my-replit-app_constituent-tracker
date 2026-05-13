@@ -435,7 +435,7 @@ export default function Campaigns() {
             <DialogDescription>
               Creates a new draft campaign with the same touches, thresholds,
               scope-only suppressions, and seed groups.{" "}
-              <strong>The audience is not copied</strong>. Donor-ID-specific and
+              <strong>The audience is not copied</strong>. Constituent-ID-specific and
               touch-scoped suppressions are skipped.
             </DialogDescription>
           </DialogHeader>

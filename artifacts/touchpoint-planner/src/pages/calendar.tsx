@@ -975,7 +975,7 @@ function DayCell({
                 </span>
               </TooltipTrigger>
               <TooltipContent side="top" className="text-xs max-w-[200px]">
-                {dayConflictCount} donor{dayConflictCount !== 1 ? "s" : ""} over threshold
+                {dayConflictCount} constituent{dayConflictCount !== 1 ? "s" : ""} over threshold
                 ({dayConflictCampaignCount} campaign{dayConflictCampaignCount !== 1 ? "s" : ""} involved)
               </TooltipContent>
             </Tooltip>
@@ -1101,7 +1101,7 @@ function DayDetailSheet({ day, groups, showConflicts, onClose, dayConflict }: Da
               <div key={cs.campaignId} className="text-xs">
                 <div className="font-medium text-red-800 truncate">{cs.campaignName}</div>
                 <div className="text-red-600 mb-1.5">
-                  {cs.totalCount} donor{cs.totalCount !== 1 ? "s" : ""} over threshold on this day
+                  {cs.totalCount} constituent{cs.totalCount !== 1 ? "s" : ""} over threshold on this day
                 </div>
                 {/* Per-touch counts (server-authoritative, exact per-touch donor sets) */}
                 {cs.touchBreakdown.length > 0 && (

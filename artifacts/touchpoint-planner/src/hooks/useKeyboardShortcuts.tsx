@@ -87,7 +87,7 @@ export function ShortcutHelpDialog({ open, onOpenChange }: ShortcutHelpDialogPro
     { keys: ["g", "d"], label: "Go to Dashboard" },
     { keys: ["g", "c"], label: "Go to Campaigns" },
     { keys: ["g", "r"], label: "Go to Reports" },
-    { keys: ["g", "u"], label: "Go to Donors" },
+    { keys: ["g", "u"], label: "Go to Constituents" },
     { keys: ["g", "e"], label: "Go to Exports" },
     { keys: ["g", "a"], label: "Go to Audit log" },
   ];

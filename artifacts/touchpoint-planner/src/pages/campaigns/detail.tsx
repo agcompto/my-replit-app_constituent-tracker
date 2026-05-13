@@ -179,7 +179,7 @@ export default function CampaignDetail() {
               Creates a new draft campaign with the same touches, thresholds,
               scope-only suppressions, and seed groups.{" "}
               <strong>The audience is not copied</strong> &mdash; you upload a
-              fresh donor list for the new cycle. Donor-ID-specific
+              fresh constituent list for the new cycle. Constituent-ID-specific
               suppressions are skipped because they referred to people in the
               old audience.
             </DialogDescription>
@@ -260,7 +260,7 @@ export default function CampaignDetail() {
                         title: "Campaign cloned",
                         description:
                           `Created "${res.campaign.name}" with ${res.copiedTouches} touches, ${res.copiedThresholds} thresholds, ${res.copiedSuppressions} suppressions, ${res.copiedSeeds} seed groups.` +
-                          (skipped ? ` ${skipped} suppression${skipped === 1 ? "" : "s"} skipped (donor-ID-specific or touch-scoped).` : ""),
+                          (skipped ? ` ${skipped} suppression${skipped === 1 ? "" : "s"} skipped (constituent-ID-specific or touch-scoped).` : ""),
                       });
                       setCloneOpen(false);
                       setLocation(`/campaigns/${newId}`);
