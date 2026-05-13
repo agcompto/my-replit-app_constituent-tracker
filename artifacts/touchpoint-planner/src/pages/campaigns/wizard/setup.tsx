@@ -157,29 +157,49 @@ export default function SetupStep({ campaign }: { campaign: any }) {
                 render={({ field }) => (
                   <FormItem className="md:col-span-2">
                     <FormLabel>Campaign Types *</FormLabel>
+                    <p className="text-xs text-muted-foreground -mt-1">
+                      Select all that apply — tap each type to toggle it on or off. {(field.value?.length ?? 0) > 0 && (
+                        <span className="font-medium text-foreground">{field.value!.length} selected.</span>
+                      )}
+                    </p>
                     <FormControl>
-                      <div className="flex flex-wrap gap-2">
-                        {typesLoading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : 
-                          campaignTypes?.filter(t => t.active).map(t => (
-                            <button
-                              key={t.id}
-                              type="button"
-                              onClick={() => {
-                                const current = field.value || [];
-                                const next = current.includes(t.id) 
-                                  ? current.filter(id => id !== t.id)
-                                  : [...current, t.id];
-                                field.onChange(next);
-                              }}
-                              className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
-                                (field.value || []).includes(t.id) 
-                                  ? "bg-primary text-primary-foreground border-primary" 
-                                  : "bg-background text-muted-foreground hover:bg-muted"
-                              }`}
-                            >
-                              {t.name}
-                            </button>
-                          ))
+                      <div className="flex flex-wrap gap-2" role="group" aria-label="Campaign types (multi-select)">
+                        {typesLoading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> :
+                          campaignTypes?.filter(t => t.active).map(t => {
+                            const selected = (field.value || []).includes(t.id);
+                            return (
+                              <button
+                                key={t.id}
+                                type="button"
+                                role="checkbox"
+                                aria-checked={selected}
+                                onClick={() => {
+                                  const current = field.value || [];
+                                  const next = current.includes(t.id)
+                                    ? current.filter(id => id !== t.id)
+                                    : [...current, t.id];
+                                  field.onChange(next);
+                                }}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full border transition-colors ${
+                                  selected
+                                    ? "bg-primary text-primary-foreground border-primary"
+                                    : "bg-background text-muted-foreground border-input hover:bg-muted hover:text-foreground"
+                                }`}
+                              >
+                                <span
+                                  aria-hidden="true"
+                                  className={`inline-flex items-center justify-center h-4 w-4 rounded-sm border text-[10px] leading-none ${
+                                    selected
+                                      ? "bg-primary-foreground/20 border-primary-foreground/40 text-primary-foreground"
+                                      : "border-muted-foreground/40 text-transparent"
+                                  }`}
+                                >
+                                  ✓
+                                </span>
+                                {t.name}
+                              </button>
+                            );
+                          })
                         }
                       </div>
                     </FormControl>
