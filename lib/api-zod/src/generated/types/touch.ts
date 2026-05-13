@@ -18,6 +18,10 @@ export interface Touch {
   sendDate: Date;
   /** @nullable */
   notes?: string | null;
+  /** @nullable */
+  motivationCode?: string | null;
+  /** @nullable */
+  marketingCampaignName?: string | null;
   audienceMode: TouchAudienceMode;
   customValidIdCount?: number;
   customUniqueIdCount?: number;

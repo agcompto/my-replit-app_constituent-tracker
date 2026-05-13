@@ -12,4 +12,6 @@ export interface TouchUpdate {
   campaignTypeId?: number;
   sendDate?: Date;
   notes?: string;
+  motivationCode?: string;
+  marketingCampaignName?: string;
 }

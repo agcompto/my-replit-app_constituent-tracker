@@ -402,6 +402,10 @@ export interface Touch {
   sendDate: string;
   /** @nullable */
   notes?: string | null;
+  /** @nullable */
+  motivationCode?: string | null;
+  /** @nullable */
+  marketingCampaignName?: string | null;
   audienceMode: TouchAudienceMode;
   customValidIdCount?: number;
   customUniqueIdCount?: number;
@@ -419,6 +423,8 @@ export interface TouchInput {
   campaignTypeId: number;
   sendDate: string;
   notes?: string;
+  motivationCode?: string;
+  marketingCampaignName?: string;
 }
 
 export interface TouchUpdate {
@@ -427,6 +433,8 @@ export interface TouchUpdate {
   campaignTypeId?: number;
   sendDate?: string;
   notes?: string;
+  motivationCode?: string;
+  marketingCampaignName?: string;
 }
 
 export type ThresholdCheckScope =

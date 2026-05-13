@@ -705,6 +705,8 @@ export const ListTouchesResponseItem = zod.object({
   campaignTypeLabel: zod.string(),
   sendDate: zod.coerce.date(),
   notes: zod.string().nullish(),
+  motivationCode: zod.string().nullish(),
+  marketingCampaignName: zod.string().nullish(),
   audienceMode: zod.enum(["campaign", "custom"]),
   customValidIdCount: zod.number().optional(),
   customUniqueIdCount: zod.number().optional(),
@@ -727,6 +729,8 @@ export const CreateTouchBody = zod.object({
   campaignTypeId: zod.number(),
   sendDate: zod.coerce.date(),
   notes: zod.string().optional(),
+  motivationCode: zod.string().optional(),
+  marketingCampaignName: zod.string().optional(),
 });
 
 export const UploadTouchAudienceParams = zod.object({
@@ -775,6 +779,8 @@ export const UpdateTouchBody = zod.object({
   campaignTypeId: zod.number().optional(),
   sendDate: zod.coerce.date().optional(),
   notes: zod.string().optional(),
+  motivationCode: zod.string().optional(),
+  marketingCampaignName: zod.string().optional(),
 });
 
 export const UpdateTouchResponse = zod.object({
@@ -787,6 +793,8 @@ export const UpdateTouchResponse = zod.object({
   campaignTypeLabel: zod.string(),
   sendDate: zod.coerce.date(),
   notes: zod.string().nullish(),
+  motivationCode: zod.string().nullish(),
+  marketingCampaignName: zod.string().nullish(),
   audienceMode: zod.enum(["campaign", "custom"]),
   customValidIdCount: zod.number().optional(),
   customUniqueIdCount: zod.number().optional(),
@@ -2027,6 +2035,8 @@ export const ApplyAiDateShiftResponse = zod.object({
   campaignTypeLabel: zod.string(),
   sendDate: zod.coerce.date(),
   notes: zod.string().nullish(),
+  motivationCode: zod.string().nullish(),
+  marketingCampaignName: zod.string().nullish(),
   audienceMode: zod.enum(["campaign", "custom"]),
   customValidIdCount: zod.number().optional(),
   customUniqueIdCount: zod.number().optional(),
@@ -2065,6 +2075,8 @@ export const UndoAiDateShiftResponse = zod.object({
   campaignTypeLabel: zod.string(),
   sendDate: zod.coerce.date(),
   notes: zod.string().nullish(),
+  motivationCode: zod.string().nullish(),
+  marketingCampaignName: zod.string().nullish(),
   audienceMode: zod.enum(["campaign", "custom"]),
   customValidIdCount: zod.number().optional(),
   customUniqueIdCount: zod.number().optional(),
@@ -2127,6 +2139,8 @@ export const UndoManualDateEditResponse = zod.object({
   campaignTypeLabel: zod.string(),
   sendDate: zod.coerce.date(),
   notes: zod.string().nullish(),
+  motivationCode: zod.string().nullish(),
+  marketingCampaignName: zod.string().nullish(),
   audienceMode: zod.enum(["campaign", "custom"]),
   customValidIdCount: zod.number().optional(),
   customUniqueIdCount: zod.number().optional(),

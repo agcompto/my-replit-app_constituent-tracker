@@ -206,6 +206,8 @@ export const touchesTable = pgTable(
       .references(() => campaignTypesTable.id),
     sendDate: date("send_date").notNull(),
     notes: text("notes"),
+    motivationCode: text("motivation_code"),
+    marketingCampaignName: text("marketing_campaign_name"),
     // Audience source: "campaign" (use campaign-wide audience) or "custom" (per-touch list)
     audienceMode: text("audience_mode").notNull().default("campaign"),
     customOriginalRowCount: integer("custom_original_row_count").notNull().default(0),

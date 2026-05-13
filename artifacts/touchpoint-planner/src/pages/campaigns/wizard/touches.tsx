@@ -162,7 +162,9 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
     channelId: "",
     campaignTypeId: "",
     sendDate: "",
-    notes: ""
+    notes: "",
+    motivationCode: "",
+    marketingCampaignName: ""
   });
 
   // Audience override dialog
@@ -214,7 +216,9 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
       channelId: "",
       campaignTypeId: activeCampaignTypes.length === 1 ? activeCampaignTypes[0].id.toString() : "",
       sendDate: campaign.intendedSendStartDate ? new Date(campaign.intendedSendStartDate).toISOString().split('T')[0] : "",
-      notes: ""
+      notes: "",
+      motivationCode: "",
+      marketingCampaignName: ""
     });
     setDialogOpen(true);
   };
@@ -226,7 +230,9 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
       channelId: touch.channelId.toString(),
       campaignTypeId: touch.campaignTypeId.toString(),
       sendDate: new Date(touch.sendDate).toISOString().split('T')[0],
-      notes: touch.notes || ""
+      notes: touch.notes || "",
+      motivationCode: touch.motivationCode || "",
+      marketingCampaignName: touch.marketingCampaignName || ""
     });
     setDialogOpen(true);
   };
@@ -246,7 +252,9 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
       channelId: Number(form.channelId),
       campaignTypeId: Number(form.campaignTypeId),
       sendDate: new Date(form.sendDate).toISOString(),
-      notes: form.notes || undefined
+      notes: form.notes || undefined,
+      motivationCode: form.motivationCode.trim() || undefined,
+      marketingCampaignName: form.marketingCampaignName.trim() || undefined
     };
 
     if (editingId) {
@@ -534,6 +542,33 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
               {isDuplicate && (
                 <div className="text-xs text-amber-600 flex items-center mt-1"><AlertTriangle className="h-3 w-3 mr-1" /> Warning: Another touch uses this channel and date.</div>
               )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium" htmlFor="motivationCode">
+                  Motivation Code <span className="text-muted-foreground font-normal">(optional)</span>
+                </label>
+                <Input
+                  id="motivationCode"
+                  value={form.motivationCode}
+                  onChange={e => setForm({...form, motivationCode: e.target.value})}
+                  placeholder="e.g. FY26-Q4-EMAIL"
+                  maxLength={64}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium" htmlFor="marketingCampaignName">
+                  Campaign Name <span className="text-muted-foreground font-normal">(optional)</span>
+                </label>
+                <Input
+                  id="marketingCampaignName"
+                  value={form.marketingCampaignName}
+                  onChange={e => setForm({...form, marketingCampaignName: e.target.value})}
+                  placeholder="e.g. Day of Giving 2026"
+                  maxLength={120}
+                />
+              </div>
             </div>
 
             <div className="space-y-2">

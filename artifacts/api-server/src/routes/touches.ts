@@ -40,6 +40,8 @@ async function shapeTouch(t: typeof touchesTable.$inferSelect) {
     campaignTypeLabel: tp?.name ?? "Unknown",
     sendDate: typeof t.sendDate === "string" ? t.sendDate : (t.sendDate as Date).toISOString().slice(0, 10),
     notes: t.notes,
+    motivationCode: t.motivationCode,
+    marketingCampaignName: t.marketingCampaignName,
     audienceMode: t.audienceMode,
     customValidIdCount: t.customValidIdCount,
     customUniqueIdCount: t.customUniqueIdCount,
@@ -102,6 +104,8 @@ router.post("/campaigns/:id/touches", requireAuth, async (req, res): Promise<voi
       campaignTypeId: body.data.campaignTypeId,
       sendDate: sendDateStr,
       notes: body.data.notes,
+      motivationCode: body.data.motivationCode || null,
+      marketingCampaignName: body.data.marketingCampaignName || null,
     })
     .returning();
   await audit({

@@ -2211,6 +2211,8 @@ components:
         campaignTypeLabel: { type: string }
         sendDate: { type: string, format: date }
         notes: { type: ["string", "null"] }
+        motivationCode: { type: ["string", "null"] }
+        marketingCampaignName: { type: ["string", "null"] }
         audienceMode: { type: string, enum: [campaign, custom] }
         customValidIdCount: { type: integer }
         customUniqueIdCount: { type: integer }
@@ -2233,6 +2235,8 @@ components:
         campaignTypeId: { type: integer }
         sendDate: { type: string, format: date }
         notes: { type: string }
+        motivationCode: { type: string }
+        marketingCampaignName: { type: string }
     TouchUpdate:
       type: object
       properties:
@@ -2241,6 +2245,8 @@ components:
         campaignTypeId: { type: integer }
         sendDate: { type: string, format: date }
         notes: { type: string }
+        motivationCode: { type: string }
+        marketingCampaignName: { type: string }
 
     ThresholdCheck:
       type: object
