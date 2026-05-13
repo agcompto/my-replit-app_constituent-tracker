@@ -13,6 +13,7 @@ import { Loader2 } from "lucide-react";
 import { PiiWarning } from "@/components/ui/PiiWarning";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { AiBriefPanel, type BriefExtraction } from "@/components/ai-brief-panel";
 
 const setupSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -74,8 +75,17 @@ export default function SetupStep({ campaign }: { campaign: any }) {
 
   const isPending = createMutation.isPending || updateMutation.isPending;
 
+  const handleApplyBrief = (extraction: BriefExtraction) => {
+    if (extraction.name) form.setValue("name", extraction.name, { shouldDirty: true });
+    if (extraction.owningUnit) form.setValue("owningUnit", extraction.owningUnit, { shouldDirty: true });
+    if (extraction.intendedSendStartDate) form.setValue("intendedSendStartDate", extraction.intendedSendStartDate, { shouldDirty: true });
+    if (extraction.campaignTypeIds.length > 0) form.setValue("campaignTypeIds", extraction.campaignTypeIds, { shouldDirty: true });
+  };
+
   return (
-    <Card>
+    <div className="space-y-4">
+      {isNew && <AiBriefPanel onApply={handleApplyBrief} />}
+      <Card>
       <CardContent className="pt-6">
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
@@ -212,6 +222,7 @@ export default function SetupStep({ campaign }: { campaign: any }) {
           </form>
         </Form>
       </CardContent>
-    </Card>
+      </Card>
+    </div>
   );
 }

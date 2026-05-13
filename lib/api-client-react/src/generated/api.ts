@@ -18,9 +18,13 @@ import type {
 
 import type {
   AiCadenceSuggestion,
+  AiCampaignBriefInput,
+  AiCampaignBriefResult,
   AiClassifyInput,
   AiClassifyResult,
   AiDateShiftSuggestions,
+  AiOverrideReasonSuggestion,
+  AiSuggestOverrideReasonInput,
   AiSummary,
   AiUsage,
   AppSettings,
@@ -7655,6 +7659,183 @@ export const useUndoManualDateEdit = <
   TContext
 > => {
   return useMutation(getUndoManualDateEditMutationOptions(options));
+};
+
+/**
+ * @summary Generate a 1-2 sentence override-justification template for a threshold conflict. Takes only the threshold rule id and the projected count (no donor PII).
+ */
+export const getAiSuggestOverrideReasonUrl = (id: number) => {
+  return `/api/campaigns/${id}/ai/suggest-override-reason`;
+};
+
+export const aiSuggestOverrideReason = async (
+  id: number,
+  aiSuggestOverrideReasonInput: AiSuggestOverrideReasonInput,
+  options?: RequestInit,
+): Promise<AiOverrideReasonSuggestion> => {
+  return customFetch<AiOverrideReasonSuggestion>(
+    getAiSuggestOverrideReasonUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(aiSuggestOverrideReasonInput),
+    },
+  );
+};
+
+export const getAiSuggestOverrideReasonMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof aiSuggestOverrideReason>>,
+    TError,
+    { id: number; data: BodyType<AiSuggestOverrideReasonInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof aiSuggestOverrideReason>>,
+  TError,
+  { id: number; data: BodyType<AiSuggestOverrideReasonInput> },
+  TContext
+> => {
+  const mutationKey = ["aiSuggestOverrideReason"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof aiSuggestOverrideReason>>,
+    { id: number; data: BodyType<AiSuggestOverrideReasonInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return aiSuggestOverrideReason(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AiSuggestOverrideReasonMutationResult = NonNullable<
+  Awaited<ReturnType<typeof aiSuggestOverrideReason>>
+>;
+export type AiSuggestOverrideReasonMutationBody =
+  BodyType<AiSuggestOverrideReasonInput>;
+export type AiSuggestOverrideReasonMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Generate a 1-2 sentence override-justification template for a threshold conflict. Takes only the threshold rule id and the projected count (no donor PII).
+ */
+export const useAiSuggestOverrideReason = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof aiSuggestOverrideReason>>,
+    TError,
+    { id: number; data: BodyType<AiSuggestOverrideReasonInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof aiSuggestOverrideReason>>,
+  TError,
+  { id: number; data: BodyType<AiSuggestOverrideReasonInput> },
+  TContext
+> => {
+  return useMutation(getAiSuggestOverrideReasonMutationOptions(options));
+};
+
+/**
+ * @summary Extract structured campaign-setup fields (name, type, owning unit, intended send date, touches) from a free-text brief. Type and owning unit are server-matched against the active taxonomy.
+ */
+export const getAiCampaignBriefUrl = () => {
+  return `/api/ai/campaign-brief`;
+};
+
+export const aiCampaignBrief = async (
+  aiCampaignBriefInput: AiCampaignBriefInput,
+  options?: RequestInit,
+): Promise<AiCampaignBriefResult> => {
+  return customFetch<AiCampaignBriefResult>(getAiCampaignBriefUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(aiCampaignBriefInput),
+  });
+};
+
+export const getAiCampaignBriefMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof aiCampaignBrief>>,
+    TError,
+    { data: BodyType<AiCampaignBriefInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof aiCampaignBrief>>,
+  TError,
+  { data: BodyType<AiCampaignBriefInput> },
+  TContext
+> => {
+  const mutationKey = ["aiCampaignBrief"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof aiCampaignBrief>>,
+    { data: BodyType<AiCampaignBriefInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return aiCampaignBrief(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AiCampaignBriefMutationResult = NonNullable<
+  Awaited<ReturnType<typeof aiCampaignBrief>>
+>;
+export type AiCampaignBriefMutationBody = BodyType<AiCampaignBriefInput>;
+export type AiCampaignBriefMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Extract structured campaign-setup fields (name, type, owning unit, intended send date, touches) from a free-text brief. Type and owning unit are server-matched against the active taxonomy.
+ */
+export const useAiCampaignBrief = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof aiCampaignBrief>>,
+    TError,
+    { data: BodyType<AiCampaignBriefInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof aiCampaignBrief>>,
+  TError,
+  { data: BodyType<AiCampaignBriefInput> },
+  TContext
+> => {
+  return useMutation(getAiCampaignBriefMutationOptions(options));
 };
 
 export const getAiClassifySuppressionReasonUrl = () => {

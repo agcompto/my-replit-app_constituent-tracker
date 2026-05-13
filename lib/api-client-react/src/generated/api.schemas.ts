@@ -1086,6 +1086,66 @@ export interface LastManualDateEdit {
   editedAt?: string;
 }
 
+export interface AiSuggestOverrideReasonInput {
+  thresholdId: number;
+  /** @minimum 1 */
+  projectedCount: number;
+}
+
+export interface AiOverrideReasonSuggestion {
+  generatedAt: string;
+  reason: string;
+}
+
+export interface AiCampaignBriefInput {
+  /**
+   * @minLength 10
+   * @maxLength 4000
+   */
+  brief: string;
+}
+
+export type AiCampaignBriefResultCampaignTypeMatchesItem = {
+  id: number;
+  name: string;
+  /**
+   * @minimum 0
+   * @maximum 1
+   */
+  confidence: number;
+};
+
+export type AiCampaignBriefResultOwningUnitMatch = null | {
+  name: string;
+  /**
+   * @minimum 0
+   * @maximum 1
+   */
+  confidence: number;
+};
+
+export type AiCampaignBriefResultTouchesItem = {
+  order: number;
+  channelLabel: string;
+  /** @minimum 0 */
+  dayOffset: number;
+  purpose: string;
+};
+
+export interface AiCampaignBriefResult {
+  generatedAt: string;
+  name: string;
+  /** @nullable */
+  owningUnit: string | null;
+  /** @nullable */
+  intendedSendStartDate: string | null;
+  campaignTypeIds: number[];
+  campaignTypeMatches: AiCampaignBriefResultCampaignTypeMatchesItem[];
+  owningUnitMatch: AiCampaignBriefResultOwningUnitMatch;
+  touches: AiCampaignBriefResultTouchesItem[];
+  notes: string;
+}
+
 export interface AiClassifyInput {
   /**
    * @minLength 3

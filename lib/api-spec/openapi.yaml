@@ -1362,6 +1362,40 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Touch" }
+  /campaigns/{id}/ai/suggest-override-reason:
+    post:
+      operationId: aiSuggestOverrideReason
+      tags: [aiAssist]
+      summary: Generate a 1-2 sentence override-justification template for a threshold conflict. Takes only the threshold rule id and the projected count (no donor PII).
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AiSuggestOverrideReasonInput" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AiOverrideReasonSuggestion" }
+  /ai/campaign-brief:
+    post:
+      operationId: aiCampaignBrief
+      tags: [aiAssist]
+      summary: Extract structured campaign-setup fields (name, type, owning unit, intended send date, touches) from a free-text brief. Type and owning unit are server-matched against the active taxonomy.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AiCampaignBriefInput" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AiCampaignBriefResult" }
   /ai/classify-suppression-reason:
     post:
       operationId: aiClassifySuppressionReason
@@ -2429,6 +2463,62 @@ components:
         from: { type: string, format: date }
         to: { type: string, format: date }
         editedAt: { type: string, format: date-time }
+    AiSuggestOverrideReasonInput:
+      type: object
+      required: [thresholdId, projectedCount]
+      properties:
+        thresholdId: { type: integer }
+        projectedCount: { type: integer, minimum: 1 }
+    AiOverrideReasonSuggestion:
+      type: object
+      required: [generatedAt, reason]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        reason: { type: string }
+    AiCampaignBriefInput:
+      type: object
+      required: [brief]
+      properties:
+        brief: { type: string, minLength: 10, maxLength: 4000 }
+    AiCampaignBriefResult:
+      type: object
+      required: [generatedAt, name, owningUnit, intendedSendStartDate, campaignTypeIds, campaignTypeMatches, owningUnitMatch, touches, notes]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        name: { type: string }
+        owningUnit: { type: ["string", "null"] }
+        intendedSendStartDate: { type: ["string", "null"], format: date }
+        campaignTypeIds:
+          type: array
+          items: { type: integer }
+        campaignTypeMatches:
+          type: array
+          items:
+            type: object
+            required: [id, name, confidence]
+            properties:
+              id: { type: integer }
+              name: { type: string }
+              confidence: { type: number, minimum: 0, maximum: 1 }
+        owningUnitMatch:
+          oneOf:
+            - type: "null"
+            - type: object
+              required: [name, confidence]
+              properties:
+                name: { type: string }
+                confidence: { type: number, minimum: 0, maximum: 1 }
+        touches:
+          type: array
+          items:
+            type: object
+            required: [order, channelLabel, dayOffset, purpose]
+            properties:
+              order: { type: integer }
+              channelLabel: { type: string }
+              dayOffset: { type: integer, minimum: 0 }
+              purpose: { type: string }
+        notes: { type: string }
     AiClassifyInput:
       type: object
       required: [text]

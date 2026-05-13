@@ -9,6 +9,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2, Plus, Trash2, Pencil, RefreshCw, Info, Search, ArrowUpDown, ArrowUp, ArrowDown, ShieldOff, Wand2 } from "lucide-react";
+import { AiSuggestReasonPopover } from "@/components/ai-suggest-reason-popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -618,16 +619,24 @@ export default function ThresholdsStep({ campaign }: { campaign: any }) {
                         {c.overridden ? <span className="text-xs bg-emerald-100 text-emerald-800 px-2 py-1 rounded">Overridden</span> : <span className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">Flagged</span>}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-destructive hover:text-destructive h-8 w-8"
-                          title="Remove from campaign (add to suppressions)"
-                          disabled={suppressMutation.isPending}
-                          onClick={() => handleSuppress([c.donorId])}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <div className="inline-flex items-center justify-end gap-1">
+                          <AiSuggestReasonPopover
+                            campaignId={campaign.id}
+                            thresholdId={c.thresholdId}
+                            projectedCount={c.projectedCount}
+                            ariaLabel={`Suggest override reason for constituent ${c.donorId}`}
+                          />
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-destructive hover:text-destructive h-8 w-8"
+                            title="Remove from campaign (add to suppressions)"
+                            disabled={suppressMutation.isPending}
+                            onClick={() => handleSuppress([c.donorId])}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))

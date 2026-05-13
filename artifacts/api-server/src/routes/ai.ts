@@ -9,6 +9,8 @@ import {
   campaignTypesTable,
   campaignTypeLinksTable,
   suppressionReasonCodesTable,
+  thresholdsTable,
+  owningUnitsTable,
 } from "@workspace/db";
 import {
   computeThresholdConflicts,
@@ -21,7 +23,11 @@ import {
   type PlannedTouch,
   type ThresholdRule,
 } from "../lib/threshold";
-import { AiClassifySuppressionReasonBody } from "@workspace/api-zod";
+import {
+  AiClassifySuppressionReasonBody,
+  AiSuggestOverrideReasonBody,
+  AiCampaignBriefBody,
+} from "@workspace/api-zod";
 import { requireAuth, audit } from "../lib/auth";
 import { checkAiPerMinute } from "../lib/rateLimit";
 import {
@@ -560,6 +566,329 @@ router.post("/ai/classify-suppression-reason", requireAuth, async (req, res): Pr
         actor: req.currentUser,
         action: "ai_classify_reason",
         entityType: "suppression_reason_code",
+        details: `model=${MODEL} in=${usage.input} out=${usage.output} ok=${usage.ok}`,
+      });
+    }
+  }
+});
+
+// ───────── AI suggest override-reason
+//
+// Generates a 1-2 sentence justification template for overriding a flagged
+// threshold conflict. Takes only the threshold rule id + projected count —
+// no donor id, no audience id, no PII. The output is meant to be a copyable
+// starting point that staff edit before saving as their override rationale.
+
+interface OverrideReasonFacts {
+  thresholdName: string;
+  scope: string;
+  windowDays: number;
+  maxAllowed: number;
+  projectedCount: number;
+  channelLabel: string | null;
+  campaignTypeLabel: string | null;
+}
+
+export function buildOverrideReasonPrompt(facts: OverrideReasonFacts): { system: string; user: string } {
+  return {
+    system:
+      "You are an advancement-operations assistant for NC State University. " +
+      "You write a SHORT (1-2 sentence, max 320 characters) justification template that a staff member can edit and use as the documented reason for OVERRIDING a flagged communication-volume threshold for a single constituent. " +
+      "Write in plain professional English. Do not mention any constituent names, ids, emails, or other identifying information — you have not been given any. " +
+      "Frame the suggestion as a starting point: explain why the additional touch could be defensible (e.g. high-priority, time-sensitive, no other channel reached them), and remind the reader to add campaign-specific context.",
+    user:
+      "Write a 1-2 sentence override-justification template for the following threshold breach. " +
+      "Reference the rule by its name, the limit, and the projected count. " +
+      "End with a short reminder that the reviewer should add specific business context.\n\n" +
+      JSON.stringify(facts, null, 2),
+  };
+}
+
+router.post("/campaigns/:id/ai/suggest-override-reason", requireAuth, async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  let usage = { input: 0, output: 0, ok: false };
+  try {
+    if (!(await gateAiRequest(req, res))) return;
+    const body = AiSuggestOverrideReasonBody.safeParse(req.body);
+    if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+    const { thresholdId, projectedCount } = body.data;
+
+    const [rule] = await db
+      .select()
+      .from(thresholdsTable)
+      .where(eq(thresholdsTable.id, thresholdId));
+    if (!rule || rule.campaignId !== id) {
+      res.status(404).json({ error: "Threshold not found" });
+      return;
+    }
+
+    let channelLabel: string | null = null;
+    if (rule.channelId != null) {
+      const [c] = await db.select({ name: channelsTable.name }).from(channelsTable).where(eq(channelsTable.id, rule.channelId));
+      channelLabel = c?.name ?? null;
+    }
+    let campaignTypeLabel: string | null = null;
+    if (rule.campaignTypeId != null) {
+      const [t] = await db.select({ name: campaignTypesTable.name }).from(campaignTypesTable).where(eq(campaignTypesTable.id, rule.campaignTypeId));
+      campaignTypeLabel = t?.name ?? null;
+    }
+
+    const facts: OverrideReasonFacts = {
+      thresholdName: rule.name,
+      scope: rule.scope,
+      windowDays: rule.windowDays,
+      maxAllowed: rule.maxTouchpoints,
+      projectedCount,
+      channelLabel,
+      campaignTypeLabel,
+    };
+    assertNoPii(facts, "facts");
+
+    const prompt = buildOverrideReasonPrompt(facts);
+    const result = await complete({ ...prompt, maxTokens: 400 });
+    usage = { input: result.inputTokens, output: result.outputTokens, ok: true };
+
+    const reason = result.text.trim().slice(0, 600);
+    res.json({ generatedAt: new Date().toISOString(), reason });
+  } catch (err) {
+    handleAiError(err, res, req.log);
+  } finally {
+    if (req.currentUser) {
+      await recordAiUsage({
+        userId: req.currentUser.id,
+        route: "suggest-override-reason",
+        inputTokens: usage.input,
+        outputTokens: usage.output,
+        succeeded: usage.ok,
+      });
+      await audit({
+        actor: req.currentUser,
+        action: "ai_suggest_override_reason",
+        entityType: "campaign",
+        entityId: id,
+        details: `model=${MODEL} in=${usage.input} out=${usage.output} ok=${usage.ok}`,
+      });
+    }
+  }
+});
+
+// ───────── AI campaign-brief → structured setup
+//
+// Extract structured campaign-setup fields (name, type, owning unit, intended
+// send date, suggested touches) from a free-text brief. Type and owning unit
+// names suggested by the model are matched server-side against the active
+// taxonomy — the model never invents ids.
+
+interface BriefRawTouch {
+  order?: number;
+  channelLabel?: string;
+  dayOffset?: number;
+  purpose?: string;
+}
+export interface BriefRawExtraction {
+  name?: string;
+  owningUnit?: string | null;
+  intendedSendStartDate?: string | null;
+  campaignTypeNames?: string[];
+  touches?: BriefRawTouch[];
+  notes?: string;
+}
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Real calendar-date check: the input must be ISO YYYY-MM-DD AND round-trip
+ * through `Date` to the same string. Rejects regex-passable but impossible
+ * dates like 2026-99-99 or 2026-02-30 so the model cannot smuggle nonsense
+ * into the campaign setup form.
+ */
+function isValidIsoCalendarDate(s: string): boolean {
+  if (!ISO_DATE_RE.test(s)) return false;
+  const [y, m, d] = s.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return (
+    dt.getUTCFullYear() === y &&
+    dt.getUTCMonth() === m - 1 &&
+    dt.getUTCDate() === d
+  );
+}
+
+/** Lowercase + collapse whitespace for fuzzy taxonomy matching. */
+function normalizeLabel(s: string): string {
+  return s.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Score a model-suggested name against an authoritative taxonomy entry.
+ * Returns a confidence in [0, 1]: 1 = exact (case-insensitive), 0.85 = one
+ * is a substring of the other, 0 = no overlap.
+ */
+export function fuzzyMatchScore(suggested: string, candidate: string): number {
+  const a = normalizeLabel(suggested);
+  const b = normalizeLabel(candidate);
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (a.includes(b) || b.includes(a)) return 0.85;
+  return 0;
+}
+
+export interface BriefMatchOptions {
+  channels: { name: string }[];
+  types: { id: number; name: string }[];
+  units: { name: string }[];
+  briefMaxTouches?: number;
+}
+
+export interface BriefMatchResult {
+  name: string;
+  owningUnit: string | null;
+  intendedSendStartDate: string | null;
+  campaignTypeIds: number[];
+  campaignTypeMatches: { id: number; name: string; confidence: number }[];
+  owningUnitMatch: { name: string; confidence: number } | null;
+  touches: { order: number; channelLabel: string; dayOffset: number; purpose: string }[];
+  notes: string;
+}
+
+/**
+ * Pure helper that takes the model's raw extraction plus the active taxonomy
+ * and produces the response shape — applying fuzzy matching, channel
+ * filtering, and bounds. Exported so it can be unit-tested without spinning
+ * up the AI provider.
+ */
+export function matchBriefExtraction(raw: BriefRawExtraction, opts: BriefMatchOptions): BriefMatchResult {
+  const cap = opts.briefMaxTouches ?? 6;
+  const name = String(raw.name ?? "").trim().slice(0, 200);
+
+  // Type matches: keep at confidence >= 0.5, dedupe by id, preserve highest score.
+  const typeScores = new Map<number, { id: number; name: string; confidence: number }>();
+  for (const sn of raw.campaignTypeNames ?? []) {
+    if (typeof sn !== "string" || !sn.trim()) continue;
+    let best: { id: number; name: string; confidence: number } | null = null;
+    for (const t of opts.types) {
+      const score = fuzzyMatchScore(sn, t.name);
+      if (score >= 0.5 && (!best || score > best.confidence)) {
+        best = { id: t.id, name: t.name, confidence: score };
+      }
+    }
+    if (best) {
+      const prev = typeScores.get(best.id);
+      if (!prev || best.confidence > prev.confidence) typeScores.set(best.id, best);
+    }
+  }
+  const campaignTypeMatches = Array.from(typeScores.values()).sort((a, b) => b.confidence - a.confidence);
+
+  // Owning unit: best single fuzzy match >= 0.5.
+  let owningUnitMatch: { name: string; confidence: number } | null = null;
+  const suggestedUnit = typeof raw.owningUnit === "string" ? raw.owningUnit : null;
+  if (suggestedUnit) {
+    for (const u of opts.units) {
+      const score = fuzzyMatchScore(suggestedUnit, u.name);
+      if (score >= 0.5 && (!owningUnitMatch || score > owningUnitMatch.confidence)) {
+        owningUnitMatch = { name: u.name, confidence: score };
+      }
+    }
+  }
+
+  // Date: keep only ISO YYYY-MM-DD; drop anything else (avoids fabricated dates).
+  let intendedSendStartDate: string | null = null;
+  if (typeof raw.intendedSendStartDate === "string" && isValidIsoCalendarDate(raw.intendedSendStartDate)) {
+    intendedSendStartDate = raw.intendedSendStartDate;
+  }
+
+  // Touches: filter to active channel labels, clamp dayOffset, cap count.
+  const channelLabels = new Set(opts.channels.map((c) => c.name));
+  const touches = (raw.touches ?? [])
+    .filter((t): t is BriefRawTouch => !!t && typeof t.channelLabel === "string" && channelLabels.has(t.channelLabel))
+    .slice(0, cap)
+    .map((t, i) => ({
+      order: Number.isFinite(Number(t.order)) ? Number(t.order) : i + 1,
+      channelLabel: String(t.channelLabel),
+      dayOffset: Math.max(0, Math.floor(Number(t.dayOffset) || 0)),
+      purpose: String(t.purpose ?? "").slice(0, 200),
+    }));
+
+  return {
+    name,
+    owningUnit: owningUnitMatch?.name ?? null,
+    intendedSendStartDate,
+    campaignTypeIds: campaignTypeMatches.map((m) => m.id),
+    campaignTypeMatches,
+    owningUnitMatch,
+    touches,
+    notes: String(raw.notes ?? "").slice(0, 600),
+  };
+}
+
+export function buildCampaignBriefPrompt(opts: {
+  brief: string;
+  channels: { name: string }[];
+  types: { name: string }[];
+  units: { name: string }[];
+}): { system: string; user: string } {
+  return {
+    system:
+      "You are an advancement-operations assistant for NC State University. " +
+      "Extract structured campaign-setup fields from a free-text staff brief. " +
+      "Output STRICT JSON only — no prose, no Markdown, no backticks. " +
+      "If a field cannot be inferred, return null (or [] for arrays). Never invent dates, names, or counts.",
+    user:
+      "Read the brief and return JSON of the form: " +
+      '{"name": "...", "owningUnit": "..." | null, "intendedSendStartDate": "YYYY-MM-DD" | null, "campaignTypeNames": ["..."], "touches": [{"order": 1, "channelLabel": "Email", "dayOffset": 0, "purpose": "..."}], "notes": "..."}\n\n' +
+      "Rules:\n" +
+      "- name: a short campaign title (max 200 chars). Required if discernible.\n" +
+      "- owningUnit: the single best match from the unit list below, or null. Use the EXACT name as written in the list.\n" +
+      "- intendedSendStartDate: ISO YYYY-MM-DD if explicitly stated; otherwise null. Do not guess.\n" +
+      "- campaignTypeNames: 0-3 names from the type list below, ranked best first. Use the EXACT names from the list.\n" +
+      "- touches: 0-6 planned communication touches. channelLabel MUST be one of the channel names below. dayOffset is a non-negative integer (0 = the start date).\n" +
+      "- notes: optional 1-2 sentence summary of any caveats or open questions.\n\n" +
+      "Channels (allowed channelLabel values):\n" + JSON.stringify(opts.channels.map((c) => c.name)) + "\n\n" +
+      "Campaign types:\n" + JSON.stringify(opts.types.map((t) => t.name)) + "\n\n" +
+      "Owning units:\n" + JSON.stringify(opts.units.map((u) => u.name)) + "\n\n" +
+      "Brief:\n" + opts.brief.trim(),
+  };
+}
+
+router.post("/ai/campaign-brief", requireAuth, async (req, res): Promise<void> => {
+  let usage = { input: 0, output: 0, ok: false };
+  try {
+    if (!(await gateAiRequest(req, res))) return;
+    const body = AiCampaignBriefBody.safeParse(req.body);
+    if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+    assertNoPii(body.data.brief, "brief");
+
+    const [channels, types, units] = await Promise.all([
+      db.select({ name: channelsTable.name }).from(channelsTable).where(eq(channelsTable.active, true)),
+      db.select({ id: campaignTypesTable.id, name: campaignTypesTable.name }).from(campaignTypesTable).where(eq(campaignTypesTable.active, true)),
+      db.select({ name: owningUnitsTable.name }).from(owningUnitsTable).where(eq(owningUnitsTable.active, true)),
+    ]);
+
+    const prompt = buildCampaignBriefPrompt({ brief: body.data.brief, channels, types, units });
+    // Defense-in-depth: scan the full outbound prompt (brief + DB-sourced
+    // taxonomy labels) so a polluted taxonomy row can never silently
+    // exfiltrate PII to the model.
+    assertNoPii(prompt, "campaignBriefPrompt");
+    const data = await completeJson<BriefRawExtraction>({ ...prompt, maxTokens: 1500 });
+    usage = { input: data.inputTokens, output: data.outputTokens, ok: true };
+
+    const matched = matchBriefExtraction(data.value, { channels, types, units });
+    res.json({ generatedAt: new Date().toISOString(), ...matched });
+  } catch (err) {
+    handleAiError(err, res, req.log);
+  } finally {
+    if (req.currentUser) {
+      await recordAiUsage({
+        userId: req.currentUser.id,
+        route: "campaign-brief",
+        inputTokens: usage.input,
+        outputTokens: usage.output,
+        succeeded: usage.ok,
+      });
+      await audit({
+        actor: req.currentUser,
+        action: "ai_brief_to_campaign",
+        entityType: "campaign",
         details: `model=${MODEL} in=${usage.input} out=${usage.output} ok=${usage.ok}`,
       });
     }

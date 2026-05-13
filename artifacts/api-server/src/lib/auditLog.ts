@@ -9,9 +9,11 @@ import { auditLogTable } from "@workspace/db";
 export const AUDIT_ACTIONS = [
   "acknowledge_pii",
   "ai_audience_summary",
+  "ai_brief_to_campaign",
   "ai_classify_reason",
   "ai_suggest_cadence",
   "ai_suggest_date_shifts",
+  "ai_suggest_override_reason",
   "apply_threshold_templates",
   "archive_campaign",
   "campaign_cloned",

@@ -1714,6 +1714,83 @@ export const UndoManualDateEditResponse = zod.object({
   customDuplicateSamples: zod.array(zod.string()).optional(),
 });
 
+/**
+ * @summary Generate a 1-2 sentence override-justification template for a threshold conflict. Takes only the threshold rule id and the projected count (no donor PII).
+ */
+export const AiSuggestOverrideReasonParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const AiSuggestOverrideReasonBody = zod.object({
+  thresholdId: zod.number(),
+  projectedCount: zod.number().min(1),
+});
+
+export const AiSuggestOverrideReasonResponse = zod.object({
+  generatedAt: zod.coerce.date(),
+  reason: zod.string(),
+});
+
+/**
+ * @summary Extract structured campaign-setup fields (name, type, owning unit, intended send date, touches) from a free-text brief. Type and owning unit are server-matched against the active taxonomy.
+ */
+export const aiCampaignBriefBodyBriefMin = 10;
+export const aiCampaignBriefBodyBriefMax = 4000;
+
+export const AiCampaignBriefBody = zod.object({
+  brief: zod
+    .string()
+    .min(aiCampaignBriefBodyBriefMin)
+    .max(aiCampaignBriefBodyBriefMax),
+});
+
+export const aiCampaignBriefResponseCampaignTypeMatchesItemConfidenceMin = 0;
+export const aiCampaignBriefResponseCampaignTypeMatchesItemConfidenceMax = 1;
+
+export const aiCampaignBriefResponseOwningUnitMatchTwoConfidenceMin = 0;
+export const aiCampaignBriefResponseOwningUnitMatchTwoConfidenceMax = 1;
+
+export const aiCampaignBriefResponseTouchesItemDayOffsetMin = 0;
+
+export const AiCampaignBriefResponse = zod.object({
+  generatedAt: zod.coerce.date(),
+  name: zod.string(),
+  owningUnit: zod.string().nullable(),
+  intendedSendStartDate: zod.coerce.date().nullable(),
+  campaignTypeIds: zod.array(zod.number()),
+  campaignTypeMatches: zod.array(
+    zod.object({
+      id: zod.number(),
+      name: zod.string(),
+      confidence: zod
+        .number()
+        .min(aiCampaignBriefResponseCampaignTypeMatchesItemConfidenceMin)
+        .max(aiCampaignBriefResponseCampaignTypeMatchesItemConfidenceMax),
+    }),
+  ),
+  owningUnitMatch: zod.union([
+    zod.null(),
+    zod.object({
+      name: zod.string(),
+      confidence: zod
+        .number()
+        .min(aiCampaignBriefResponseOwningUnitMatchTwoConfidenceMin)
+        .max(aiCampaignBriefResponseOwningUnitMatchTwoConfidenceMax),
+    }),
+  ]),
+  touches: zod.array(
+    zod.object({
+      order: zod.number(),
+      channelLabel: zod.string(),
+      dayOffset: zod
+        .number()
+        .min(aiCampaignBriefResponseTouchesItemDayOffsetMin),
+      purpose: zod.string(),
+    }),
+  ),
+  notes: zod.string(),
+});
+
 export const aiClassifySuppressionReasonBodyTextMin = 3;
 export const aiClassifySuppressionReasonBodyTextMax = 4000;
 
