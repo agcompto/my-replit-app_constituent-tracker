@@ -408,8 +408,8 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
                         ) : (
                           <div className="flex items-center gap-2">
                             <Badge variant="outline" className="text-muted-foreground">Campaign-wide</Badge>
-                            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => openAudienceDialog(t)}>
-                              <Users className="h-3.5 w-3.5 mr-1" /> Set custom
+                            <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => openAudienceDialog(t)} title="Upload a custom audience CSV for just this touch">
+                              <Upload className="h-3.5 w-3.5 mr-1" /> Upload audience for this touch
                             </Button>
                           </div>
                         )}
@@ -465,7 +465,7 @@ export default function TouchesStep({ campaign }: { campaign: any }) {
                         <>
                           <Badge variant="outline" className="text-muted-foreground">Campaign-wide</Badge>
                           <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => openAudienceDialog(t)}>
-                            <Users className="h-3.5 w-3.5 mr-1" /> Set custom
+                            <Upload className="h-3.5 w-3.5 mr-1" /> Upload audience
                           </Button>
                         </>
                       )}
