@@ -1,6 +1,8 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq, ilike, or } from "drizzle-orm";
-import { db, campaignsTable, campaignTypeLinksTable, campaignTypesTable, channelsTable, owningUnitsTable, touchesTable, usersTable, thresholdsTable, suppressionsTable, suppressionReasonCodesTable, seedGroupsTable } from "@workspace/db";
+import { PassThrough } from "node:stream";
+import archiver from "archiver";
+import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import { db, campaignsTable, campaignTypeLinksTable, campaignTypesTable, channelsTable, owningUnitsTable, touchesTable, touchpointsTable, exportJobsTable, usersTable, thresholdsTable, suppressionsTable, suppressionReasonCodesTable, seedGroupsTable } from "@workspace/db";
 import {
   CreateCampaignBody,
   GetCampaignParams,
@@ -12,12 +14,20 @@ import {
   DeleteCampaignParams,
   CloneCampaignParams,
   CloneCampaignBody,
+  BulkArchiveCampaignsBody,
+  BulkExportCampaignsBody,
+  BulkDownloadCampaignManifestsBody,
 } from "@workspace/api-zod";
-import PDFDocument from "pdfkit";
 import { requireAuth, requireRole, audit, canMutateCampaign } from "../lib/auth";
 import { requireRecentAuth } from "../lib/recentAuth";
 import { loadCampaignFull, loadCampaignSummary, setCampaignTypes } from "../lib/campaigns";
 import { executeClone } from "../lib/cloneCampaign";
+import { peekExportQuotaSlots, recordExportQuota } from "../lib/rateLimit";
+import {
+  buildCampaignTouchpointCsvs,
+  safeFilenamePart,
+  writeCampaignSummaryPdf,
+} from "../lib/campaignExports";
 
 const router: IRouter = Router();
 
@@ -256,6 +266,361 @@ router.post("/campaigns/:id/clone", requireAuth, async (req, res): Promise<void>
   });
 });
 
+// ───────── Bulk operations
+//
+// Note: these MUST be registered before any `/campaigns/:id/...` handler so
+// the literal `bulk` segment doesn't get parsed as a numeric campaign id.
+
+router.post(
+  "/campaigns/bulk/archive",
+  requireRole("admin", "super_admin"),
+  async (req, res): Promise<void> => {
+    const body = BulkArchiveCampaignsBody.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: body.error.message });
+      return;
+    }
+    const ids = Array.from(new Set(body.data.ids));
+    const existing = await db
+      .select({ id: campaignsTable.id, status: campaignsTable.status })
+      .from(campaignsTable)
+      .where(inArray(campaignsTable.id, ids));
+    const byId = new Map(existing.map((r) => [r.id, r] as const));
+
+    const results: Array<{
+      id: number;
+      status:
+        | "archived"
+        | "already_archived"
+        | "voided"
+        | "not_found"
+        | "forbidden";
+    }> = [];
+    let archivedCount = 0;
+    for (const id of ids) {
+      const row = byId.get(id);
+      if (!row) {
+        results.push({ id, status: "not_found" });
+        continue;
+      }
+      if (row.status === "voided") {
+        results.push({ id, status: "voided" });
+        continue;
+      }
+      if (row.status === "archived") {
+        results.push({ id, status: "already_archived" });
+        continue;
+      }
+      await db
+        .update(campaignsTable)
+        .set({ status: "archived", archivedAt: new Date() })
+        .where(eq(campaignsTable.id, id));
+      await audit({
+        actor: req.currentUser!,
+        action: "archive_campaign",
+        entityType: "campaign",
+        entityId: id,
+      });
+      results.push({ id, status: "archived" });
+      archivedCount++;
+    }
+    res.json({ results, archivedCount });
+  },
+);
+
+// Bulk export: stream a ZIP of per-campaign summary PDFs for every
+// selected campaign the caller is allowed to mutate. Mirrors the existing
+// single-summary endpoint (`GET /campaigns/:id/summary.pdf`) — one PDF
+// per campaign, true per-entry streaming via PassThrough so memory does
+// not balloon with batch size.
+//
+// Authorization: per-id `canMutateCampaign` — never bundle a campaign the
+// caller can't already download individually. Inaccessible / voided /
+// missing campaigns are silently skipped; a fully-empty selection returns
+// 404 instead of an empty ZIP.
+//
+// Quota: every included campaign in the batch counts as one slot against
+// the per-user 20/hour export quota. The whole batch is rejected up-front
+// (HTTP 429 + Retry-After) rather than partway through.
+export async function classifyBulkExportSelection(
+  ids: number[],
+  user: NonNullable<typeof db extends never ? never : Parameters<typeof canMutateCampaign>[1]>,
+  opts: { requireExported?: boolean } = {},
+): Promise<{
+  results: Array<{
+    id: number;
+    status: "included" | "not_found" | "forbidden" | "voided" | "not_exported";
+    name?: string;
+  }>;
+  included: Array<{ id: number; name: string }>;
+}> {
+  const requireExported = opts.requireExported ?? false;
+  const results: Array<{
+    id: number;
+    status: "included" | "not_found" | "forbidden" | "voided" | "not_exported";
+    name?: string;
+  }> = [];
+  const included: Array<{ id: number; name: string }> = [];
+  for (const id of ids) {
+    const access = await canMutateCampaign(id, user);
+    if (access === "not_found") {
+      results.push({ id, status: "not_found" });
+      continue;
+    }
+    if (access === "forbidden") {
+      results.push({ id, status: "forbidden" });
+      continue;
+    }
+    if (access === "voided") {
+      results.push({ id, status: "voided" });
+      continue;
+    }
+    const [row] = await db
+      .select({ name: campaignsTable.name, exportedAt: campaignsTable.exportedAt })
+      .from(campaignsTable)
+      .where(eq(campaignsTable.id, id));
+    if (!row) {
+      results.push({ id, status: "not_found" });
+      continue;
+    }
+    if (requireExported && !row.exportedAt) {
+      results.push({ id, status: "not_exported", name: row.name });
+      continue;
+    }
+    results.push({ id, status: "included", name: row.name });
+    included.push({ id, name: row.name });
+  }
+  return { results, included };
+}
+
+router.post(
+  "/campaigns/bulk/export.zip",
+  requireAuth,
+  async (req, res): Promise<void> => {
+    const body = BulkExportCampaignsBody.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: body.error.message });
+      return;
+    }
+    const ids = Array.from(new Set(body.data.ids));
+    // PDFs don't require prior export — every accessible campaign can be
+    // summarized — so leave requireExported off here.
+    const { included } = await classifyBulkExportSelection(
+      ids,
+      req.currentUser!,
+    );
+    if (included.length === 0) {
+      res.status(404).json({
+        error:
+          "None of the selected campaigns are accessible (not found, forbidden, or voided).",
+      });
+      return;
+    }
+
+    // Per-export row cap, mirroring the single-export route in
+    // routes/exports.ts. The bulk endpoint streams summary PDFs, but
+    // the underlying donor-touchpoint volume those PDFs describe is
+    // still bounded by MAX_EXPORT_ROWS so a single bulk call cannot
+    // exfiltrate more than the configured per-export ceiling. We only
+    // count rows from each campaign's *current* export batch (jobs
+    // within 60s of campaigns.exported_at) so historical re-exports
+    // don't inflate the total and trigger spurious 413s.
+    const MAX_EXPORT_ROWS = Math.max(
+      1,
+      Number.parseInt(process.env.MAX_EXPORT_ROWS ?? "500000", 10) || 500_000,
+    );
+    const includedIds = included.map((c) => c.id);
+    const [{ totalRows }] = await db
+      .select({
+        totalRows: sql<number>`coalesce(sum(${exportJobsTable.rowCount}), 0)::int`,
+      })
+      .from(exportJobsTable)
+      .innerJoin(
+        campaignsTable,
+        eq(campaignsTable.id, exportJobsTable.campaignId),
+      )
+      .where(
+        and(
+          inArray(exportJobsTable.campaignId, includedIds),
+          sql`${campaignsTable.exportedAt} is not null`,
+          sql`abs(extract(epoch from (${exportJobsTable.exportedAt} - ${campaignsTable.exportedAt}))) < 60`,
+        ),
+      );
+    if (totalRows > MAX_EXPORT_ROWS) {
+      res.status(413).json({
+        code: "export_row_cap_exceeded",
+        error: `This bulk export would describe ${totalRows.toLocaleString()} rows across ${included.length} campaigns, which exceeds the per-export cap of ${MAX_EXPORT_ROWS.toLocaleString()}. Reduce the selection or raise MAX_EXPORT_ROWS.`,
+        totalRows,
+        maxRows: MAX_EXPORT_ROWS,
+      });
+      return;
+    }
+
+    const userId = req.currentUser!.id;
+    const peek = peekExportQuotaSlots(userId);
+    if (peek.remaining < included.length) {
+      res.setHeader("Retry-After", String(peek.retryAfterSec || 60));
+      res.status(429).json({
+        code: "export_quota_exceeded",
+        error: `Export quota exceeded — need ${included.length} slots, have ${peek.remaining}.`,
+      });
+      return;
+    }
+    recordExportQuota(userId, included.length);
+
+    const archive = archiver("zip", { zlib: { level: 6 } });
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="campaign_summaries.zip"`,
+    );
+    archive.on("error", (err) => {
+      req.log?.error({ err }, "bulk export zip error");
+      try { res.destroy(err); } catch { /* noop */ }
+    });
+    archive.pipe(res);
+
+    // True per-entry streaming: each summary PDF is rendered into a
+    // PassThrough that archiver consumes as it builds the entry. We never
+    // buffer a full PDF in memory — the next entry isn't started until
+    // archiver has finished consuming the previous PassThrough.
+    for (const c of included) {
+      const folder = safeFilenamePart(c.name, c.id);
+      const filename = `${folder}_summary.pdf`;
+      const pass = new PassThrough();
+      archive.append(pass, { name: filename });
+      try {
+        await writeCampaignSummaryPdf(c.id, pass);
+      } catch (err) {
+        req.log?.error({ err, id: c.id }, "summary pdf render failed");
+        try { pass.destroy(err as Error); } catch { /* noop */ }
+        throw err;
+      }
+      await audit({
+        actor: req.currentUser!,
+        action: "bulk_export_campaign",
+        entityType: "campaign",
+        entityId: c.id,
+        details: `summary PDF (${filename})`,
+      });
+    }
+    await archive.finalize();
+  },
+);
+
+router.post(
+  "/campaigns/bulk/manifests.zip",
+  requireAuth,
+  async (req, res): Promise<void> => {
+    const body = BulkDownloadCampaignManifestsBody.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: body.error.message });
+      return;
+    }
+    const ids = Array.from(new Set(body.data.ids));
+    // Per-id authz: the existing single-export endpoint enforces
+    // canMutateCampaign, so the bulk version must too — otherwise this
+    // endpoint becomes an IDOR-style oracle that lets any authenticated
+    // user pull audience CSVs for campaigns they cannot otherwise read.
+    // requireExported=true so never-exported campaigns are filtered before
+    // they consume quota slots.
+    const { included } = await classifyBulkExportSelection(ids, req.currentUser!, { requireExported: true });
+    if (included.length === 0) {
+      res.status(404).json({
+        error:
+          "None of the selected campaigns have an exported audience to bundle.",
+      });
+      return;
+    }
+
+    // Build the per-touch audience CSVs for each included campaign first.
+    // buildCampaignTouchpointCsvs returns only the *current* export batch
+    // (jobs within 60s of campaigns.exported_at), so totalRows reflects
+    // what we're actually about to ship — historical re-exports don't
+    // inflate the total. A campaign whose batch is empty drops out here.
+    const builds: Array<{
+      id: number;
+      name: string;
+      totalRows: number;
+      files: Array<{ fileName: string; csv: string; rowCount: number }>;
+    }> = [];
+    for (const c of included) {
+      const built = await buildCampaignTouchpointCsvs(c.id);
+      if (!built || built.files.length === 0) continue;
+      builds.push({ id: c.id, name: c.name, totalRows: built.totalRows, files: built.files });
+    }
+    if (builds.length === 0) {
+      res.status(404).json({
+        error:
+          "None of the selected campaigns have an exported audience to bundle.",
+      });
+      return;
+    }
+
+    // Per-export row cap (same MAX_EXPORT_ROWS semantics as the single
+    // export route in routes/exports.ts). Sum is over the current batch
+    // only because buildCampaignTouchpointCsvs already filters to it.
+    const MAX_EXPORT_ROWS = Math.max(
+      1,
+      Number.parseInt(process.env.MAX_EXPORT_ROWS ?? "500000", 10) || 500_000,
+    );
+    const totalRows = builds.reduce((s, b) => s + b.totalRows, 0);
+    if (totalRows > MAX_EXPORT_ROWS) {
+      res.status(413).json({
+        code: "export_row_cap_exceeded",
+        error: `This bulk audience download would produce ${totalRows.toLocaleString()} rows across ${builds.length} campaigns, which exceeds the per-export cap of ${MAX_EXPORT_ROWS.toLocaleString()}. Reduce the selection or raise MAX_EXPORT_ROWS.`,
+        totalRows,
+        maxRows: MAX_EXPORT_ROWS,
+      });
+      return;
+    }
+
+    // Quota is charged for the campaigns that actually produce ZIP
+    // entries — never-exported / empty-batch campaigns were already
+    // dropped above so they cannot consume slots.
+    const userId = req.currentUser!.id;
+    const peek = peekExportQuotaSlots(userId);
+    if (peek.remaining < builds.length) {
+      res.setHeader("Retry-After", String(peek.retryAfterSec || 60));
+      res.status(429).json({
+        code: "export_quota_exceeded",
+        error: `Export quota exceeded — need ${builds.length} slots, have ${peek.remaining}.`,
+      });
+      return;
+    }
+    recordExportQuota(userId, builds.length);
+
+    const archive = archiver("zip", { zlib: { level: 6 } });
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="campaign_audience_csvs.zip"`,
+    );
+    archive.on("error", (err) => {
+      req.log?.error({ err }, "bulk audience zip error");
+      try { res.destroy(err); } catch { /* noop */ }
+    });
+    archive.pipe(res);
+
+    for (const b of builds) {
+      const folder = safeFilenamePart(b.name, b.id);
+      for (const f of b.files) {
+        archive.append(Buffer.from(f.csv, "utf8"), {
+          name: `${folder}/${f.fileName}`,
+        });
+      }
+      await audit({
+        actor: req.currentUser!,
+        action: "bulk_download_audience_csv",
+        entityType: "campaign",
+        entityId: b.id,
+        details: `${b.files.length} touch CSV(s), ${b.totalRows} rows`,
+      });
+    }
+    await archive.finalize();
+  },
+);
+
 router.post(
   "/campaigns/:id/archive",
   requireRole("admin", "super_admin"),
@@ -350,526 +715,13 @@ router.get(
       res.status(404).json({ error: "Not found" });
       return;
     }
-    const touchRows = await db
-      .select({
-        id: touchesTable.id,
-        touchName: touchesTable.touchName,
-        sendDate: touchesTable.sendDate,
-        audienceMode: touchesTable.audienceMode,
-        customUniqueIdCount: touchesTable.customUniqueIdCount,
-        channelLabel: channelsTable.name,
-        campaignTypeLabel: campaignTypesTable.name,
-      })
-      .from(touchesTable)
-      .leftJoin(channelsTable, eq(channelsTable.id, touchesTable.channelId))
-      .leftJoin(campaignTypesTable, eq(campaignTypesTable.id, touchesTable.campaignTypeId))
-      .where(eq(touchesTable.campaignId, params.data.id))
-      .orderBy(touchesTable.sendDate);
-
-    const thresholdRows = await db
-      .select({
-        id: thresholdsTable.id,
-        name: thresholdsTable.name,
-        maxTouchpoints: thresholdsTable.maxTouchpoints,
-        windowDays: thresholdsTable.windowDays,
-        scope: thresholdsTable.scope,
-        actionMode: thresholdsTable.actionMode,
-        channelLabel: channelsTable.name,
-        campaignTypeLabel: campaignTypesTable.name,
-      })
-      .from(thresholdsTable)
-      .leftJoin(channelsTable, eq(channelsTable.id, thresholdsTable.channelId))
-      .leftJoin(
-        campaignTypesTable,
-        eq(campaignTypesTable.id, thresholdsTable.campaignTypeId),
-      )
-      .where(eq(thresholdsTable.campaignId, params.data.id))
-      .orderBy(thresholdsTable.createdAt);
-
-    const suppressionRows = await db
-      .select({
-        id: suppressionsTable.id,
-        scope: suppressionsTable.scope,
-        reason: suppressionsTable.reason,
-        donorIds: suppressionsTable.donorIds,
-        channelLabel: channelsTable.name,
-        campaignTypeLabel: campaignTypesTable.name,
-        touchLabel: touchesTable.touchName,
-        reasonCodeName: suppressionReasonCodesTable.name,
-      })
-      .from(suppressionsTable)
-      .leftJoin(channelsTable, eq(channelsTable.id, suppressionsTable.channelId))
-      .leftJoin(
-        campaignTypesTable,
-        eq(campaignTypesTable.id, suppressionsTable.campaignTypeId),
-      )
-      .leftJoin(touchesTable, eq(touchesTable.id, suppressionsTable.touchId))
-      .leftJoin(
-        suppressionReasonCodesTable,
-        eq(suppressionReasonCodesTable.id, suppressionsTable.reasonCodeId),
-      )
-      .where(eq(suppressionsTable.campaignId, params.data.id))
-      .orderBy(suppressionsTable.createdAt);
-
-    const seedRows = await db
-      .select({
-        id: seedGroupsTable.id,
-        scope: seedGroupsTable.scope,
-        donorIds: seedGroupsTable.donorIds,
-        channelLabel: channelsTable.name,
-        touchLabel: touchesTable.touchName,
-      })
-      .from(seedGroupsTable)
-      .leftJoin(channelsTable, eq(channelsTable.id, seedGroupsTable.channelId))
-      .leftJoin(touchesTable, eq(touchesTable.id, seedGroupsTable.touchId))
-      .where(eq(seedGroupsTable.campaignId, params.data.id))
-      .orderBy(seedGroupsTable.createdAt);
-
-    const safeName =
-      campaign.name.replace(/[^A-Za-z0-9_-]+/g, "_").slice(0, 60) ||
-      `campaign_${campaign.id}`;
+    const safeName = safeFilenamePart(campaign.name, campaign.id);
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
       "Content-Disposition",
       `attachment; filename="${safeName}_summary.pdf"`,
     );
-
-    const doc = new PDFDocument({ size: "LETTER", margin: 54 });
-    doc.pipe(res);
-
-    const fmtDate = (s: string | null | undefined): string => {
-      if (!s) return "-";
-      const d = new Date(s);
-      if (Number.isNaN(d.getTime())) return "-";
-      return d.toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-        timeZone: "UTC",
-      });
-    };
-    const fmtNum = (n: number | null | undefined): string =>
-      (n ?? 0).toLocaleString("en-US");
-
-    doc.font("Helvetica-Bold").fontSize(20).text(campaign.name);
-    doc
-      .moveDown(0.25)
-      .font("Helvetica")
-      .fontSize(10)
-      .fillColor("#555")
-      .text(
-        `Campaign Summary  ·  Submitted by ${campaign.submittedByName}  ·  Status: ${campaign.status}`,
-      );
-    doc.moveDown(0.5);
-    doc
-      .moveTo(doc.page.margins.left, doc.y)
-      .lineTo(doc.page.width - doc.page.margins.right, doc.y)
-      .strokeColor("#cccccc")
-      .lineWidth(1)
-      .stroke();
-    doc.fillColor("black").moveDown(0.75);
-
-    const sectionTitle = (s: string) => {
-      doc.font("Helvetica-Bold").fontSize(13).fillColor("black").text(s);
-      doc.moveDown(0.4);
-    };
-    const labelValue = (label: string, value: string, x: number, y: number, w: number) => {
-      doc
-        .font("Helvetica-Bold")
-        .fontSize(8)
-        .fillColor("#666")
-        .text(label.toUpperCase(), x, y, { width: w });
-      doc
-        .font("Helvetica")
-        .fontSize(11)
-        .fillColor("black")
-        .text(value, x, doc.y + 1, { width: w });
-    };
-
-    sectionTitle("Details");
-    const usableWidth =
-      doc.page.width - doc.page.margins.left - doc.page.margins.right;
-    const colW = usableWidth / 2;
-    let yStart = doc.y;
-    labelValue("Owning Unit", campaign.owningUnit || "-", doc.page.margins.left, yStart, colW);
-    const leftBottom1 = doc.y;
-    labelValue(
-      "Intended Send Date",
-      fmtDate(campaign.intendedSendStartDate),
-      doc.page.margins.left + colW,
-      yStart,
-      colW,
-    );
-    const rightBottom1 = doc.y;
-    yStart = Math.max(leftBottom1, rightBottom1) + 8;
-    labelValue(
-      "Salesforce ID",
-      campaign.salesforceCampaignId || "-",
-      doc.page.margins.left,
-      yStart,
-      colW,
-    );
-    const leftBottom2 = doc.y;
-    labelValue(
-      "Campaign Types",
-      campaign.campaignTypes.length
-        ? campaign.campaignTypes.map((t) => t.name).join(", ")
-        : "-",
-      doc.page.margins.left + colW,
-      yStart,
-      colW,
-    );
-    const rightBottom2 = doc.y;
-    doc.x = doc.page.margins.left;
-    doc.y = Math.max(leftBottom2, rightBottom2) + 16;
-
-    sectionTitle("Audience Summary");
-    const audCols = [
-      { label: "Valid IDs", value: fmtNum(campaign.validIdCount) },
-      { label: "Unique IDs", value: fmtNum(campaign.uniqueIdCount) },
-      { label: "Rejected", value: fmtNum(campaign.rejectedIdCount) },
-      { label: "Duplicates", value: fmtNum(campaign.duplicateIdCount) },
-    ];
-    const audColW = usableWidth / audCols.length;
-    const audY = doc.y;
-    audCols.forEach((c, i) => {
-      const x = doc.page.margins.left + i * audColW;
-      doc
-        .font("Helvetica-Bold")
-        .fontSize(8)
-        .fillColor("#666")
-        .text(c.label.toUpperCase(), x, audY, { width: audColW });
-      doc
-        .font("Helvetica-Bold")
-        .fontSize(16)
-        .fillColor("black")
-        .text(c.value, x, audY + 14, { width: audColW });
-    });
-    doc.x = doc.page.margins.left;
-    doc.y = audY + 14 + 22;
-
-    sectionTitle("Planned Touches");
-    if (touchRows.length === 0) {
-      doc
-        .font("Helvetica")
-        .fontSize(10)
-        .fillColor("#666")
-        .text("No touchpoints defined for this campaign.");
-    } else {
-      const cols = [
-        { key: "name", label: "Name", w: 0.28 },
-        { key: "channel", label: "Channel", w: 0.16 },
-        { key: "type", label: "Type", w: 0.18 },
-        { key: "date", label: "Send Date", w: 0.18 },
-        { key: "audience", label: "Audience", w: 0.20, align: "right" as const },
-      ];
-      const colWidths = cols.map((c) => c.w * usableWidth);
-      const colX = (i: number) =>
-        doc.page.margins.left +
-        colWidths.slice(0, i).reduce((a, b) => a + b, 0);
-
-      const drawHeader = () => {
-        const y = doc.y;
-        doc.font("Helvetica-Bold").fontSize(9).fillColor("black");
-        cols.forEach((c, i) => {
-          doc.text(c.label, colX(i), y, {
-            width: colWidths[i],
-            align: c.align ?? "left",
-          });
-        });
-        doc.y = y + 14;
-        doc
-          .moveTo(doc.page.margins.left, doc.y)
-          .lineTo(doc.page.width - doc.page.margins.right, doc.y)
-          .strokeColor("#cccccc")
-          .lineWidth(0.5)
-          .stroke();
-        doc.y += 4;
-      };
-
-      drawHeader();
-
-      for (const t of touchRows) {
-        const custom = t.audienceMode === "custom";
-        const audienceCount = custom
-          ? t.customUniqueIdCount ?? 0
-          : campaign.uniqueIdCount ?? 0;
-        const audienceLabel = custom ? "Custom" : "Campaign-wide";
-        const sendDateStr =
-          typeof t.sendDate === "string"
-            ? t.sendDate
-            : (t.sendDate as Date).toISOString().slice(0, 10);
-        const values = [
-          t.touchName,
-          t.channelLabel ?? "Unknown",
-          t.campaignTypeLabel ?? "Unknown",
-          fmtDate(sendDateStr),
-          `${audienceLabel} · ${fmtNum(audienceCount)}`,
-        ];
-        const rowY = doc.y;
-        doc.font("Helvetica").fontSize(10).fillColor("black");
-        const rowHeights = values.map((v, i) =>
-          doc.heightOfString(v, {
-            width: colWidths[i],
-            align: cols[i].align ?? "left",
-          }),
-        );
-        const rowHeight = Math.max(...rowHeights) + 6;
-        if (rowY + rowHeight > doc.page.height - doc.page.margins.bottom) {
-          doc.addPage();
-          drawHeader();
-        }
-        const yy = doc.y;
-        values.forEach((v, i) => {
-          doc.text(v, colX(i), yy, {
-            width: colWidths[i],
-            align: cols[i].align ?? "left",
-          });
-        });
-        doc.y = yy + rowHeight - 6;
-        doc
-          .moveTo(doc.page.margins.left, doc.y + 2)
-          .lineTo(doc.page.width - doc.page.margins.right, doc.y + 2)
-          .strokeColor("#eeeeee")
-          .lineWidth(0.5)
-          .stroke();
-        doc.y += 6;
-      }
-    }
-
-    const ACTION_MODE_LABELS: Record<string, string> = {
-      track: "Track Only",
-      flag: "Flag",
-      remove: "Remove Flagged",
-      manual: "Manual Review",
-    };
-    const thresholdScopeLabel = (
-      scope: string,
-      channel: string | null,
-      type: string | null,
-    ): string => {
-      if (scope === "all") return "All communications";
-      if (scope === "channel") return `Channel: ${channel ?? "-"}`;
-      if (scope === "campaign_type") return `Type: ${type ?? "-"}`;
-      if (scope === "channel_and_type")
-        return `${channel ?? "-"} \u00b7 ${type ?? "-"}`;
-      return scope;
-    };
-    const suppressionScopeLabel = (
-      scope: string,
-      channel: string | null,
-      type: string | null,
-      touch: string | null,
-    ): string => {
-      if (scope === "all") return "All touches";
-      if (scope === "channel") return `Channel: ${channel ?? "-"}`;
-      if (scope === "campaign_type") return `Type: ${type ?? "-"}`;
-      if (scope === "touch") return `Touch: ${touch ?? "-"}`;
-      return scope;
-    };
-    const seedScopeLabel = (
-      scope: string,
-      channel: string | null,
-      touch: string | null,
-    ): string => {
-      if (scope === "all") return "All touches";
-      if (scope === "channel") return `Channel: ${channel ?? "-"}`;
-      if (scope === "touch") return `Touch: ${touch ?? "-"}`;
-      return scope;
-    };
-
-    const ensureSpace = (needed: number) => {
-      if (doc.y + needed > doc.page.height - doc.page.margins.bottom) {
-        doc.addPage();
-      }
-    };
-
-    const drawSimpleTable = (
-      cols: Array<{ label: string; w: number; align?: "left" | "right" }>,
-      rows: string[][],
-    ) => {
-      const colWidths = cols.map((c) => c.w * usableWidth);
-      const colX = (i: number) =>
-        doc.page.margins.left + colWidths.slice(0, i).reduce((a, b) => a + b, 0);
-      const drawHeader = () => {
-        const y = doc.y;
-        doc.font("Helvetica-Bold").fontSize(9).fillColor("black");
-        cols.forEach((c, i) => {
-          doc.text(c.label, colX(i), y, {
-            width: colWidths[i],
-            align: c.align ?? "left",
-          });
-        });
-        doc.y = y + 14;
-        doc
-          .moveTo(doc.page.margins.left, doc.y)
-          .lineTo(doc.page.width - doc.page.margins.right, doc.y)
-          .strokeColor("#cccccc")
-          .lineWidth(0.5)
-          .stroke();
-        doc.y += 4;
-      };
-      drawHeader();
-      for (const values of rows) {
-        const rowY = doc.y;
-        doc.font("Helvetica").fontSize(10).fillColor("black");
-        const rowHeights = values.map((v, i) =>
-          doc.heightOfString(v, {
-            width: colWidths[i],
-            align: cols[i].align ?? "left",
-          }),
-        );
-        const rowHeight = Math.max(...rowHeights) + 6;
-        if (rowY + rowHeight > doc.page.height - doc.page.margins.bottom) {
-          doc.addPage();
-          drawHeader();
-        }
-        const yy = doc.y;
-        values.forEach((v, i) => {
-          doc.text(v, colX(i), yy, {
-            width: colWidths[i],
-            align: cols[i].align ?? "left",
-          });
-        });
-        doc.y = yy + rowHeight - 6;
-        doc
-          .moveTo(doc.page.margins.left, doc.y + 2)
-          .lineTo(doc.page.width - doc.page.margins.right, doc.y + 2)
-          .strokeColor("#eeeeee")
-          .lineWidth(0.5)
-          .stroke();
-        doc.y += 6;
-      }
-    };
-
-    doc.x = doc.page.margins.left;
-    doc.moveDown(0.5);
-    ensureSpace(60);
-    sectionTitle("Thresholds");
-    if (thresholdRows.length === 0) {
-      doc
-        .font("Helvetica")
-        .fontSize(10)
-        .fillColor("#666")
-        .text("None.");
-    } else {
-      drawSimpleTable(
-        [
-          { label: "Name", w: 0.28 },
-          { label: "Scope", w: 0.32 },
-          { label: "Max Touches", w: 0.14, align: "right" },
-          { label: "Window (days)", w: 0.14, align: "right" },
-          { label: "Action", w: 0.12 },
-        ],
-        thresholdRows.map((t) => [
-          t.name,
-          thresholdScopeLabel(t.scope, t.channelLabel, t.campaignTypeLabel),
-          String(t.maxTouchpoints),
-          String(t.windowDays),
-          ACTION_MODE_LABELS[t.actionMode] ?? t.actionMode,
-        ]),
-      );
-    }
-
-    doc.x = doc.page.margins.left;
-    doc.moveDown(0.5);
-    ensureSpace(60);
-    sectionTitle("Suppressions");
-    if (suppressionRows.length === 0) {
-      doc
-        .font("Helvetica")
-        .fontSize(10)
-        .fillColor("#666")
-        .text("None.");
-    } else {
-      const totalSuppressed = suppressionRows.reduce(
-        (sum, s) => sum + (s.donorIds?.length ?? 0),
-        0,
-      );
-      doc
-        .font("Helvetica")
-        .fontSize(10)
-        .fillColor("black")
-        .text(
-          `${suppressionRows.length} suppression${suppressionRows.length === 1 ? "" : "s"} covering ${fmtNum(totalSuppressed)} constituent ID${totalSuppressed === 1 ? "" : "s"}.`,
-        );
-      doc.moveDown(0.4);
-
-      const byReason = new Map<string, number>();
-      for (const s of suppressionRows) {
-        const key = s.reasonCodeName ?? s.reason ?? "Unspecified";
-        byReason.set(key, (byReason.get(key) ?? 0) + (s.donorIds?.length ?? 0));
-      }
-      if (byReason.size > 0) {
-        doc
-          .font("Helvetica-Bold")
-          .fontSize(8)
-          .fillColor("#666")
-          .text("BY REASON");
-        doc.font("Helvetica").fontSize(10).fillColor("black");
-        for (const [reason, count] of byReason) {
-          doc.text(`  \u2022 ${reason}: ${fmtNum(count)}`);
-        }
-        doc.moveDown(0.4);
-      }
-
-      drawSimpleTable(
-        [
-          { label: "Scope", w: 0.45 },
-          { label: "Reason", w: 0.40 },
-          { label: "IDs", w: 0.15, align: "right" },
-        ],
-        suppressionRows.map((s) => [
-          suppressionScopeLabel(s.scope, s.channelLabel, s.campaignTypeLabel, s.touchLabel),
-          s.reasonCodeName ?? s.reason ?? "Unspecified",
-          fmtNum(s.donorIds?.length ?? 0),
-        ]),
-      );
-    }
-
-    doc.x = doc.page.margins.left;
-    doc.moveDown(0.5);
-    ensureSpace(60);
-    sectionTitle("Seeds");
-    if (seedRows.length === 0) {
-      doc
-        .font("Helvetica")
-        .fontSize(10)
-        .fillColor("#666")
-        .text("None.");
-    } else {
-      drawSimpleTable(
-        [
-          { label: "Scope", w: 0.80 },
-          { label: "Seed IDs", w: 0.20, align: "right" },
-        ],
-        seedRows.map((s) => [
-          seedScopeLabel(s.scope, s.channelLabel, s.touchLabel),
-          fmtNum(s.donorIds?.length ?? 0),
-        ]),
-      );
-    }
-
-    doc.x = doc.page.margins.left;
-    doc.moveDown(1);
-    doc
-      .font("Helvetica")
-      .fontSize(8)
-      .fillColor("#888")
-      .text(
-        `Generated ${new Date().toLocaleString("en-US", {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-          hour: "numeric",
-          minute: "2-digit",
-        })}`,
-        doc.page.margins.left,
-        undefined,
-        { align: "left" },
-      );
-
-    doc.end();
+    await writeCampaignSummaryPdf(params.data.id, res);
   },
 );
 

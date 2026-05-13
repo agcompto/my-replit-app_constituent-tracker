@@ -141,8 +141,67 @@ export function checkPasswordSetupGetPerIp(ip: string): RateLimitResult {
 
 // Per-user export quota: 20 exports / hour. Defends against an
 // account-takeover dump-and-run on the audience CSVs.
+const EXPORT_QUOTA_MAX = 20;
+const EXPORT_QUOTA_WINDOW_MS = 60 * 60_000;
 export function checkExportQuota(userId: number): RateLimitResult {
-  return checkSlidingRate(`export|user|${userId}`, 20, 60 * 60_000);
+  return checkSlidingRate(`export|user|${userId}`, EXPORT_QUOTA_MAX, EXPORT_QUOTA_WINDOW_MS);
+}
+
+/**
+ * How many export slots the user has remaining in the current hourly window.
+ * Pure read — does not record anything. Used by bulk export endpoints to
+ * decide whether to reject up-front before consuming any slots, since a bulk
+ * export of N campaigns must atomically consume N slots.
+ */
+export function peekExportQuotaSlots(userId: number): {
+  remaining: number;
+  retryAfterSec: number;
+} {
+  const key = `export|user|${userId}`;
+  const now = Date.now();
+  const cutoff = now - EXPORT_QUOTA_WINDOW_MS;
+  const b = slidingBuckets.get(key);
+  if (!b) return { remaining: EXPORT_QUOTA_MAX, retryAfterSec: 0 };
+  while (b.timestamps.length > 0 && b.timestamps[0] < cutoff) {
+    b.timestamps.shift();
+  }
+  const used = b.timestamps.length;
+  const remaining = Math.max(0, EXPORT_QUOTA_MAX - used);
+  const retryAfterSec =
+    used >= EXPORT_QUOTA_MAX
+      ? Math.max(1, Math.ceil((b.timestamps[0] + EXPORT_QUOTA_WINDOW_MS - now) / 1000))
+      : 0;
+  return { remaining, retryAfterSec };
+}
+
+/**
+ * Record N consumed export slots in one shot. Used by bulk export endpoints.
+ * Per-call `checkExportQuota` only records one timestamp; bulk callers must
+ * record N so a 5-campaign bulk download counts as 5 against the quota.
+ */
+/**
+ * Test-only: clears every recorded quota timestamp for a user. Production
+ * code never calls this — it's exported so the HTTP integration tests can
+ * deterministically reset the per-user export bucket between assertions
+ * without waiting an hour for the sliding window to drain.
+ */
+export function __resetExportQuotaForTests(userId: number): void {
+  slidingBuckets.delete(`export|user|${userId}`);
+}
+
+export function recordExportQuota(userId: number, n: number): void {
+  if (n <= 0) return;
+  const key = `export|user|${userId}`;
+  const now = Date.now();
+  const b = slidingBuckets.get(key);
+  if (!b) {
+    slidingBuckets.set(key, {
+      timestamps: Array.from({ length: n }, () => now),
+      windowMs: EXPORT_QUOTA_WINDOW_MS,
+    });
+    return;
+  }
+  for (let i = 0; i < n; i++) b.timestamps.push(now);
 }
 
 // Forgot-password (self-service): 5 requests / 15 minutes / IP.

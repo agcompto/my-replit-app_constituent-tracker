@@ -1,12 +1,11 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   db,
   campaignsTable,
   touchpointsTable,
   touchesTable,
   exportJobsTable,
-  usersTable,
 } from "@workspace/db";
 import {
   GetCampaignPreviewParams,
@@ -23,8 +22,8 @@ import {
   getEffectiveAudienceByTouch,
 } from "../lib/threshold";
 import { loadCampaignFull } from "../lib/campaigns";
-import { buildCsv } from "../lib/donor";
 import { computeHealthCheck, snapshotHealthCheck } from "../lib/healthCheck";
+import { buildCampaignManifestCsv } from "../lib/campaignExports";
 
 const router: IRouter = Router();
 
@@ -317,7 +316,7 @@ router.get(
     if (access === "voided") { res.status(403).json({ error: "Cannot read manifest for a voided campaign" }); return; }
 
     const [campaign] = await db
-      .select()
+      .select({ id: campaignsTable.id, exportedAt: campaignsTable.exportedAt })
       .from(campaignsTable)
       .where(eq(campaignsTable.id, params.data.id));
     if (!campaign) { res.status(404).json({ error: "Not found" }); return; }
@@ -325,78 +324,17 @@ router.get(
       res.status(409).json({ error: "Campaign has not been exported yet." });
       return;
     }
-
-    const { touchesTable, channelsTable, campaignTypesTable } = await import(
-      "@workspace/db"
-    );
-    const jobs = await db
-      .select({
-        fileName: exportJobsTable.fileName,
-        rowCount: exportJobsTable.rowCount,
-        seedCount: exportJobsTable.seedCount,
-        suppressedCount: exportJobsTable.suppressedCount,
-        exportedAt: exportJobsTable.exportedAt,
-        exportedByName: usersTable.name,
-        touchName: touchesTable.touchName,
-        sendDate: touchesTable.sendDate,
-        channelLabel: channelsTable.name,
-        campaignTypeLabel: campaignTypesTable.name,
-      })
-      .from(exportJobsTable)
-      .leftJoin(touchesTable, eq(touchesTable.id, exportJobsTable.touchId))
-      .leftJoin(channelsTable, eq(channelsTable.id, touchesTable.channelId))
-      .leftJoin(
-        campaignTypesTable,
-        eq(campaignTypesTable.id, touchesTable.campaignTypeId),
-      )
-      .leftJoin(usersTable, eq(usersTable.id, exportJobsTable.exportedByUserId))
-      .where(eq(exportJobsTable.campaignId, params.data.id))
-      .orderBy(desc(exportJobsTable.exportedAt));
-
-    // Filter to the most recent batch (same exportedAt as the campaign's exportedAt).
-    const batchTs = campaign.exportedAt.getTime();
-    const batch = jobs.filter(
-      (j) => Math.abs(j.exportedAt.getTime() - batchTs) < 60_000,
-    );
-
-    const headers = [
-      "file_name",
-      "campaign_id",
-      "campaign_name",
-      "owning_unit",
-      "touch_name",
-      "channel",
-      "campaign_type",
-      "send_date",
-      "row_count",
-      "seed_count",
-      "suppressed_count",
-      "exported_by",
-      "exported_at",
-    ];
-    const rows = batch.map((j) => [
-      j.fileName,
-      campaign.id,
-      campaign.name,
-      campaign.owningUnit,
-      j.touchName,
-      j.channelLabel,
-      j.campaignTypeLabel,
-      j.sendDate,
-      j.rowCount,
-      j.seedCount,
-      j.suppressedCount,
-      j.exportedByName ?? "",
-      j.exportedAt.toISOString(),
-    ]);
-    const csv = "\uFEFF" + buildCsv(headers, rows);
-    const safeName = campaign.name.replace(/[^A-Za-z0-9_-]+/g, "_").slice(0, 60) || `campaign_${campaign.id}`;
+    const built = await buildCampaignManifestCsv(params.data.id);
+    if (!built) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="${safeName}_export_manifest.csv"`,
+      `attachment; filename="${built.filename}"`,
     );
-    res.send(csv);
+    res.send(built.csv);
   },
 );
 

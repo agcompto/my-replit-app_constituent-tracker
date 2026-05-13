@@ -1089,6 +1089,93 @@ export const GetCampaignSummaryPdfParams = zod.object({
   id: zod.coerce.number(),
 });
 
+/**
+ * @summary Admin/super-admin only. Transition every selected campaign to `archived`.
+Returns a per-id summary so the caller can render which succeeded and
+which were skipped (e.g. already-archived, voided, or not found). Each
+successful archive writes its own audit-log row.
+
+ */
+export const bulkArchiveCampaignsBodyIdsMax = 100;
+
+export const BulkArchiveCampaignsBody = zod.object({
+  ids: zod
+    .array(zod.number())
+    .min(1)
+    .max(bulkArchiveCampaignsBodyIdsMax)
+    .describe(
+      "Campaign IDs to act on. Capped at 100 per request to keep ZIP and audit work bounded.",
+    ),
+});
+
+export const BulkArchiveCampaignsResponse = zod.object({
+  results: zod.array(
+    zod.object({
+      id: zod.number(),
+      status: zod.enum([
+        "archived",
+        "already_archived",
+        "voided",
+        "not_found",
+        "forbidden",
+      ]),
+    }),
+  ),
+  archivedCount: zod.number(),
+});
+
+/**
+ * @summary Stream a single ZIP archive containing one campaign-summary PDF
+per selected campaign (same content as the single-summary
+endpoint `GET /campaigns/:id/summary.pdf`). PDFs are streamed
+per-entry through a PassThrough so the server never buffers a
+whole PDF in memory.
+
+Per-id authorization mirrors the single-campaign download — the
+caller must be able to mutate each campaign. Inaccessible (not
+found, forbidden, voided) campaigns are silently skipped.
+
+Each included campaign consumes one slot from the per-user 20/hour
+export quota; the batch is rejected up-front (HTTP 429) if it
+would exceed the quota.
+
+ */
+export const bulkExportCampaignsBodyIdsMax = 100;
+
+export const BulkExportCampaignsBody = zod.object({
+  ids: zod
+    .array(zod.number())
+    .min(1)
+    .max(bulkExportCampaignsBodyIdsMax)
+    .describe(
+      "Campaign IDs to act on. Capped at 100 per request to keep ZIP and audit work bounded.",
+    ),
+});
+
+/**
+ * @summary Stream a single ZIP archive containing the per-touch audience CSVs
+for each selected campaign that has been exported at least once.
+Each campaign's CSVs are placed under a folder named after the
+campaign. Campaigns that have never been exported (or whose
+current export batch is empty) are skipped silently and do not
+consume a quota slot. Bundled campaigns each consume one slot
+from the per-user export quota. Rejects with HTTP 413 if the
+total rows across the current export batches exceed
+`MAX_EXPORT_ROWS` (default 500,000).
+
+ */
+export const bulkDownloadCampaignManifestsBodyIdsMax = 100;
+
+export const BulkDownloadCampaignManifestsBody = zod.object({
+  ids: zod
+    .array(zod.number())
+    .min(1)
+    .max(bulkDownloadCampaignManifestsBodyIdsMax)
+    .describe(
+      "Campaign IDs to act on. Capped at 100 per request to keep ZIP and audit work bounded.",
+    ),
+});
+
 export const ListSuppressionReasonsResponseItem = zod.object({
   id: zod.number(),
   name: zod.string(),

@@ -34,6 +34,8 @@ import type {
   AudienceUploadResult,
   AuditExportTooLarge,
   AuditLogPage,
+  BulkArchiveResult,
+  BulkCampaignIds,
   CalendarFeed,
   CalendarPreferences,
   CalendarPreferencesInput,
@@ -5381,6 +5383,317 @@ export function useGetCampaignSummaryPdf<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Admin/super-admin only. Transition every selected campaign to `archived`.
+Returns a per-id summary so the caller can render which succeeded and
+which were skipped (e.g. already-archived, voided, or not found). Each
+successful archive writes its own audit-log row.
+
+ */
+export const getBulkArchiveCampaignsUrl = () => {
+  return `/api/campaigns/bulk/archive`;
+};
+
+export const bulkArchiveCampaigns = async (
+  bulkCampaignIds: BulkCampaignIds,
+  options?: RequestInit,
+): Promise<BulkArchiveResult> => {
+  return customFetch<BulkArchiveResult>(getBulkArchiveCampaignsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(bulkCampaignIds),
+  });
+};
+
+export const getBulkArchiveCampaignsMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkArchiveCampaigns>>,
+    TError,
+    { data: BodyType<BulkCampaignIds> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkArchiveCampaigns>>,
+  TError,
+  { data: BodyType<BulkCampaignIds> },
+  TContext
+> => {
+  const mutationKey = ["bulkArchiveCampaigns"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkArchiveCampaigns>>,
+    { data: BodyType<BulkCampaignIds> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkArchiveCampaigns(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkArchiveCampaignsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkArchiveCampaigns>>
+>;
+export type BulkArchiveCampaignsMutationBody = BodyType<BulkCampaignIds>;
+export type BulkArchiveCampaignsMutationError = ErrorType<void>;
+
+/**
+ * @summary Admin/super-admin only. Transition every selected campaign to `archived`.
+Returns a per-id summary so the caller can render which succeeded and
+which were skipped (e.g. already-archived, voided, or not found). Each
+successful archive writes its own audit-log row.
+
+ */
+export const useBulkArchiveCampaigns = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkArchiveCampaigns>>,
+    TError,
+    { data: BodyType<BulkCampaignIds> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkArchiveCampaigns>>,
+  TError,
+  { data: BodyType<BulkCampaignIds> },
+  TContext
+> => {
+  return useMutation(getBulkArchiveCampaignsMutationOptions(options));
+};
+
+/**
+ * @summary Stream a single ZIP archive containing one campaign-summary PDF
+per selected campaign (same content as the single-summary
+endpoint `GET /campaigns/:id/summary.pdf`). PDFs are streamed
+per-entry through a PassThrough so the server never buffers a
+whole PDF in memory.
+
+Per-id authorization mirrors the single-campaign download — the
+caller must be able to mutate each campaign. Inaccessible (not
+found, forbidden, voided) campaigns are silently skipped.
+
+Each included campaign consumes one slot from the per-user 20/hour
+export quota; the batch is rejected up-front (HTTP 429) if it
+would exceed the quota.
+
+ */
+export const getBulkExportCampaignsUrl = () => {
+  return `/api/campaigns/bulk/export.zip`;
+};
+
+export const bulkExportCampaigns = async (
+  bulkCampaignIds: BulkCampaignIds,
+  options?: RequestInit,
+): Promise<Blob> => {
+  return customFetch<Blob>(getBulkExportCampaignsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(bulkCampaignIds),
+  });
+};
+
+export const getBulkExportCampaignsMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkExportCampaigns>>,
+    TError,
+    { data: BodyType<BulkCampaignIds> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkExportCampaigns>>,
+  TError,
+  { data: BodyType<BulkCampaignIds> },
+  TContext
+> => {
+  const mutationKey = ["bulkExportCampaigns"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkExportCampaigns>>,
+    { data: BodyType<BulkCampaignIds> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkExportCampaigns(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkExportCampaignsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkExportCampaigns>>
+>;
+export type BulkExportCampaignsMutationBody = BodyType<BulkCampaignIds>;
+export type BulkExportCampaignsMutationError = ErrorType<void>;
+
+/**
+ * @summary Stream a single ZIP archive containing one campaign-summary PDF
+per selected campaign (same content as the single-summary
+endpoint `GET /campaigns/:id/summary.pdf`). PDFs are streamed
+per-entry through a PassThrough so the server never buffers a
+whole PDF in memory.
+
+Per-id authorization mirrors the single-campaign download — the
+caller must be able to mutate each campaign. Inaccessible (not
+found, forbidden, voided) campaigns are silently skipped.
+
+Each included campaign consumes one slot from the per-user 20/hour
+export quota; the batch is rejected up-front (HTTP 429) if it
+would exceed the quota.
+
+ */
+export const useBulkExportCampaigns = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkExportCampaigns>>,
+    TError,
+    { data: BodyType<BulkCampaignIds> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkExportCampaigns>>,
+  TError,
+  { data: BodyType<BulkCampaignIds> },
+  TContext
+> => {
+  return useMutation(getBulkExportCampaignsMutationOptions(options));
+};
+
+/**
+ * @summary Stream a single ZIP archive containing the per-touch audience CSVs
+for each selected campaign that has been exported at least once.
+Each campaign's CSVs are placed under a folder named after the
+campaign. Campaigns that have never been exported (or whose
+current export batch is empty) are skipped silently and do not
+consume a quota slot. Bundled campaigns each consume one slot
+from the per-user export quota. Rejects with HTTP 413 if the
+total rows across the current export batches exceed
+`MAX_EXPORT_ROWS` (default 500,000).
+
+ */
+export const getBulkDownloadCampaignManifestsUrl = () => {
+  return `/api/campaigns/bulk/manifests.zip`;
+};
+
+export const bulkDownloadCampaignManifests = async (
+  bulkCampaignIds: BulkCampaignIds,
+  options?: RequestInit,
+): Promise<Blob> => {
+  return customFetch<Blob>(getBulkDownloadCampaignManifestsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(bulkCampaignIds),
+  });
+};
+
+export const getBulkDownloadCampaignManifestsMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkDownloadCampaignManifests>>,
+    TError,
+    { data: BodyType<BulkCampaignIds> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkDownloadCampaignManifests>>,
+  TError,
+  { data: BodyType<BulkCampaignIds> },
+  TContext
+> => {
+  const mutationKey = ["bulkDownloadCampaignManifests"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkDownloadCampaignManifests>>,
+    { data: BodyType<BulkCampaignIds> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkDownloadCampaignManifests(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkDownloadCampaignManifestsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkDownloadCampaignManifests>>
+>;
+export type BulkDownloadCampaignManifestsMutationBody =
+  BodyType<BulkCampaignIds>;
+export type BulkDownloadCampaignManifestsMutationError = ErrorType<void>;
+
+/**
+ * @summary Stream a single ZIP archive containing the per-touch audience CSVs
+for each selected campaign that has been exported at least once.
+Each campaign's CSVs are placed under a folder named after the
+campaign. Campaigns that have never been exported (or whose
+current export batch is empty) are skipped silently and do not
+consume a quota slot. Bundled campaigns each consume one slot
+from the per-user export quota. Rejects with HTTP 413 if the
+total rows across the current export batches exceed
+`MAX_EXPORT_ROWS` (default 500,000).
+
+ */
+export const useBulkDownloadCampaignManifests = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkDownloadCampaignManifests>>,
+    TError,
+    { data: BodyType<BulkCampaignIds> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkDownloadCampaignManifests>>,
+  TError,
+  { data: BodyType<BulkCampaignIds> },
+  TContext
+> => {
+  return useMutation(getBulkDownloadCampaignManifestsMutationOptions(options));
+};
 
 export const getListSuppressionReasonsUrl = () => {
   return `/api/suppression-reasons`;

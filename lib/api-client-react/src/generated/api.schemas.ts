@@ -1584,6 +1584,36 @@ export interface CalendarPreferencesInput {
   config: CalendarPreferencesInputConfig;
 }
 
+export interface BulkCampaignIds {
+  /**
+   * Campaign IDs to act on. Capped at 100 per request to keep ZIP and audit work bounded.
+   * @minItems 1
+   * @maxItems 100
+   */
+  ids: number[];
+}
+
+export type BulkArchiveResultItemStatus =
+  (typeof BulkArchiveResultItemStatus)[keyof typeof BulkArchiveResultItemStatus];
+
+export const BulkArchiveResultItemStatus = {
+  archived: "archived",
+  already_archived: "already_archived",
+  voided: "voided",
+  not_found: "not_found",
+  forbidden: "forbidden",
+} as const;
+
+export interface BulkArchiveResultItem {
+  id: number;
+  status: BulkArchiveResultItemStatus;
+}
+
+export interface BulkArchiveResult {
+  results: BulkArchiveResultItem[];
+  archivedCount: number;
+}
+
 export type ListCampaignsParams = {
   mine?: boolean;
   status?: string;

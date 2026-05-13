@@ -942,6 +942,87 @@ paths:
             application/pdf:
               schema: { type: string, format: binary }
 
+  # ───────── Bulk operations on campaigns
+  /campaigns/bulk/archive:
+    post:
+      operationId: bulkArchiveCampaigns
+      tags: [campaigns]
+      summary: |
+        Admin/super-admin only. Transition every selected campaign to `archived`.
+        Returns a per-id summary so the caller can render which succeeded and
+        which were skipped (e.g. already-archived, voided, or not found). Each
+        successful archive writes its own audit-log row.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BulkCampaignIds" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BulkArchiveResult" }
+        "403": { description: Forbidden. }
+  /campaigns/bulk/export.zip:
+    post:
+      operationId: bulkExportCampaigns
+      tags: [campaigns]
+      summary: |
+        Stream a single ZIP archive containing one campaign-summary PDF
+        per selected campaign (same content as the single-summary
+        endpoint `GET /campaigns/:id/summary.pdf`). PDFs are streamed
+        per-entry through a PassThrough so the server never buffers a
+        whole PDF in memory.
+
+        Per-id authorization mirrors the single-campaign download — the
+        caller must be able to mutate each campaign. Inaccessible (not
+        found, forbidden, voided) campaigns are silently skipped.
+
+        Each included campaign consumes one slot from the per-user 20/hour
+        export quota; the batch is rejected up-front (HTTP 429) if it
+        would exceed the quota.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BulkCampaignIds" }
+      responses:
+        "200":
+          description: ZIP archive of summary PDFs, one per campaign.
+          content:
+            application/zip:
+              schema: { type: string, format: binary }
+        "404": { description: No selected campaigns were accessible. }
+        "429": { description: Per-user export quota exceeded. }
+  /campaigns/bulk/manifests.zip:
+    post:
+      operationId: bulkDownloadCampaignManifests
+      tags: [campaigns]
+      summary: |
+        Stream a single ZIP archive containing the per-touch audience CSVs
+        for each selected campaign that has been exported at least once.
+        Each campaign's CSVs are placed under a folder named after the
+        campaign. Campaigns that have never been exported (or whose
+        current export batch is empty) are skipped silently and do not
+        consume a quota slot. Bundled campaigns each consume one slot
+        from the per-user export quota. Rejects with HTTP 413 if the
+        total rows across the current export batches exceed
+        `MAX_EXPORT_ROWS` (default 500,000).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BulkCampaignIds" }
+      responses:
+        "200":
+          description: ZIP archive of per-touch audience CSVs
+          content:
+            application/zip:
+              schema: { type: string, format: binary }
+        "413": { description: Per-export row cap exceeded. }
+        "429": { description: Per-user export quota exceeded. }
+
   # ───────── Suppression reason codes (admin)
   /suppression-reasons:
     get:
@@ -3104,3 +3185,29 @@ components:
         config:
           type: object
           additionalProperties: true
+    BulkCampaignIds:
+      type: object
+      properties:
+        ids:
+          type: array
+          items: { type: integer }
+          minItems: 1
+          maxItems: 100
+          description: Campaign IDs to act on. Capped at 100 per request to keep ZIP and audit work bounded.
+      required: [ids]
+    BulkArchiveResultItem:
+      type: object
+      properties:
+        id: { type: integer }
+        status:
+          type: string
+          enum: [archived, already_archived, voided, not_found, forbidden]
+      required: [id, status]
+    BulkArchiveResult:
+      type: object
+      properties:
+        results:
+          type: array
+          items: { $ref: "#/components/schemas/BulkArchiveResultItem" }
+        archivedCount: { type: integer }
+      required: [results, archivedCount]
