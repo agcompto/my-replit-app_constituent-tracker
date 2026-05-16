@@ -1,0 +1,177 @@
+This is a strong plan. Proceed with this approach, but strengthen the task with the additional requirements below so the audit proves security controls are real, layered, and regression-tested.
+
+The goal is not to produce a polished security report that says things are safe. The goal is to prove, with tests and evidence, that unauthorized behavior is blocked at multiple layers.
+
+Security controls must be independently enforceable at multiple layers, not dependent on a single middleware or UI restriction.
+
+Do not mark any item complete unless it is verified through code, configuration, database policy, or automated test evidence.
+
+==================================================
+ADDITIONAL REQUIREMENTS TO ADD TO TASK #48
+==================================================
+
+1. DATABASE POLICY VERIFICATION
+
+Add explicit database-level security verification.
+
+Verify:
+- every exposed table has the expected database-level access controls
+- no table grants broad authenticated access unless explicitly justified
+- anonymous users cannot read or mutate protected data
+- authenticated users cannot access another user’s records
+- admin-only tables are inaccessible to standard users
+- cross-tenant or cross-user queries fail at the database layer where applicable
+
+If using Supabase/Postgres:
+- verify RLS is enabled on all exposed tables
+- verify SELECT, INSERT, UPDATE, and DELETE policies are explicit
+- verify service-role access is server-side only
+- add direct policy regression tests where practical
+
+The report should distinguish:
+- route-level authorization
+- service-layer authorization
+- database-level authorization
+
+2. AUTHORIZATION MUTATION TESTING
+
+Add defense-in-depth testing.
+
+Where practical, create tests that prove downstream controls still protect data even if one layer is weakened.
+
+Examples:
+- if route filtering is bypassed, ownership checks still prevent access
+- if client role claims are manipulated, server role checks still reject access
+- if a user guesses another user’s campaign ID, the query/update/export still fails
+
+Do not rely on a single middleware as the only security boundary.
+
+3. STRICT SCHEMA VALIDATION AND MASS ASSIGNMENT PROTECTION
+
+Verify every mutation endpoint uses strict validation.
+
+Requirements:
+- reject unknown fields
+- whitelist editable fields
+- prevent role, active, ownerId, organizationId, tenantId, createdBy, or permission fields from being changed through normal user payloads
+- verify PATCH endpoints cannot mutate privileged fields
+- verify POST endpoints ignore or reject hidden privilege fields
+
+Add tests for mass-assignment attempts on sensitive endpoints.
+
+4. FAIL-CLOSED BEHAVIOR
+
+Add failure-mode testing.
+
+Verify:
+- missing session fails closed
+- malformed session cookie fails closed
+- missing user context fails closed
+- auth middleware errors fail closed
+- database errors do not accidentally bypass authorization
+- invalid role values fail closed
+- deleted, disabled, or inactive users cannot continue using existing sessions
+
+5. SESSION SECURITY
+
+Expand session testing.
+
+Verify:
+- session ID regenerates after login
+- session ID regenerates after password reset or setup
+- session ID regenerates after privilege elevation if applicable
+- old sessions are invalidated where appropriate
+- cookie flags are correct in both test and production-like configuration
+- secure cookie behavior matches the Replit deployment topology
+
+6. TOKEN, RESET, AND RECOVERY FLOW SECURITY
+
+Add replay and token-oracle testing.
+
+Verify:
+- password setup tokens are single-use
+- password reset tokens are single-use
+- expired tokens fail
+- reused tokens fail
+- invalid tokens return generic responses
+- token checks do not leak whether a token is close to valid
+- logs redact all setup/reset/recovery URLs and token values
+- timing-safe comparison is used where appropriate
+
+7. CACHE CONTROL FOR SENSITIVE RESPONSES
+
+Verify sensitive responses are not cached.
+
+Check:
+- authenticated API responses
+- password setup pages
+- password reset pages
+- export endpoints
+- admin endpoints
+- donor lookup endpoints
+- audit log endpoints
+
+Confirm appropriate Cache-Control headers are present.
+
+8. STORAGE AND FILE ACCESS SECURITY
+
+If the app supports uploads, exports, generated files, or downloadable reports, verify:
+
+- private files cannot be fetched by guessed URLs
+- export files require authorization
+- export URLs expire if signed URLs are used
+- files are not stored in public execution paths
+- uploaded files cannot execute as HTML or JavaScript
+- filenames are randomized or sanitized
+- path traversal is blocked
+- MIME type and extension are validated server-side
+
+9. SSRF AND OUTBOUND REQUEST REVIEW
+
+Audit all outbound HTTP calls.
+
+If user input can influence URLs, verify protections against:
+- localhost access
+- internal IP ranges
+- cloud metadata endpoints
+- private RFC1918 ranges
+- redirect-based bypasses
+- protocol smuggling
+
+If no user-controlled outbound request path exists, document that explicitly.
+
+10. OPENAPI / IMPLEMENTATION DRIFT
+
+Compare actual implemented routes against lib/api-spec/openapi.yaml.
+
+Document:
+- implemented routes missing from the spec
+- spec routes not implemented
+- mismatched methods
+- mismatched auth requirements
+- undocumented admin routes
+- undocumented privileged behaviors
+
+Security-relevant drift should be fixed or documented as accepted risk.
+
+11. DATA EXPOSURE AND SERIALIZATION REVIEW
+
+Review all API responses for sensitive leakage.
+
+Verify responses never expose:
+- password hashes
+- session data
+- full tokens
+- setup URLs
+- recovery codes
+- TOTP secrets
+- internal stack traces
+- unnecessary audit metadata
+- internal-only flags
+- privileged role fields where not needed
+
+Use explicit DTOs or serializers where appropriate.
+
+12. TIMING AND ENUMERATION RESISTANCE
+
+Review authentication and recovery flows for enumeration risk
