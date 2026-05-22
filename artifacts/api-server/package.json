@@ -32,6 +32,7 @@
     "qrcode": "^1.5.4"
   },
   "devDependencies": {
+    "@rollup/rollup-darwin-x64": "4.59.0",
     "@types/archiver": "^7.0.0",
     "@types/bcryptjs": "^3.0.0",
     "@types/connect-pg-simple": "^7.0.3",

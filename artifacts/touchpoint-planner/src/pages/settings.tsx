@@ -17,13 +17,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Pencil } from "lucide-react";
 import { SecuritySettings } from "@/components/SecuritySettings";
 import { SamlSettingsPanel } from "@/components/SamlSettingsPanel";
+import { apiErrorMessage } from "@/lib/apiError";
 
 export default function Settings() {
   const { data: me } = useGetMe();
   const isAdmin = me?.role === "admin" || me?.role === "super_admin";
   const isSuperAdmin = me?.role === "super_admin";
 
-  const { data: settings, isLoading: settingsLoading } = useGetSettings();
+  const {
+    data: settings,
+    isLoading: settingsLoading,
+    isError: settingsError,
+    error: settingsLoadError,
+    refetch: refetchSettings,
+  } = useGetSettings();
   const updateSettings = useUpdateSettings();
   
   const { data: campaignTypes, isLoading: typesLoading } = useListCampaignTypes();
@@ -195,6 +202,18 @@ export default function Settings() {
         <h1 className="text-2xl font-bold tracking-tight">System Settings</h1>
         <p className="text-muted-foreground text-sm">Configure system-wide parameters and taxonomy.</p>
       </div>
+
+      {settingsError && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive flex flex-wrap items-center justify-between gap-3">
+          <span>
+            Could not load system settings:{" "}
+            {apiErrorMessage(settingsLoadError, "Request failed")}
+          </span>
+          <Button type="button" variant="outline" size="sm" onClick={() => refetchSettings()}>
+            Retry
+          </Button>
+        </div>
+      )}
 
       <Tabs defaultValue="taxonomy">
         <TabsList className="mb-4">

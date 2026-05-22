@@ -176,7 +176,6 @@ export function getIdpMetadataSnapshot(
   enabled: boolean,
   metadataUrl: string | null | undefined,
 ): SamlIdpMetadataState {
-  const pins = pinnedIdpCertFingerprints();
   const loaded = Boolean(lastGood?.idpCertPem);
   const fp = lastGood?.fingerprintSha256 ?? "";
   const matches = loaded && fingerprintAllowed(fp);
