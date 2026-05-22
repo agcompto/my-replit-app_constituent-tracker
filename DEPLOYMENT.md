@@ -14,8 +14,8 @@ This app is designed to run as **one Railway web service**: the API serves `/api
 | Setting | Value |
 |---------|--------|
 | **Root directory** | `/` (repository root) |
-| **Build command** | `pnpm install && pnpm run build:deploy` |
-| **Start command** | `pnpm run start` |
+| **Build command** | `pnpm install && pnpm run build:deploy` (or leave empty — `railway.json` sets this) |
+| **Start command** | `node --enable-source-maps artifacts/api-server/dist/index.mjs` (or `pnpm run start`) |
 | **Health check path** | `/api/healthz` |
 
 Railway injects **`PORT`** automatically. The server reads `process.env.PORT` and fails fast if it is missing (do not hardcode a port in the start command).
@@ -80,8 +80,10 @@ Railway injects **`PORT`** automatically. The server reads `process.env.PORT` an
 
 ```
 artifacts/touchpoint-planner/dist/public/   # Vite SPA (index.html, assets)
-artifacts/api-server/dist/index.mjs         # Node entrypoint
+artifacts/api-server/dist/index.mjs         # Production server entrypoint (Railway start command)
 ```
+
+Repo root includes **`railway.json`** and **`Procfile`** so Railpack always detects build/start commands for this monorepo (root `package.json` is `private` and has no `main` field).
 
 The API resolves the SPA path relative to `dist/index.mjs` unless `STATIC_WEB_ROOT` is set.
 

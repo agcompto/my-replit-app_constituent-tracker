@@ -161,9 +161,15 @@ overrides:
   '@esbuild-kit/esm-loader': npm:tsx@^4.21.0
   esbuild: 0.27.3
 
+packageExtensionsChecksum: sha256-9060/VmHlAX/nAEYwNOnMiq6a1WTp/XNxtVQMJBwUF0=
+
 importers:
 
   .:
+    dependencies:
+      xmlbuilder:
+        specifier: ^15.1.1
+        version: 15.1.1
     devDependencies:
       prettier:
         specifier: ^3.8.1
