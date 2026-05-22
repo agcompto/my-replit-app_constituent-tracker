@@ -72,5 +72,10 @@
     "vite": "catalog:",
     "wouter": "^3.3.5",
     "zod": "catalog:"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-darwin-x64": "4.59.0",
+    "@tailwindcss/oxide-darwin-x64": "^4.3.0",
+    "lightningcss-darwin-x64": "1.31.1"
   }
 }

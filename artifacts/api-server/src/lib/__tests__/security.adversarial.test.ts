@@ -113,4 +113,10 @@ describe("SAML ACS hardening (static)", () => {
     expect(src).toContain("samlPublicBaseUrl");
     expect(src).toContain('NODE_ENV === "development"');
   });
+
+  it("serves production SPA from api-server", () => {
+    const src = readFileSync(join(import.meta.dirname, "../staticWeb.ts"), "utf8");
+    expect(src).toContain("mountProductionWeb");
+    expect(src).toContain("touchpoint-planner/dist/public");
+  });
 });

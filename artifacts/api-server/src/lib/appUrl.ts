@@ -2,6 +2,9 @@
 export function publicAppUrl(): string | undefined {
   // Explicit override wins (useful when behind a custom domain or in tests).
   if (process.env.APP_PUBLIC_URL) return process.env.APP_PUBLIC_URL.replace(/\/$/, "");
+  if (process.env.RAILWAY_PUBLIC_DOMAIN) {
+    return `https://${process.env.RAILWAY_PUBLIC_DOMAIN.replace(/\/$/, "")}`;
+  }
   const domains = process.env.REPLIT_DOMAINS;
   if (!domains) return undefined;
   return `https://${domains.split(",")[0].trim()}`;

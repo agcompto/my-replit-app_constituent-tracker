@@ -6,6 +6,7 @@ import router from "./routes";
 import { logger } from "./lib/logger";
 import { sessionMiddleware, applyRoleSessionTtl } from "./lib/session";
 import { attachUser } from "./lib/auth";
+import { mountProductionWeb } from "./lib/staticWeb";
 
 const app: Express = express();
 
@@ -16,11 +17,29 @@ app.set("trust proxy", 1);
 // Don't advertise the framework — small but standard practice.
 app.disable("x-powered-by");
 
-const allowedOrigins = (process.env.REPLIT_DOMAINS ?? "")
-  .split(",")
-  .map((d) => d.trim())
-  .filter(Boolean)
-  .flatMap((d) => [`https://${d}`, `http://${d}`]);
+function buildAllowedOrigins(): string[] {
+  const origins = new Set<string>();
+  const add = (url: string) => {
+    const trimmed = url.trim().replace(/\/$/, "");
+    if (trimmed) origins.add(trimmed);
+  };
+  for (const d of (process.env.REPLIT_DOMAINS ?? "").split(",")) {
+    const host = d.trim();
+    if (!host) continue;
+    origins.add(`https://${host}`);
+    origins.add(`http://${host}`);
+  }
+  for (const o of (process.env.ALLOWED_ORIGINS ?? "").split(",")) {
+    add(o);
+  }
+  if (process.env.APP_PUBLIC_URL) add(process.env.APP_PUBLIC_URL);
+  if (process.env.RAILWAY_PUBLIC_DOMAIN) {
+    add(`https://${process.env.RAILWAY_PUBLIC_DOMAIN}`);
+  }
+  return [...origins];
+}
+
+const allowedOrigins = buildAllowedOrigins();
 
 app.use(
   pinoHttp({
@@ -157,6 +176,8 @@ app.use((req, res, next) => {
 });
 
 app.use("/api", router);
+
+mountProductionWeb(app);
 
 // Central error handler — unhandled async rejections and middleware errors.
 app.use(
