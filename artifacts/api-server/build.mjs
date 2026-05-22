@@ -103,6 +103,8 @@ async function buildAll() {
       "pdfkit",
       "fontkit",
       "brotli",
+      "xmlbuilder",
+      "@node-saml/node-saml",
     ],
     sourcemap: "linked",
     plugins: [

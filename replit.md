@@ -4,6 +4,29 @@ Internal NC State University Advancement tool for planning donor communication t
 
 ## Run & Operate
 
+### Local development (macOS / Linux)
+
+Prerequisites: Node 24+, pnpm 10.x (not v11), PostgreSQL 16+.
+
+```bash
+# One-time
+createdb constituent_tracker  # if needed
+pnpm install
+
+# Terminal 1 — API (port 8080)
+export DATABASE_URL="postgresql://$(whoami)@localhost:5432/constituent_tracker"
+export SESSION_SECRET="local-dev-session-secret-change-me"
+export APP_PUBLIC_URL="http://127.0.0.1:5173"
+export PORT=8080
+export PASSWORD_HIBP_DISABLED=1
+pnpm --filter @workspace/api-server run dev
+
+# Terminal 2 — frontend (port 5173; proxies /api → 8080)
+PORT=5173 BASE_PATH=/ pnpm --filter @workspace/touchpoint-planner run dev
+```
+
+Open http://127.0.0.1:5173. First boot prints a bootstrap admin password-setup link on the API stderr.
+
 - `pnpm --filter @workspace/api-server run dev` — API server (port from `PORT`)
 - `pnpm --filter @workspace/touchpoint-planner run dev` — web frontend
 - `pnpm run typecheck` — full typecheck

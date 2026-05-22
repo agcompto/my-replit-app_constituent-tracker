@@ -1,25 +1,17 @@
-import { publicAppUrl } from "./appUrl";
+import { publicAppUrl, samlPublicBaseUrl } from "./appUrl";
 
 export function samlSpEntityId(): string {
   if (process.env.SAML_SP_ENTITY_ID) {
     return process.env.SAML_SP_ENTITY_ID.replace(/\/$/, "");
   }
-  const base = publicAppUrl();
-  if (!base) {
-    throw new Error("SAML_SP_ENTITY_ID or APP_PUBLIC_URL/REPLIT_DOMAINS must be set for SAML");
-  }
-  return `${base}/api/auth/saml/metadata`;
+  return `${samlPublicBaseUrl()}/api/auth/saml/metadata`;
 }
 
 export function samlAcsUrl(): string {
   if (process.env.SAML_ACS_URL) {
     return process.env.SAML_ACS_URL.replace(/\/$/, "");
   }
-  const base = publicAppUrl();
-  if (!base) {
-    throw new Error("SAML_ACS_URL or APP_PUBLIC_URL/REPLIT_DOMAINS must be set for SAML");
-  }
-  return `${base}/api/auth/saml/acs`;
+  return `${samlPublicBaseUrl()}/api/auth/saml/acs`;
 }
 
 export function samlMetadataUrl(): string {
