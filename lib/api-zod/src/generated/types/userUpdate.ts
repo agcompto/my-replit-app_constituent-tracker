@@ -11,4 +11,5 @@ export interface UserUpdate {
   name?: string;
   role?: UserUpdateRole;
   active?: boolean;
+  passwordLoginDisabled?: boolean;
 }

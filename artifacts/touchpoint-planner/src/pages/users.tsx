@@ -1,6 +1,7 @@
 import {
   useListUsers,
   useGetMe,
+  useGetSettings,
   useCreateUser,
   useUpdateUser,
   useResetUserPassword,
@@ -73,6 +74,8 @@ type UserRow = {
   name: string;
   role: string;
   active: boolean;
+  passwordLoginDisabled?: boolean;
+  samlLinked?: boolean;
   createdAt: string;
 };
 
@@ -95,6 +98,7 @@ const editSchema = z.object({
   name: z.string().min(1, "Name is required"),
   role: z.enum(["standard", "admin", "super_admin"]),
   active: z.boolean(),
+  passwordLoginDisabled: z.boolean().optional(),
 });
 
 export default function Users() {
@@ -441,9 +445,19 @@ function EditUserDialog({
   const form = useForm<z.infer<typeof editSchema>>({
     resolver: zodResolver(editSchema),
     values: user
-      ? { name: user.name, role: user.role as Role, active: user.active }
+      ? {
+          name: user.name,
+          role: user.role as Role,
+          active: user.active,
+          passwordLoginDisabled: user.passwordLoginDisabled ?? false,
+        }
       : undefined,
   });
+  const { data: appSettings } = useGetSettings();
+  const roleManagedByEntra =
+    Boolean(appSettings?.samlGroupSyncEnabled) && Boolean(user?.samlLinked);
+  const isBootstrapAdmin =
+    user?.email?.toLowerCase() === "admin@example.com" && user?.role === "super_admin";
 
   const [reauthOpen, setReauthOpen] = useState(false);
   const [pendingData, setPendingData] = useState<z.infer<typeof editSchema> | null>(null);
@@ -515,8 +529,17 @@ function EditUserDialog({
               render={({ field }) => (
                 <FormItem>
                   <Label>Role</Label>
+                  {roleManagedByEntra && (
+                    <p className="text-xs text-muted-foreground">
+                      Role is managed by Microsoft Entra group sync.
+                    </p>
+                  )}
                   <FormControl>
-                    <Select value={field.value} onValueChange={field.onChange}>
+                    <Select
+                      value={field.value}
+                      onValueChange={field.onChange}
+                      disabled={roleManagedByEntra}
+                    >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
@@ -530,6 +553,27 @@ function EditUserDialog({
                     </Select>
                   </FormControl>
                   <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="passwordLoginDisabled"
+              render={({ field }) => (
+                <FormItem className="flex items-center justify-between rounded-md border p-3">
+                  <div>
+                    <Label>Disable password login (SAML only)</Label>
+                    <p className="text-xs text-muted-foreground">
+                      User must sign in with Microsoft when SAML is enabled.
+                    </p>
+                  </div>
+                  <FormControl>
+                    <Switch
+                      checked={field.value ?? false}
+                      onCheckedChange={field.onChange}
+                      disabled={isBootstrapAdmin}
+                    />
+                  </FormControl>
                 </FormItem>
               )}
             />

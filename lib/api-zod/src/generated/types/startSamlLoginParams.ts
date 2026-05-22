@@ -5,9 +5,7 @@
  * Constituent Touchpoint Planner API
  * OpenAPI spec version: 0.1.0
  */
-import type { SamlHealthStatus } from "./samlHealthStatus";
 
-export interface HealthStatus {
-  status: string;
-  saml?: SamlHealthStatus;
-}
+export type StartSamlLoginParams = {
+  returnTo?: string;
+};

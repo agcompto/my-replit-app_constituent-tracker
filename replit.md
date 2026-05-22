@@ -15,6 +15,45 @@ Internal NC State University Advancement tool for planning donor communication t
 - Optional bootstrap: `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_NAME` — override the seeded super-admin identity.
 - Optional email: `RESEND_API_KEY`, `EMAIL_FROM` — when both are set, the server sends invite/reset/forgot-password links via Resend in addition to returning them in the admin API response. With Resend's test sender (`onboarding@resend.dev`) no domain verification is required for dev/staging; for production pin a verified sending domain. Email is best-effort — failures never block the admin flow, and the setup URL is still returned in the response so the admin can deliver it manually.
 
+## Microsoft Entra SAML SSO
+
+### Entra app registration
+
+1. **Enterprise application** → Create your own → SAML SSO.
+2. **Identifier (Entity ID):** SP metadata URL or value from Settings → Single Sign-On (e.g. `https://<host>/api/auth/saml/metadata`).
+3. **Reply URL (ACS):** `https://<host>/api/auth/saml/acs`
+4. **Sign-on URL:** `https://<host>/api/auth/saml/login` (optional; users can start from the app login page).
+5. **Attributes & Claims:** `emailaddress`, `givenname`, `surname`, `name` (and **Groups** as Group ID, limited to groups assigned to this app).
+6. **Federation Metadata XML** URL → paste into Settings → IdP metadata URL.
+7. Copy the signing certificate **SHA-256 fingerprint** into `SAML_IDP_CERT_FINGERPRINT_SHA256` (comma-separated for rollover).
+
+### Environment variables
+
+| Variable | Purpose |
+|----------|---------|
+| `SAML_IDP_CERT_FINGERPRINT_SHA256` | Comma-separated pinned SHA-256 cert fingerprints (required for ACS) |
+| `SAML_IDP_METADATA_HOST_ALLOWLIST` | Optional comma-separated host suffixes for metadata fetch (SSRF guard) |
+| `SAML_SP_ENTITY_ID` | Override SP entity ID (default: `{APP_PUBLIC_URL}/api/auth/saml/metadata`) |
+| `SAML_ACS_URL` | Override ACS URL (default: `{APP_PUBLIC_URL}/api/auth/saml/acs`) |
+
+### Settings (super_admin)
+
+- Enable SAML, metadata URL, JIT email domains (`ncsu.edu`, …).
+- Paste three Entra security group **Object IDs** into super_admin / admin / standard maps.
+- Toggle **group sync** to map roles on each SAML login (most-privileged wins).
+- **SAML health** panel: metadata loaded, fingerprint match, cert expiry; **Refresh now** forces metadata reload.
+
+### Cert rollover
+
+1. Add the new cert fingerprint to `SAML_IDP_CERT_FINGERPRINT_SHA256` (keep old until cutover).
+2. Refresh metadata in Settings.
+3. Confirm health shows `fingerprintMatches: true`.
+4. Remove old fingerprint after Entra retires the old cert.
+
+### SAML health (`GET /api/healthz`)
+
+Returns `saml.enabled`, `metadataLoaded`, `fingerprintMatches`, `lastMetadataRefreshAt`, `certExpiresAt`, `failureReason`.
+
 When email is **not** configured the system behaves as before: account-setup, admin-issued password-reset, and "resend invite" flows return a one-time setup URL to the calling admin in the API response, and the admin hands the link to the user out-of-band. When email **is** configured the same link is also emailed to the user; the API response gains an `emailed: boolean` field so the admin UI can show "Email sent to <user>" and offer the copy-link as a backup channel.
 
 ## Self-service forgot-password

@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq } from "drizzle-orm";
-import { db, touchesTable, channelsTable, campaignTypesTable, touchAudienceDonorsTable, appSettingsTable, auditLogTable } from "@workspace/db";
+import { and, desc, eq, inArray } from "drizzle-orm";
+import { db, touchesTable, channelsTable, campaignTypesTable, touchAudienceDonorsTable, auditLogTable } from "@workspace/db";
 import {
   ListTouchesParams,
   CreateTouchParams,
@@ -21,24 +21,32 @@ import {
 } from "@workspace/api-zod";
 import { requireAuth, audit, canMutateCampaign } from "../lib/auth";
 import { resolveAudienceSource } from "../lib/audienceSource";
+import { googleSheetImportAllowed } from "../lib/appSettings";
 
 const router: IRouter = Router();
 
-async function shapeTouch(t: typeof touchesTable.$inferSelect) {
-  const [ch] = await db.select().from(channelsTable).where(eq(channelsTable.id, t.channelId));
-  const [tp] = await db
-    .select()
-    .from(campaignTypesTable)
-    .where(eq(campaignTypesTable.id, t.campaignTypeId));
+type TouchRow = typeof touchesTable.$inferSelect;
+
+function touchSendDate(t: TouchRow): string {
+  return typeof t.sendDate === "string"
+    ? t.sendDate
+    : (t.sendDate as Date).toISOString().slice(0, 10);
+}
+
+function shapeTouchRow(
+  t: TouchRow,
+  channelLabels: Map<number, string>,
+  typeLabels: Map<number, string>,
+) {
   return {
     id: t.id,
     campaignId: t.campaignId,
     touchName: t.touchName,
     channelId: t.channelId,
-    channelLabel: ch?.name ?? "Unknown",
+    channelLabel: channelLabels.get(t.channelId) ?? "Unknown",
     campaignTypeId: t.campaignTypeId,
-    campaignTypeLabel: tp?.name ?? "Unknown",
-    sendDate: typeof t.sendDate === "string" ? t.sendDate : (t.sendDate as Date).toISOString().slice(0, 10),
+    campaignTypeLabel: typeLabels.get(t.campaignTypeId) ?? "Unknown",
+    sendDate: touchSendDate(t),
     notes: t.notes,
     motivationCode: t.motivationCode,
     marketingCampaignName: t.marketingCampaignName,
@@ -56,9 +64,26 @@ async function shapeTouch(t: typeof touchesTable.$inferSelect) {
   };
 }
 
-async function googleSheetImportAllowed(): Promise<boolean> {
-  const [s] = await db.select().from(appSettingsTable);
-  return !!s?.googleSheetImportEnabled;
+async function shapeTouches(rows: TouchRow[]) {
+  if (rows.length === 0) return [];
+  const channelIds = [...new Set(rows.map((r) => r.channelId))];
+  const typeIds = [...new Set(rows.map((r) => r.campaignTypeId))];
+  const [channels, types] = await Promise.all([
+    channelIds.length
+      ? db.select().from(channelsTable).where(inArray(channelsTable.id, channelIds))
+      : Promise.resolve([]),
+    typeIds.length
+      ? db.select().from(campaignTypesTable).where(inArray(campaignTypesTable.id, typeIds))
+      : Promise.resolve([]),
+  ]);
+  const channelLabels = new Map(channels.map((c) => [c.id, c.name]));
+  const typeLabels = new Map(types.map((tp) => [tp.id, tp.name]));
+  return rows.map((t) => shapeTouchRow(t, channelLabels, typeLabels));
+}
+
+async function shapeTouch(t: TouchRow) {
+  const [shaped] = await shapeTouches([t]);
+  return shaped!;
 }
 
 router.get("/campaigns/:id/touches", requireAuth, async (req, res): Promise<void> => {
@@ -72,8 +97,7 @@ router.get("/campaigns/:id/touches", requireAuth, async (req, res): Promise<void
     .from(touchesTable)
     .where(eq(touchesTable.campaignId, params.data.id))
     .orderBy(touchesTable.sendDate);
-  const shaped = await Promise.all(rows.map(shapeTouch));
-  res.json(shaped);
+  res.json(await shapeTouches(rows));
 });
 
 router.post("/campaigns/:id/touches", requireAuth, async (req, res): Promise<void> => {

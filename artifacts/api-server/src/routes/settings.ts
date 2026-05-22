@@ -5,6 +5,9 @@ import { UpdateSettingsBody, RunRetentionDeleteBody } from "@workspace/api-zod";
 import { requireAuth, requireRole, audit } from "../lib/auth";
 import { validateChannelCapacity } from "../lib/saturation";
 import { runRetentionPipeline } from "../lib/retention";
+import { UpdateSamlSettingsBody } from "@workspace/api-zod";
+import { getIdpMetadataSnapshot, refreshIdpMetadata } from "../lib/samlMetadata";
+import { samlSpEntityId, samlAcsUrl, samlMetadataUrl } from "../lib/samlSp";
 
 const router: IRouter = Router();
 
@@ -17,18 +20,8 @@ async function loadSettings() {
   return s;
 }
 
-// GET is intentionally readable by every authenticated user. The exposed
-// fields are operational configuration that the entire app depends on for
-// rendering: fiscal-year boundaries (date displays everywhere), and feature
-// flags (`googleSheetImportEnabled`, `aiAssistEnabled`, `globalThresholdsEnabled`,
-// `retentionDeleteEnabled`) that the wizard, suppressions/seeds, audience,
-// reports filter, and campaign detail pages all read to know which UI
-// affordances to render. None of these are secrets — they are public-by-design
-// product flags. Mutating settings (`PATCH /settings`) and acting on them
-// (`POST /retention/delete`) remain admin/super-admin only.
-router.get("/settings", requireAuth, async (_req, res): Promise<void> => {
-  const s = await loadSettings();
-  res.json({
+function settingsJson(s: typeof appSettingsTable.$inferSelect, opts?: { includeSamlConfig?: boolean }) {
+  const base = {
     fiscalYearStartMonth: s.fiscalYearStartMonth,
     fiscalYearStartDay: s.fiscalYearStartDay,
     googleSheetImportEnabled: s.googleSheetImportEnabled,
@@ -36,7 +29,38 @@ router.get("/settings", requireAuth, async (_req, res): Promise<void> => {
     globalThresholdsEnabled: s.globalThresholdsEnabled,
     aiAssistEnabled: s.aiAssistEnabled,
     channelCapacity: s.channelCapacity ?? {},
-  });
+    samlEnabled: s.samlEnabled,
+  };
+  if (!opts?.includeSamlConfig) return base;
+  const meta = getIdpMetadataSnapshot(s.samlEnabled, s.samlIdpMetadataUrl);
+  return {
+    ...base,
+    samlIdpMetadataUrl: s.samlIdpMetadataUrl,
+    samlJitEmailDomains: s.samlJitEmailDomains ?? [],
+    samlRoleGroupMap: s.samlRoleGroupMap ?? {
+      super_admin: [],
+      admin: [],
+      standard: [],
+    },
+    samlGroupSyncEnabled: s.samlGroupSyncEnabled,
+    samlSpEntityId: samlSpEntityId(),
+    samlAcsUrl: samlAcsUrl(),
+    samlMetadataUrl: samlMetadataUrl(),
+    samlHealth: {
+      enabled: s.samlEnabled,
+      metadataLoaded: meta.metadataLoaded,
+      fingerprintMatches: meta.fingerprintMatches,
+      lastMetadataRefreshAt: meta.lastMetadataRefreshAt,
+      certExpiresAt: meta.certExpiresAt,
+      failureReason: meta.failureReason,
+    },
+  };
+}
+
+router.get("/settings", requireAuth, async (req, res): Promise<void> => {
+  const s = await loadSettings();
+  const includeSamlConfig = req.currentUser!.role === "super_admin";
+  res.json(settingsJson(s, { includeSamlConfig }));
 });
 
 router.patch(
@@ -48,9 +72,6 @@ router.patch(
       res.status(400).json({ error: parsed.error.message });
       return;
     }
-    // The generated zod accepts any object for `channelCapacity`; re-validate
-    // shape (keys = positive integer channel IDs, values = non-negative ints)
-    // and normalize zero values out so the stored map only contains real caps.
     let channelCapacity: Record<string, number> | undefined;
     if (parsed.data.channelCapacity !== undefined) {
       try {
@@ -77,14 +98,52 @@ router.patch(
       entityId: updated.id,
       details: JSON.stringify(parsed.data),
     });
+    res.json(settingsJson(updated, { includeSamlConfig: req.currentUser!.role === "super_admin" }));
+  },
+);
+
+router.patch(
+  "/settings/saml",
+  requireRole("super_admin"),
+  async (req, res): Promise<void> => {
+    const parsed = UpdateSamlSettingsBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.message });
+      return;
+    }
+    const s = await loadSettings();
+    const [updated] = await db
+      .update(appSettingsTable)
+      .set(parsed.data)
+      .where(eq(appSettingsTable.id, s.id))
+      .returning();
+    if (parsed.data.samlIdpMetadataUrl !== undefined) {
+      await refreshIdpMetadata(updated.samlIdpMetadataUrl, true);
+    }
+    await audit({
+      actor: req.currentUser!,
+      action: "update_settings",
+      entityType: "settings",
+      entityId: updated.id,
+      details: JSON.stringify({ saml: parsed.data }),
+    });
+    res.json(settingsJson(updated, { includeSamlConfig: true }));
+  },
+);
+
+router.post(
+  "/settings/saml/refresh-metadata",
+  requireRole("super_admin"),
+  async (_req, res): Promise<void> => {
+    const s = await loadSettings();
+    await refreshIdpMetadata(s.samlIdpMetadataUrl, true);
+    const meta = getIdpMetadataSnapshot(s.samlEnabled, s.samlIdpMetadataUrl);
     res.json({
-      fiscalYearStartMonth: updated.fiscalYearStartMonth,
-      fiscalYearStartDay: updated.fiscalYearStartDay,
-      googleSheetImportEnabled: updated.googleSheetImportEnabled,
-      retentionDeleteEnabled: updated.retentionDeleteEnabled,
-      globalThresholdsEnabled: updated.globalThresholdsEnabled,
-      aiAssistEnabled: updated.aiAssistEnabled,
-      channelCapacity: updated.channelCapacity ?? {},
+      metadataLoaded: meta.metadataLoaded,
+      fingerprintMatches: meta.fingerprintMatches,
+      lastMetadataRefreshAt: meta.lastMetadataRefreshAt,
+      certExpiresAt: meta.certExpiresAt,
+      failureReason: meta.failureReason,
     });
   },
 );

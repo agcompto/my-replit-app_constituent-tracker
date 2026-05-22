@@ -6,6 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AppSettingsChannelCapacity } from "./appSettingsChannelCapacity";
+import type { SamlHealthStatus } from "./samlHealthStatus";
+import type { SamlRoleGroupMap } from "./samlRoleGroupMap";
 
 export interface AppSettings {
   /**
@@ -24,4 +26,14 @@ export interface AppSettings {
   aiAssistEnabled: boolean;
   /** Per-channel weekly volume capacity (channel ID → max touchpoints/week). Used by the saturation heatmap report. */
   channelCapacity: AppSettingsChannelCapacity;
+  samlEnabled: boolean;
+  /** @nullable */
+  samlIdpMetadataUrl?: string | null;
+  samlJitEmailDomains?: string[];
+  samlRoleGroupMap?: SamlRoleGroupMap;
+  samlGroupSyncEnabled?: boolean;
+  samlSpEntityId?: string;
+  samlAcsUrl?: string;
+  samlMetadataUrl?: string;
+  samlHealth?: SamlHealthStatus;
 }

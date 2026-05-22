@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   pgTable,
   serial,
@@ -33,12 +34,34 @@ export const usersTable = pgTable("users", {
   // A user is considered "enrolled" when both columns are non-null.
   totpSecretEncrypted: text("totp_secret_encrypted"),
   totpEnrolledAt: timestamp("totp_enrolled_at", { withTimezone: true }),
+  /** When true, password login is rejected (dummy timing parity). Bootstrap super-admin exempt. */
+  passwordLoginDisabled: boolean("password_login_disabled").notNull().default(false),
+  /** Persistent SAML NameID for account linking. */
+  samlSubjectNameid: text("saml_subject_nameid"),
+  samlLastLoginAt: timestamp("saml_last_login_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .defaultNow()
     .$onUpdate(() => new Date()),
-});
+}, (t) => ({
+  samlNameidUnique: uniqueIndex("users_saml_subject_nameid_unique")
+    .on(t.samlSubjectNameid)
+    .where(sql`${t.samlSubjectNameid} is not null`),
+}));
+
+// ─────── SAML assertion replay cache (assertion ID → expiry)
+export const samlAssertionReplayTable = pgTable(
+  "saml_assertion_replay",
+  {
+    assertionId: text("assertion_id").primaryKey(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    expiresIdx: index("saml_assertion_replay_expires_idx").on(t.expiresAt),
+  }),
+);
 
 // ─────── Password setup / reset tokens
 // One-time tokens emailed to users to set their initial password (kind=invite)
@@ -62,6 +85,9 @@ export const passwordSetupTokensTable = pgTable(
   (t) => ({
     userIdx: index("password_setup_tokens_user_idx").on(t.userId),
     expiresIdx: index("password_setup_tokens_expires_idx").on(t.expiresAt),
+    activeUserKindIdx: index("password_setup_tokens_active_user_kind_idx")
+      .on(t.userId, t.kind)
+      .where(sql`${t.usedAt} is null`),
   }),
 );
 
@@ -159,7 +185,10 @@ export const campaignsTable = pgTable("campaigns", {
   exportedAt: timestamp("exported_at", { withTimezone: true }),
   archivedAt: timestamp("archived_at", { withTimezone: true }),
   voidedAt: timestamp("voided_at", { withTimezone: true }),
-});
+}, (t) => ({
+  createdAtIdx: index("campaigns_created_at_idx").on(t.createdAt),
+  statusCreatedIdx: index("campaigns_status_created_idx").on(t.status, t.createdAt),
+}));
 
 export const campaignTypeLinksTable = pgTable(
   "campaign_type_links",
@@ -258,7 +287,9 @@ export const thresholdsTable = pgTable("thresholds", {
   campaignTypeId: integer("campaign_type_id").references(() => campaignTypesTable.id),
   actionMode: text("action_mode").notNull(), // track | flag | remove | manual
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => ({
+  campaignIdx: index("thresholds_campaign_idx").on(t.campaignId),
+}));
 
 // ─────── Threshold templates (admin-managed default rule library)
 // When creating or editing a campaign's thresholds, staff can apply the active
@@ -325,7 +356,9 @@ export const suppressionsTable = pgTable("suppressions", {
   donorIds: jsonb("donor_ids").$type<string[]>().notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   createdByUserId: integer("created_by_user_id").references(() => usersTable.id),
-});
+}, (t) => ({
+  campaignIdx: index("suppressions_campaign_idx").on(t.campaignId),
+}));
 
 // ─────── Campaign health-check snapshots
 // One row per health check execution (e.g. on export). The latest row per campaign
@@ -372,7 +405,9 @@ export const seedGroupsTable = pgTable("seed_groups", {
   donorIds: jsonb("donor_ids").$type<string[]>().notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   createdByUserId: integer("created_by_user_id").references(() => usersTable.id),
-});
+}, (t) => ({
+  campaignIdx: index("seed_groups_campaign_idx").on(t.campaignId),
+}));
 
 // ─────── Touchpoint history (one row per donor per touch when exported)
 export const touchpointsTable = pgTable(
@@ -397,6 +432,9 @@ export const touchpointsTable = pgTable(
     donorIdx: index("touchpoints_donor_idx").on(t.donorId),
     sendDateIdx: index("touchpoints_send_date_idx").on(t.sendDate),
     campaignIdx: index("touchpoints_campaign_idx").on(t.campaignId),
+    donorSendDateIdx: index("touchpoints_donor_send_date_idx").on(t.donorId, t.sendDate),
+    touchIdx: index("touchpoints_touch_idx").on(t.touchId),
+    campaignTouchIdx: index("touchpoints_campaign_touch_idx").on(t.campaignId, t.touchId),
   }),
 );
 
@@ -417,7 +455,9 @@ export const exportJobsTable = pgTable("export_jobs", {
     .notNull()
     .references(() => usersTable.id),
   exportedAt: timestamp("exported_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => ({
+  campaignExportedIdx: index("export_jobs_campaign_exported_idx").on(t.campaignId, t.exportedAt),
+}));
 
 // ─────── Upload jobs
 export const uploadJobsTable = pgTable("upload_jobs", {
@@ -432,7 +472,9 @@ export const uploadJobsTable = pgTable("upload_jobs", {
     .notNull()
     .references(() => usersTable.id),
   uploadedAt: timestamp("uploaded_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => ({
+  campaignUploadedIdx: index("upload_jobs_campaign_uploaded_idx").on(t.campaignId, t.uploadedAt),
+}));
 
 // ─────── Audit log
 export const auditLogTable = pgTable(
@@ -450,6 +492,7 @@ export const auditLogTable = pgTable(
   },
   (t) => ({
     createdIdx: index("audit_log_created_idx").on(t.createdAt),
+    cursorIdx: index("audit_log_cursor_idx").on(t.createdAt, t.id),
     actorIdx: index("audit_log_actor_idx").on(t.actorUserId),
     actionIdx: index("audit_log_action_idx").on(t.action),
     entityIdx: index("audit_log_entity_idx").on(t.entityType, t.entityId),
@@ -504,6 +547,14 @@ export const appSettingsTable = pgTable("app_settings", {
     touchpointsDeleted: number;
     error?: string;
   } | null>(),
+  samlEnabled: boolean("saml_enabled").notNull().default(false),
+  samlIdpMetadataUrl: text("saml_idp_metadata_url"),
+  samlJitEmailDomains: text("saml_jit_email_domains").array().notNull().default([]),
+  samlRoleGroupMap: jsonb("saml_role_group_map")
+    .$type<{ super_admin: string[]; admin: string[]; standard: string[] }>()
+    .notNull()
+    .default({ super_admin: [], admin: [], standard: [] }),
+  samlGroupSyncEnabled: boolean("saml_group_sync_enabled").notNull().default(false),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .defaultNow()

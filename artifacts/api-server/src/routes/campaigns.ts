@@ -18,7 +18,7 @@ import {
   BulkExportCampaignsBody,
   BulkDownloadCampaignManifestsBody,
 } from "@workspace/api-zod";
-import { requireAuth, requireRole, audit, canMutateCampaign } from "../lib/auth";
+import { requireAuth, requireRole, audit, canMutateCampaign, type SessionUser } from "../lib/auth";
 import { requireRecentAuth } from "../lib/recentAuth";
 import { loadCampaignFull, loadCampaignSummary, setCampaignTypes } from "../lib/campaigns";
 import { executeClone } from "../lib/cloneCampaign";
@@ -342,9 +342,18 @@ router.post(
 // Quota: every included campaign in the batch counts as one slot against
 // the per-user 20/hour export quota. The whole batch is rejected up-front
 // (HTTP 429 + Retry-After) rather than partway through.
+function bulkCampaignAccess(
+  row: { submittedByUserId: number; status: string },
+  user: SessionUser,
+): "allowed" | "forbidden" | "voided" {
+  if (row.status === "voided") return "voided";
+  if (user.role === "admin" || user.role === "super_admin") return "allowed";
+  return row.submittedByUserId === user.id ? "allowed" : "forbidden";
+}
+
 export async function classifyBulkExportSelection(
   ids: number[],
-  user: NonNullable<typeof db extends never ? never : Parameters<typeof canMutateCampaign>[1]>,
+  user: SessionUser,
   opts: { requireExported?: boolean } = {},
 ): Promise<{
   results: Array<{
@@ -361,26 +370,35 @@ export async function classifyBulkExportSelection(
     name?: string;
   }> = [];
   const included: Array<{ id: number; name: string }> = [];
+  const uniqueIds = [...new Set(ids)];
+  const rows =
+    uniqueIds.length > 0
+      ? await db
+          .select({
+            id: campaignsTable.id,
+            name: campaignsTable.name,
+            submittedByUserId: campaignsTable.submittedByUserId,
+            status: campaignsTable.status,
+            exportedAt: campaignsTable.exportedAt,
+          })
+          .from(campaignsTable)
+          .where(inArray(campaignsTable.id, uniqueIds))
+      : [];
+  const byId = new Map(rows.map((r) => [r.id, r]));
+
   for (const id of ids) {
-    const access = await canMutateCampaign(id, user);
-    if (access === "not_found") {
+    const row = byId.get(id);
+    if (!row) {
       results.push({ id, status: "not_found" });
       continue;
     }
+    const access = bulkCampaignAccess(row, user);
     if (access === "forbidden") {
       results.push({ id, status: "forbidden" });
       continue;
     }
     if (access === "voided") {
       results.push({ id, status: "voided" });
-      continue;
-    }
-    const [row] = await db
-      .select({ name: campaignsTable.name, exportedAt: campaignsTable.exportedAt })
-      .from(campaignsTable)
-      .where(eq(campaignsTable.id, id));
-    if (!row) {
-      results.push({ id, status: "not_found" });
       continue;
     }
     if (requireExported && !row.exportedAt) {

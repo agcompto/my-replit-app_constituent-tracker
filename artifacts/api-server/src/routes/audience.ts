@@ -1,14 +1,10 @@
 import express, { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
-import { db, audienceDonorsTable, campaignsTable, uploadJobsTable, appSettingsTable } from "@workspace/db";
+import { db, audienceDonorsTable, campaignsTable, uploadJobsTable } from "@workspace/db";
 import { UploadAudienceParams, UploadAudienceBody, GetAudienceSummaryParams } from "@workspace/api-zod";
 import { requireAuth, audit, canMutateCampaign } from "../lib/auth";
 import { resolveAudienceSource } from "../lib/audienceSource";
-
-async function googleSheetImportAllowed(): Promise<boolean> {
-  const [s] = await db.select().from(appSettingsTable);
-  return !!s?.googleSheetImportEnabled;
-}
+import { googleSheetImportAllowed } from "../lib/appSettings";
 
 const router: IRouter = Router();
 

@@ -23,11 +23,20 @@ Constituent Touchpoint Planner is an internal web application for NC State Unive
 ## Scan Anchors
 
 - **Production entry points:** `artifacts/api-server/src/index.ts`, `artifacts/api-server/src/app.ts`, `artifacts/touchpoint-planner/src/main.tsx`
-- **Highest-risk API areas:** `artifacts/api-server/src/routes/auth.ts`, `routes/users.ts`, `routes/settings.ts`, `routes/exports.ts`, `routes/campaigns.ts`, `routes/audience.ts`, `routes/reports.ts`, `routes/donors.ts`, `src/lib/seed.ts`
+- **Highest-risk API areas:** `artifacts/api-server/src/routes/auth.ts`, `routes/authSaml.ts`, `routes/users.ts`, `routes/settings.ts`, `routes/exports.ts`, `routes/campaigns.ts`, `routes/audience.ts`, `routes/reports.ts`, `routes/donors.ts`, `src/lib/seed.ts`, `src/lib/samlAccount.ts`, `src/lib/samlMetadata.ts`
 - **Auth and session code:** `artifacts/api-server/src/lib/auth.ts`, `src/lib/session.ts`, `src/lib/rateLimit.ts`
 - **Data-processing logic:** `artifacts/api-server/src/lib/donor.ts`, `src/lib/threshold.ts`, `src/lib/campaigns.ts`
 - **Public vs authenticated vs admin:** health and login/logout are public; campaign viewing and donor lookup are authenticated; user management, settings, retention, and system-wide reporting/export boundaries require stronger role or ownership checks.
 - **Usually ignore:** `artifacts/mockup-sandbox/**`, generated client/zod output unless it changes runtime enforcement.
+
+## SAML / Microsoft Entra
+
+- **Assertion handling (P/service):** Treat every SAML response as hostile until signature, pinned certificate fingerprint, issuer, audience, recipient, time window, InResponseTo, and replay checks pass. Never log raw SAML XML, RelayState, or assertion bodies.
+- **JIT provisioning (P/service + P/DB):** New users only when email domain is in `saml_jit_email_domains`. Rejected domains audit `saml_login_rejected` without creating a row.
+- **Group → role sync (P/service):** When `saml_group_sync_enabled`, map Entra group Object IDs with most-privileged-wins ordering. Block local role edits for SAML-linked users while sync is on.
+- **Password coexistence (P/service):** `password_login_disabled` rejects password login with dummy bcrypt timing; bootstrap super-admin exempt. SAML admin login skips app TOTP (Entra Conditional Access is the MFA layer); password-based admin login still requires TOTP.
+- **Metadata fetch (P/service + O/env):** HTTPS only, optional host allowlist, pinned SHA-256 fingerprints. Failed fetch retains last-known-good signing cert when fingerprint still matches a pin.
+- **Session boundary (P/service):** Regenerate session ID on ACS before attaching `userId`; set `authMethod=saml`. Failed ACS must not mutate authenticated session state.
 
 ## Threat Categories
 

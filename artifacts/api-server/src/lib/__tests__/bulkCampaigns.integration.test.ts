@@ -275,6 +275,7 @@ d("bulk export per-id authorization (IDOR gate)", () => {
       active: true,
       piiAcknowledged: true,
       mustChangePassword: false,
+      passwordLoginDisabled: false,
       totpEnrolled: false,
       totpRequired: false,
     });
@@ -288,6 +289,7 @@ d("bulk export per-id authorization (IDOR gate)", () => {
       active: true,
       piiAcknowledged: true,
       mustChangePassword: false,
+      passwordLoginDisabled: false,
       totpEnrolled: false,
       totpRequired: false,
     });

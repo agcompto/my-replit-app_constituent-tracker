@@ -61,11 +61,13 @@ async function fetchTouchpoints(donorId: string, filters: FilterParams) {
   if (filters.campaignTypeIds?.length) conditions.push(inArray(touchpointsTable.campaignTypeId, filters.campaignTypeIds));
   if (filters.countsTowardThresholdOnly === true) conditions.push(eq(touchpointsTable.countsTowardThreshold, true));
 
+  const MAX_DONOR_TOUCHPOINT_ROWS = 2000;
   const rows = await db
     .select()
     .from(touchpointsTable)
     .where(and(...conditions))
-    .orderBy(touchpointsTable.sendDate);
+    .orderBy(touchpointsTable.sendDate)
+    .limit(MAX_DONOR_TOUCHPOINT_ROWS);
 
   const [channels, types] = await Promise.all([
     db.select().from(channelsTable),

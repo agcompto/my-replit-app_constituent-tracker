@@ -4,6 +4,7 @@ import {
   useCloneCampaign,
   useGetMe,
   useBulkArchiveCampaigns,
+  getListCampaignsQueryKey,
   ApiError,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -190,7 +191,7 @@ export default function Campaigns() {
       { data: { ids } },
       {
         onSuccess: (res) => {
-          queryClient.invalidateQueries({ queryKey: ["listCampaigns"] });
+          queryClient.invalidateQueries({ queryKey: getListCampaignsQueryKey() });
           const skipped = res.results.length - res.archivedCount;
           toast({
             title: "Bulk archive complete",
@@ -486,7 +487,7 @@ export default function Campaigns() {
                     onSuccess: (res) => {
                       const newId = res.campaign.id;
                       const skipped = res.skippedSuppressions;
-                      queryClient.invalidateQueries({ queryKey: ["listCampaigns"] });
+                      queryClient.invalidateQueries({ queryKey: getListCampaignsQueryKey() });
                       toast({
                         title: "Campaign cloned",
                         description:

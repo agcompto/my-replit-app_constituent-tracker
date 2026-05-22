@@ -13,5 +13,7 @@ export interface User {
   name: string;
   role: UserRole;
   active: boolean;
+  passwordLoginDisabled: boolean;
+  samlLinked: boolean;
   createdAt: Date;
 }

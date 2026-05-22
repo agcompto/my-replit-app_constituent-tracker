@@ -1,4 +1,4 @@
-import { useGetCampaign, useArchiveCampaign, useVoidCampaign, useDeleteCampaign, useCloneCampaign, useAiAudienceSummary, useGetSettings, getGetCampaignQueryKey, useListTouches, getListTouchesQueryKey } from "@workspace/api-client-react";
+import { useGetCampaign, useArchiveCampaign, useVoidCampaign, useDeleteCampaign, useCloneCampaign, useAiAudienceSummary, useGetSettings, getGetCampaignQueryKey, getListCampaignsQueryKey, useListTouches, getListTouchesQueryKey } from "@workspace/api-client-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TouchDateHistoryPopover } from "@/components/touch-date-history-popover";
 import { useRoute, useLocation } from "wouter";
@@ -255,7 +255,7 @@ export default function CampaignDetail() {
                     onSuccess: (res) => {
                       const newId = res.campaign.id;
                       const skipped = res.skippedSuppressions;
-                      queryClient.invalidateQueries({ queryKey: ["listCampaigns"] });
+                      queryClient.invalidateQueries({ queryKey: getListCampaignsQueryKey() });
                       toast({
                         title: "Campaign cloned",
                         description:
