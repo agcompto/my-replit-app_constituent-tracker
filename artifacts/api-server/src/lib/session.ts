@@ -104,5 +104,11 @@ declare module "express-session" {
      *  Only persisted to the user row after the user proves possession by
      *  completing `/auth/totp/enroll/verify` with a valid code. */
     pendingTotpSecret?: string;
+    /** How the current session authenticated. */
+    authMethod?: "password" | "saml";
+    /** SAML AuthnRequest ID for InResponseTo validation. */
+    samlAuthnRequestId?: string;
+    /** Validated relative return path for post-ACS redirect. */
+    samlReturnTo?: string;
   }
 }

@@ -184,6 +184,7 @@ export const SCHEDULER_ACTOR: SessionUser = {
   active: true,
   piiAcknowledged: true,
   mustChangePassword: false,
+  passwordLoginDisabled: false,
   totpEnrolled: false,
   totpRequired: false,
 };

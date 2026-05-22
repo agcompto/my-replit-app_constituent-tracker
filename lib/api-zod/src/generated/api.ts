@@ -12,6 +12,33 @@ import * as zod from "zod";
  */
 export const HealthCheckResponse = zod.object({
   status: zod.string(),
+  saml: zod
+    .object({
+      enabled: zod.boolean().optional(),
+      metadataLoaded: zod.boolean().optional(),
+      fingerprintMatches: zod.boolean().optional(),
+      lastMetadataRefreshAt: zod.coerce.date().nullish(),
+      certExpiresAt: zod.coerce.date().nullish(),
+      failureReason: zod.string().nullish(),
+    })
+    .optional(),
+});
+
+/**
+ * @summary Begin SAML login (redirect to IdP)
+ */
+export const StartSamlLoginQueryParams = zod.object({
+  returnTo: zod.coerce.string().optional(),
+});
+
+/**
+ * @summary SP URLs for Entra configuration (super_admin)
+ */
+export const GetSamlSpInfoResponse = zod.object({
+  entityId: zod.string(),
+  acsUrl: zod.string(),
+  metadataUrl: zod.string(),
+  signOnUrl: zod.string(),
 });
 
 export const LoginBody = zod.object({
@@ -28,6 +55,7 @@ export const LoginResponse = zod.union([
     active: zod.boolean(),
     piiAcknowledged: zod.boolean(),
     mustChangePassword: zod.boolean(),
+    passwordLoginDisabled: zod.boolean(),
     totpEnrolled: zod
       .boolean()
       .describe("True when the user has a confirmed TOTP secret on file."),
@@ -68,6 +96,7 @@ export const LoginTotpResponse = zod.object({
   active: zod.boolean(),
   piiAcknowledged: zod.boolean(),
   mustChangePassword: zod.boolean(),
+  passwordLoginDisabled: zod.boolean(),
   totpEnrolled: zod
     .boolean()
     .describe("True when the user has a confirmed TOTP secret on file."),
@@ -140,6 +169,7 @@ export const GetMeResponse = zod.object({
   active: zod.boolean(),
   piiAcknowledged: zod.boolean(),
   mustChangePassword: zod.boolean(),
+  passwordLoginDisabled: zod.boolean(),
   totpEnrolled: zod
     .boolean()
     .describe("True when the user has a confirmed TOTP secret on file."),
@@ -156,6 +186,7 @@ export const AcknowledgePiiResponse = zod.object({
   active: zod.boolean(),
   piiAcknowledged: zod.boolean(),
   mustChangePassword: zod.boolean(),
+  passwordLoginDisabled: zod.boolean(),
   totpEnrolled: zod
     .boolean()
     .describe("True when the user has a confirmed TOTP secret on file."),
@@ -198,6 +229,7 @@ export const ChangeOwnPasswordResponse = zod.object({
   active: zod.boolean(),
   piiAcknowledged: zod.boolean(),
   mustChangePassword: zod.boolean(),
+  passwordLoginDisabled: zod.boolean(),
   totpEnrolled: zod
     .boolean()
     .describe("True when the user has a confirmed TOTP secret on file."),
@@ -212,6 +244,8 @@ export const ListUsersResponseItem = zod.object({
   name: zod.string(),
   role: zod.enum(["standard", "admin", "super_admin"]),
   active: zod.boolean(),
+  passwordLoginDisabled: zod.boolean(),
+  samlLinked: zod.boolean(),
   createdAt: zod.coerce.date(),
 });
 export const ListUsersResponse = zod.array(ListUsersResponseItem);
@@ -230,6 +264,7 @@ export const UpdateUserBody = zod.object({
   name: zod.string().optional(),
   role: zod.enum(["standard", "admin", "super_admin"]).optional(),
   active: zod.boolean().optional(),
+  passwordLoginDisabled: zod.boolean().optional(),
 });
 
 export const UpdateUserResponse = zod.object({
@@ -238,6 +273,8 @@ export const UpdateUserResponse = zod.object({
   name: zod.string(),
   role: zod.enum(["standard", "admin", "super_admin"]),
   active: zod.boolean(),
+  passwordLoginDisabled: zod.boolean(),
+  samlLinked: zod.boolean(),
   createdAt: zod.coerce.date(),
 });
 
@@ -1562,6 +1599,30 @@ export const GetSettingsResponse = zod.object({
     .describe(
       "Per-channel weekly volume capacity (channel ID → max touchpoints\/week). Used by the saturation heatmap report.",
     ),
+  samlEnabled: zod.boolean(),
+  samlIdpMetadataUrl: zod.string().nullish(),
+  samlJitEmailDomains: zod.array(zod.string()).optional(),
+  samlRoleGroupMap: zod
+    .object({
+      super_admin: zod.array(zod.string()),
+      admin: zod.array(zod.string()),
+      standard: zod.array(zod.string()),
+    })
+    .optional(),
+  samlGroupSyncEnabled: zod.boolean().optional(),
+  samlSpEntityId: zod.string().optional(),
+  samlAcsUrl: zod.string().optional(),
+  samlMetadataUrl: zod.string().optional(),
+  samlHealth: zod
+    .object({
+      enabled: zod.boolean().optional(),
+      metadataLoaded: zod.boolean().optional(),
+      fingerprintMatches: zod.boolean().optional(),
+      lastMetadataRefreshAt: zod.coerce.date().nullish(),
+      certExpiresAt: zod.coerce.date().nullish(),
+      failureReason: zod.string().nullish(),
+    })
+    .optional(),
 });
 
 export const updateSettingsBodyFiscalYearStartMonthMax = 12;
@@ -1628,6 +1689,116 @@ export const UpdateSettingsResponse = zod.object({
     .describe(
       "Per-channel weekly volume capacity (channel ID → max touchpoints\/week). Used by the saturation heatmap report.",
     ),
+  samlEnabled: zod.boolean(),
+  samlIdpMetadataUrl: zod.string().nullish(),
+  samlJitEmailDomains: zod.array(zod.string()).optional(),
+  samlRoleGroupMap: zod
+    .object({
+      super_admin: zod.array(zod.string()),
+      admin: zod.array(zod.string()),
+      standard: zod.array(zod.string()),
+    })
+    .optional(),
+  samlGroupSyncEnabled: zod.boolean().optional(),
+  samlSpEntityId: zod.string().optional(),
+  samlAcsUrl: zod.string().optional(),
+  samlMetadataUrl: zod.string().optional(),
+  samlHealth: zod
+    .object({
+      enabled: zod.boolean().optional(),
+      metadataLoaded: zod.boolean().optional(),
+      fingerprintMatches: zod.boolean().optional(),
+      lastMetadataRefreshAt: zod.coerce.date().nullish(),
+      certExpiresAt: zod.coerce.date().nullish(),
+      failureReason: zod.string().nullish(),
+    })
+    .optional(),
+});
+
+/**
+ * @summary Update SAML SSO configuration (super_admin only)
+ */
+export const UpdateSamlSettingsBody = zod.object({
+  samlEnabled: zod.boolean().optional(),
+  samlIdpMetadataUrl: zod.string().nullish(),
+  samlJitEmailDomains: zod.array(zod.string()).optional(),
+  samlRoleGroupMap: zod
+    .object({
+      super_admin: zod.array(zod.string()),
+      admin: zod.array(zod.string()),
+      standard: zod.array(zod.string()),
+    })
+    .optional(),
+  samlGroupSyncEnabled: zod.boolean().optional(),
+});
+
+export const updateSamlSettingsResponseFiscalYearStartMonthMax = 12;
+
+export const updateSamlSettingsResponseFiscalYearStartDayMax = 31;
+
+export const updateSamlSettingsResponseChannelCapacityMinOne = 0;
+export const updateSamlSettingsResponseChannelCapacityMaxOne = 10000000;
+
+export const UpdateSamlSettingsResponse = zod.object({
+  fiscalYearStartMonth: zod
+    .number()
+    .min(1)
+    .max(updateSamlSettingsResponseFiscalYearStartMonthMax),
+  fiscalYearStartDay: zod
+    .number()
+    .min(1)
+    .max(updateSamlSettingsResponseFiscalYearStartDayMax),
+  googleSheetImportEnabled: zod.boolean(),
+  retentionDeleteEnabled: zod.boolean(),
+  globalThresholdsEnabled: zod.boolean(),
+  aiAssistEnabled: zod.boolean(),
+  channelCapacity: zod
+    .record(
+      zod.string(),
+      zod
+        .number()
+        .min(updateSamlSettingsResponseChannelCapacityMinOne)
+        .max(updateSamlSettingsResponseChannelCapacityMaxOne),
+    )
+    .describe(
+      "Per-channel weekly volume capacity (channel ID → max touchpoints\/week). Used by the saturation heatmap report.",
+    ),
+  samlEnabled: zod.boolean(),
+  samlIdpMetadataUrl: zod.string().nullish(),
+  samlJitEmailDomains: zod.array(zod.string()).optional(),
+  samlRoleGroupMap: zod
+    .object({
+      super_admin: zod.array(zod.string()),
+      admin: zod.array(zod.string()),
+      standard: zod.array(zod.string()),
+    })
+    .optional(),
+  samlGroupSyncEnabled: zod.boolean().optional(),
+  samlSpEntityId: zod.string().optional(),
+  samlAcsUrl: zod.string().optional(),
+  samlMetadataUrl: zod.string().optional(),
+  samlHealth: zod
+    .object({
+      enabled: zod.boolean().optional(),
+      metadataLoaded: zod.boolean().optional(),
+      fingerprintMatches: zod.boolean().optional(),
+      lastMetadataRefreshAt: zod.coerce.date().nullish(),
+      certExpiresAt: zod.coerce.date().nullish(),
+      failureReason: zod.string().nullish(),
+    })
+    .optional(),
+});
+
+/**
+ * @summary Force IdP metadata refresh (super_admin)
+ */
+export const RefreshSamlMetadataResponse = zod.object({
+  enabled: zod.boolean().optional(),
+  metadataLoaded: zod.boolean().optional(),
+  fingerprintMatches: zod.boolean().optional(),
+  lastMetadataRefreshAt: zod.coerce.date().nullish(),
+  certExpiresAt: zod.coerce.date().nullish(),
+  failureReason: zod.string().nullish(),
 });
 
 export const RunRetentionDeleteBody = zod.object({

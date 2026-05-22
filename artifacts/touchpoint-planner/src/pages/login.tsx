@@ -8,6 +8,8 @@ import {
   type LoginOutcome,
   type LoginTotpChallenge,
 } from "@workspace/api-client-react";
+import { useQuery } from "@tanstack/react-query";
+import { customFetch } from "@workspace/api-client-react";
 import { Link, useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -223,6 +225,20 @@ function ErrorBanner({ error, fallback }: { error: unknown; fallback: string }) 
   );
 }
 
+const SSO_ERROR_MESSAGES: Record<string, string> = {
+  not_provisioned:
+    "Your account is not provisioned for this application. Contact your administrator.",
+  account_disabled:
+    "Your account has been deactivated. Contact your administrator.",
+};
+
+function useSsoError(): string | null {
+  if (typeof window === "undefined") return null;
+  const code = new URLSearchParams(window.location.search).get("ssoError");
+  if (!code) return null;
+  return SSO_ERROR_MESSAGES[code] ?? "Single sign-on failed. Please try again or contact support.";
+}
+
 function PasswordStep({
   form,
   onSubmit,
@@ -234,9 +250,39 @@ function PasswordStep({
   error: unknown;
   isPending: boolean;
 }) {
+  const ssoError = useSsoError();
+  const { data: samlFlag } = useQuery({
+    queryKey: ["/api/auth/saml/enabled"],
+    queryFn: () => customFetch<{ enabled: boolean }>("/api/auth/saml/enabled"),
+    staleTime: 60_000,
+  });
+  const ssoUrl = `/api/auth/saml/login?returnTo=${encodeURIComponent("/")}`;
   return (
     <>
+      {ssoError && (
+        <div className="bg-destructive/10 text-destructive p-3 rounded-md text-sm flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>{ssoError}</span>
+        </div>
+      )}
       <ErrorBanner error={error} fallback="Failed to log in. Please check your credentials." />
+      {samlFlag?.enabled && (
+        <div className="space-y-3">
+          <Button variant="outline" className="w-full" size="lg" asChild>
+            <a href={ssoUrl} data-testid="button-saml-login">
+              Sign in with Microsoft
+            </a>
+          </Button>
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-white px-2 text-muted-foreground">Or continue with password</span>
+            </div>
+          </div>
+        </div>
+      )}
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
           <FormField

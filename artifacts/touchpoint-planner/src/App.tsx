@@ -54,6 +54,8 @@ const queryClient = new QueryClient({
     queries: {
       retry: 1,
       refetchOnWindowFocus: false,
+      // Reference data (channels, settings, lookups) changes infrequently.
+      staleTime: 5 * 60 * 1000,
     },
   },
 });

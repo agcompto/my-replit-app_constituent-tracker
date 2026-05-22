@@ -46,6 +46,48 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/HealthStatus" }
 
+  /auth/saml/metadata:
+    get:
+      operationId: getSamlMetadata
+      tags: [auth]
+      summary: SP SAML metadata XML (public when SAML enabled)
+      responses:
+        "200":
+          description: Metadata XML
+          content:
+            application/samlmetadata+xml:
+              schema: { type: string }
+  /auth/saml/login:
+    get:
+      operationId: startSamlLogin
+      tags: [auth]
+      summary: Begin SAML login (redirect to IdP)
+      parameters:
+        - name: returnTo
+          in: query
+          schema: { type: string }
+      responses:
+        "302": { description: Redirect to IdP }
+  /auth/saml/acs:
+    post:
+      operationId: samlAcs
+      tags: [auth]
+      summary: SAML assertion consumer (HTTP-POST)
+      responses:
+        "302": { description: Redirect after login }
+        "400": { description: SSO failed }
+  /auth/saml/sp-info:
+    get:
+      operationId: getSamlSpInfo
+      tags: [auth]
+      summary: SP URLs for Entra configuration (super_admin)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SamlSpInfo" }
+
   # ───────── Auth
   /auth/login:
     post:
@@ -1341,6 +1383,33 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AppSettings" }
+  /settings/saml:
+    patch:
+      operationId: updateSamlSettings
+      tags: [settings]
+      summary: Update SAML SSO configuration (super_admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SamlSettingsUpdate" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppSettings" }
+  /settings/saml/refresh-metadata:
+    post:
+      operationId: refreshSamlMetadata
+      tags: [settings]
+      summary: Force IdP metadata refresh (super_admin)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SamlHealthStatus" }
   /retention/delete:
     post:
       operationId: runRetentionDelete
@@ -1829,7 +1898,27 @@ components:
       type: object
       properties:
         status: { type: string }
+        saml: { $ref: "#/components/schemas/SamlHealthStatus" }
       required: [status]
+
+    SamlHealthStatus:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        metadataLoaded: { type: boolean }
+        fingerprintMatches: { type: boolean }
+        lastMetadataRefreshAt: { type: ["string", "null"], format: date-time }
+        certExpiresAt: { type: ["string", "null"], format: date-time }
+        failureReason: { type: ["string", "null"] }
+
+    SamlSpInfo:
+      type: object
+      required: [entityId, acsUrl, metadataUrl, signOnUrl]
+      properties:
+        entityId: { type: string }
+        acsUrl: { type: string }
+        metadataUrl: { type: string }
+        signOnUrl: { type: string }
 
     LoginInput:
       type: object
@@ -1840,7 +1929,7 @@ components:
 
     SessionUser:
       type: object
-      required: [id, email, name, role, active, piiAcknowledged, mustChangePassword, totpEnrolled, totpRequired]
+      required: [id, email, name, role, active, piiAcknowledged, mustChangePassword, passwordLoginDisabled, totpEnrolled, totpRequired]
       properties:
         id: { type: integer }
         email: { type: string }
@@ -1849,6 +1938,7 @@ components:
         active: { type: boolean }
         piiAcknowledged: { type: boolean }
         mustChangePassword: { type: boolean }
+        passwordLoginDisabled: { type: boolean }
         totpEnrolled:
           type: boolean
           description: True when the user has a confirmed TOTP secret on file.
@@ -1926,13 +2016,15 @@ components:
 
     User:
       type: object
-      required: [id, email, name, role, active, createdAt]
+      required: [id, email, name, role, active, passwordLoginDisabled, samlLinked, createdAt]
       properties:
         id: { type: integer }
         email: { type: string }
         name: { type: string }
         role: { type: string, enum: [standard, admin, super_admin] }
         active: { type: boolean }
+        passwordLoginDisabled: { type: boolean }
+        samlLinked: { type: boolean }
         createdAt: { type: string, format: date-time }
     UserInput:
       type: object
@@ -1947,6 +2039,7 @@ components:
         name: { type: string }
         role: { type: string, enum: [standard, admin, super_admin] }
         active: { type: boolean }
+        passwordLoginDisabled: { type: boolean }
     PasswordResetInput:
       type: object
       properties: {}
@@ -2626,7 +2719,7 @@ components:
 
     AppSettings:
       type: object
-      required: [fiscalYearStartMonth, fiscalYearStartDay, googleSheetImportEnabled, retentionDeleteEnabled, globalThresholdsEnabled, aiAssistEnabled, channelCapacity]
+      required: [fiscalYearStartMonth, fiscalYearStartDay, googleSheetImportEnabled, retentionDeleteEnabled, globalThresholdsEnabled, aiAssistEnabled, channelCapacity, samlEnabled]
       properties:
         fiscalYearStartMonth: { type: integer, minimum: 1, maximum: 12 }
         fiscalYearStartDay: { type: integer, minimum: 1, maximum: 31 }
@@ -2638,6 +2731,30 @@ components:
           type: object
           description: Per-channel weekly volume capacity (channel ID → max touchpoints/week). Used by the saturation heatmap report.
           additionalProperties: { type: integer, minimum: 0, maximum: 10000000 }
+        samlEnabled: { type: boolean }
+        samlIdpMetadataUrl: { type: ["string", "null"] }
+        samlJitEmailDomains: { type: array, items: { type: string } }
+        samlRoleGroupMap: { $ref: "#/components/schemas/SamlRoleGroupMap" }
+        samlGroupSyncEnabled: { type: boolean }
+        samlSpEntityId: { type: string }
+        samlAcsUrl: { type: string }
+        samlMetadataUrl: { type: string }
+        samlHealth: { $ref: "#/components/schemas/SamlHealthStatus" }
+    SamlRoleGroupMap:
+      type: object
+      required: [super_admin, admin, standard]
+      properties:
+        super_admin: { type: array, items: { type: string } }
+        admin: { type: array, items: { type: string } }
+        standard: { type: array, items: { type: string } }
+    SamlSettingsUpdate:
+      type: object
+      properties:
+        samlEnabled: { type: boolean }
+        samlIdpMetadataUrl: { type: ["string", "null"] }
+        samlJitEmailDomains: { type: array, items: { type: string } }
+        samlRoleGroupMap: { $ref: "#/components/schemas/SamlRoleGroupMap" }
+        samlGroupSyncEnabled: { type: boolean }
     SettingsUpdate:
       type: object
       properties:

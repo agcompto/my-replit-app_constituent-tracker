@@ -11,6 +11,8 @@ import {
   VerifyTotpEnrollmentBody,
 } from "@workspace/api-zod";
 import { loadUser, requireAuth, audit, type SessionUser } from "../lib/auth";
+import { completeLogin } from "../lib/completeLogin";
+import { isBootstrapSuperAdmin } from "../lib/samlAccount";
 import { revokeOtherSessionsForUser } from "../lib/session";
 import {
   isTotpRequiredForRole,
@@ -122,6 +124,21 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     return;
   }
 
+  if (u.passwordLoginDisabled && !isBootstrapSuperAdmin(u)) {
+    await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
+    const actor = await loadUser(u.id);
+    if (actor) {
+      await audit({
+        actor,
+        action: "password_disabled_user_used_password",
+        entityType: "user",
+        entityId: u.id,
+      });
+    }
+    sendAuthFailure(recordLoginFailure(rateKey));
+    return;
+  }
+
   const ok = await bcrypt.compare(password, u.passwordHash);
   if (!ok) {
     const accountLock = await recordLoginFailureForUser(u.id);
@@ -190,40 +207,6 @@ const PENDING_TOTP_TTL_MS = 5 * 60 * 1000;
 /** Constant base32 secret used to equalize timing on the
  *  no-pending-login / wrong-code paths. Never matched against real input. */
 const DUMMY_TOTP_SECRET = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP";
-
-/**
- * Shared finalize-login routine. Regenerates the session id, writes
- * `userId`/`lastAuthAt`, applies the per-role TTL, audits, and replies with
- * the SessionUser body.
- */
-async function completeLogin(
-  req: import("express").Request,
-  res: import("express").Response,
-  sessionUser: SessionUser,
-  opts?: { auditAction?: string; auditDetails?: string | null },
-): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    req.session.regenerate((err) => (err ? reject(err) : resolve()));
-  });
-  req.session.userId = sessionUser.id;
-  req.session.lastAuthAt = Date.now();
-  const ttl =
-    sessionUser.role === "super_admin"
-      ? SESSION_TTL_MS.super_admin
-      : SESSION_TTL_MS.default;
-  req.session.cookie.maxAge = ttl;
-  await new Promise<void>((resolve, reject) => {
-    req.session.save((err) => (err ? reject(err) : resolve()));
-  });
-  await audit({
-    actor: sessionUser,
-    action: opts?.auditAction ?? "login",
-    entityType: "user",
-    entityId: sessionUser.id,
-    details: opts?.auditDetails ?? null,
-  });
-  res.json(sessionUser);
-}
 
 /**
  * Step 2 of TOTP-required login. Accepts either a 6-digit TOTP code or a

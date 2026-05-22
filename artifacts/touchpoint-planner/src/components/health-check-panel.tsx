@@ -49,11 +49,35 @@ function StatusPill({ status }: { status: "pass" | "warning" | "error" }) {
   );
 }
 
-export function HealthCheckPanel({ campaignId }: { campaignId: number }) {
+type HealthCheckData = {
+  status: string;
+  findings: Array<{
+    code: string;
+    severity: string;
+    message: string;
+    recommendation?: string | null;
+    count?: number | null;
+  }>;
+};
+
+export function HealthCheckPanel({
+  campaignId,
+  health: externalHealth,
+}: {
+  campaignId: number;
+  /** When provided, skips a duplicate fetch (e.g. parent already loaded health for export gating). */
+  health?: HealthCheckData | null;
+}) {
   const queryClient = useQueryClient();
-  const { data, isLoading, isFetching } = useGetCampaignHealthCheck(campaignId, {
-    query: { queryKey: getGetCampaignHealthCheckQueryKey(campaignId), enabled: !!campaignId },
+  const internal = useGetCampaignHealthCheck(campaignId, {
+    query: {
+      queryKey: getGetCampaignHealthCheckQueryKey(campaignId),
+      enabled: !!campaignId && externalHealth === undefined,
+    },
   });
+  const data = externalHealth ?? internal.data;
+  const isLoading = externalHealth === undefined ? internal.isLoading : false;
+  const isFetching = externalHealth === undefined ? internal.isFetching : false;
 
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: getGetCampaignHealthCheckQueryKey(campaignId) });

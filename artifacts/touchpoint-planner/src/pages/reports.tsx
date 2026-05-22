@@ -9,6 +9,10 @@ import {
   useCreateSavedReportView,
   useDeleteSavedReportView,
   getListSavedReportViewsQueryKey,
+  getGetDashboardQueryKey,
+  getGetUpcomingVolumeQueryKey,
+  getGetHighVolumeDonorsQueryKey,
+  getGetCohortAnalysisQueryKey,
   getGetYoyVolumeQueryKey,
   getGetSaturationReportQueryKey,
   type SaturationReport,
@@ -90,6 +94,7 @@ export default function Reports() {
       window.history.replaceState(null, "", next);
     }
   }, [tab, filters, cohortMonths, saturationWeeks]);
+  const reportStaleMs = 5 * 60 * 1000;
   const saturationParams = {
     weeks: saturationWeeks,
     ...(filters.owningUnit ? { owningUnit: filters.owningUnit } : {}),
@@ -101,17 +106,44 @@ export default function Reports() {
       query: {
         enabled: tab === "saturation",
         queryKey: getGetSaturationReportQueryKey(saturationParams),
+        staleTime: reportStaleMs,
       },
     },
   );
 
-  const { data: dashboard, isLoading: dashLoading } = useGetDashboard(filters);
-  const { data: upcoming, isLoading: upcomingLoading } = useGetUpcomingVolume(filters);
-  const { data: highVolume, isLoading: highVolumeLoading } = useGetHighVolumeDonors(filters);
-  const { data: cohort, isLoading: cohortLoading } = useGetCohortAnalysis({
+  const dashboardEnabled = tab === "channels" || tab === "types";
+  const cohortParams = {
     months: cohortMonths,
     ...(filters.owningUnit ? { owningUnit: filters.owningUnit } : {}),
     ...(filters.channelId ? { channelId: filters.channelId } : {}),
+  };
+  const { data: dashboard, isLoading: dashLoading } = useGetDashboard(filters, {
+    query: {
+      enabled: dashboardEnabled,
+      staleTime: reportStaleMs,
+      queryKey: getGetDashboardQueryKey(filters),
+    },
+  });
+  const { data: upcoming, isLoading: upcomingLoading } = useGetUpcomingVolume(filters, {
+    query: {
+      enabled: tab === "upcoming",
+      staleTime: reportStaleMs,
+      queryKey: getGetUpcomingVolumeQueryKey(filters),
+    },
+  });
+  const { data: highVolume, isLoading: highVolumeLoading } = useGetHighVolumeDonors(filters, {
+    query: {
+      enabled: tab === "high-volume",
+      staleTime: reportStaleMs,
+      queryKey: getGetHighVolumeDonorsQueryKey(filters),
+    },
+  });
+  const { data: cohort, isLoading: cohortLoading } = useGetCohortAnalysis(cohortParams, {
+    query: {
+      enabled: tab === "cohort",
+      staleTime: reportStaleMs,
+      queryKey: getGetCohortAnalysisQueryKey(cohortParams),
+    },
   });
   const yoyEnabled = !!filters.startDate && !!filters.endDate;
   const yoyParams = {
@@ -121,7 +153,11 @@ export default function Reports() {
     ...(filters.channelId ? { channelId: filters.channelId } : {}),
   };
   const { data: yoy, isLoading: yoyLoading } = useGetYoyVolume(yoyParams, {
-    query: { enabled: yoyEnabled, queryKey: getGetYoyVolumeQueryKey(yoyParams) },
+    query: {
+      enabled: tab === "yoy" && yoyEnabled,
+      queryKey: getGetYoyVolumeQueryKey(yoyParams),
+      staleTime: reportStaleMs,
+    },
   });
 
   const handleDownloadUpcoming = () => upcoming && downloadCSV("upcoming-volume", upcoming);

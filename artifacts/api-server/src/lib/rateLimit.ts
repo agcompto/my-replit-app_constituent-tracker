@@ -213,6 +213,16 @@ export function checkForgotPasswordPerIp(ip: string): RateLimitResult {
   return checkSlidingRate(`forgot|ip|${ip}`, 5, 15 * 60_000);
 }
 
+// SAML login redirect: 30 / 15 min per IP
+export function checkSamlLoginRate(ip: string): RateLimitResult {
+  return checkSlidingRate(`saml|login|${ip}`, 30, 15 * 60_000);
+}
+
+// SAML ACS: 60 / 15 min per IP
+export function checkSamlAcsRate(ip: string): RateLimitResult {
+  return checkSlidingRate(`saml|acs|${ip}`, 60, 15 * 60_000);
+}
+
 // Periodic cleanup. Each bucket carries its own windowMs so we never prune
 // a timestamp that is still within its caller's intended window.
 setInterval(() => {

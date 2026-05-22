@@ -12,6 +12,8 @@ import {
   ResetUserTotpParams,
 } from "@workspace/api-zod";
 import { requireRole, audit } from "../lib/auth";
+import { isBootstrapSuperAdmin, isSamlManagedUser } from "../lib/samlAccount";
+import { appSettingsTable } from "@workspace/db";
 import { requireRecentAuth, RECENT_AUTH_WINDOW_MS } from "../lib/recentAuth";
 import { deleteAllRecoveryCodes } from "../lib/totp";
 import { generateTempPassword } from "../lib/password";
@@ -39,6 +41,8 @@ router.get(
         name: r.name,
         role: r.role,
         active: r.active,
+        passwordLoginDisabled: r.passwordLoginDisabled,
+        samlLinked: r.samlSubjectNameid != null,
         createdAt: r.createdAt.toISOString(),
       })),
     );
@@ -188,9 +192,43 @@ router.patch(
         return;
       }
     }
+    const [targetUser] = await db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.id, params.data.id));
+    if (!targetUser) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+    const patch = { ...body.data } as Record<string, unknown>;
+    if (
+      "passwordLoginDisabled" in patch &&
+      isBootstrapSuperAdmin(targetUser)
+    ) {
+      res.status(400).json({
+        error: "Password login cannot be disabled for the bootstrap super-admin.",
+      });
+      return;
+    }
+    const [settings] = await db
+      .select({ samlGroupSyncEnabled: appSettingsTable.samlGroupSyncEnabled })
+      .from(appSettingsTable)
+      .where(eq(appSettingsTable.id, 1))
+      .limit(1);
+    if (
+      settings?.samlGroupSyncEnabled &&
+      (await isSamlManagedUser(targetUser.id)) &&
+      patch.role !== undefined &&
+      patch.role !== targetUser.role
+    ) {
+      res.status(403).json({
+        error: "Role is managed by Microsoft Entra group sync.",
+      });
+      return;
+    }
     const [u] = await db
       .update(usersTable)
-      .set(body.data)
+      .set(patch as typeof body.data)
       .where(eq(usersTable.id, params.data.id))
       .returning();
     if (!u) {
@@ -210,6 +248,8 @@ router.patch(
       name: u.name,
       role: u.role,
       active: u.active,
+      passwordLoginDisabled: u.passwordLoginDisabled,
+      samlLinked: u.samlSubjectNameid != null,
       createdAt: u.createdAt.toISOString(),
     });
   },

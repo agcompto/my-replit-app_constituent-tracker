@@ -452,7 +452,7 @@ export default function PreviewStep({ campaign }: { campaign: any }) {
         </CardContent>
       </Card>
 
-      <HealthCheckPanel campaignId={campaign.id} />
+      <HealthCheckPanel campaignId={campaign.id} health={health ?? null} />
 
       {undoAffordancesEnabled && preview?.perTouch && preview.perTouch.length > 0 && (
         <div className="space-y-2">

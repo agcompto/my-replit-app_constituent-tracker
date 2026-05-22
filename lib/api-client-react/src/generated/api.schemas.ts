@@ -5,8 +5,28 @@
  * Constituent Touchpoint Planner API
  * OpenAPI spec version: 0.1.0
  */
+export interface SamlHealthStatus {
+  enabled?: boolean;
+  metadataLoaded?: boolean;
+  fingerprintMatches?: boolean;
+  /** @nullable */
+  lastMetadataRefreshAt?: string | null;
+  /** @nullable */
+  certExpiresAt?: string | null;
+  /** @nullable */
+  failureReason?: string | null;
+}
+
 export interface HealthStatus {
   status: string;
+  saml?: SamlHealthStatus;
+}
+
+export interface SamlSpInfo {
+  entityId: string;
+  acsUrl: string;
+  metadataUrl: string;
+  signOnUrl: string;
 }
 
 export interface LoginInput {
@@ -31,6 +51,7 @@ export interface SessionUser {
   active: boolean;
   piiAcknowledged: boolean;
   mustChangePassword: boolean;
+  passwordLoginDisabled: boolean;
   /** True when the user has a confirmed TOTP secret on file. */
   totpEnrolled: boolean;
   /** True when the user's role mandates TOTP (admin/super_admin). */
@@ -102,6 +123,8 @@ export interface User {
   name: string;
   role: UserRole;
   active: boolean;
+  passwordLoginDisabled: boolean;
+  samlLinked: boolean;
   createdAt: string;
 }
 
@@ -132,6 +155,7 @@ export interface UserUpdate {
   name?: string;
   role?: UserUpdateRole;
   active?: boolean;
+  passwordLoginDisabled?: boolean;
 }
 
 export interface PasswordResetInput {
@@ -878,6 +902,12 @@ export interface AuditExportTooLarge {
  */
 export type AppSettingsChannelCapacity = { [key: string]: number };
 
+export interface SamlRoleGroupMap {
+  super_admin: string[];
+  admin: string[];
+  standard: string[];
+}
+
 export interface AppSettings {
   /**
    * @minimum 1
@@ -895,6 +925,25 @@ export interface AppSettings {
   aiAssistEnabled: boolean;
   /** Per-channel weekly volume capacity (channel ID → max touchpoints/week). Used by the saturation heatmap report. */
   channelCapacity: AppSettingsChannelCapacity;
+  samlEnabled: boolean;
+  /** @nullable */
+  samlIdpMetadataUrl?: string | null;
+  samlJitEmailDomains?: string[];
+  samlRoleGroupMap?: SamlRoleGroupMap;
+  samlGroupSyncEnabled?: boolean;
+  samlSpEntityId?: string;
+  samlAcsUrl?: string;
+  samlMetadataUrl?: string;
+  samlHealth?: SamlHealthStatus;
+}
+
+export interface SamlSettingsUpdate {
+  samlEnabled?: boolean;
+  /** @nullable */
+  samlIdpMetadataUrl?: string | null;
+  samlJitEmailDomains?: string[];
+  samlRoleGroupMap?: SamlRoleGroupMap;
+  samlGroupSyncEnabled?: boolean;
 }
 
 export type SettingsUpdateChannelCapacity = { [key: string]: number };
@@ -1627,6 +1676,10 @@ export interface BulkArchiveResult {
   results: BulkArchiveResultItem[];
   archivedCount: number;
 }
+
+export type StartSamlLoginParams = {
+  returnTo?: string;
+};
 
 export type ListCampaignsParams = {
   mine?: boolean;

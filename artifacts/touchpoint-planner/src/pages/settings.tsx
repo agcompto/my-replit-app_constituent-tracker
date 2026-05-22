@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Pencil } from "lucide-react";
 import { SecuritySettings } from "@/components/SecuritySettings";
+import { SamlSettingsPanel } from "@/components/SamlSettingsPanel";
 
 export default function Settings() {
   const { data: me } = useGetMe();
@@ -202,8 +203,15 @@ export default function Settings() {
           <TabsTrigger value="system">System Parameters</TabsTrigger>
           <TabsTrigger value="reports">Reports</TabsTrigger>
           <TabsTrigger value="security">My Security</TabsTrigger>
+          {isSuperAdmin && <TabsTrigger value="sso">Single Sign-On</TabsTrigger>}
           {isSuperAdmin && <TabsTrigger value="retention" className="text-destructive data-[state=active]:text-destructive">Data Retention</TabsTrigger>}
         </TabsList>
+
+        {isSuperAdmin && (
+          <TabsContent value="sso" className="space-y-6">
+            <SamlSettingsPanel />
+          </TabsContent>
+        )}
 
         <TabsContent value="security" className="space-y-6">
           <SecuritySettings />

@@ -1,4 +1,4 @@
-import express, { type Express } from "express";
+import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import pinoHttp from "pino-http";
@@ -60,7 +60,13 @@ app.use(
     origin: (origin, cb) => {
       // Allow same-origin / non-browser requests (no Origin header)
       if (!origin) return cb(null, true);
-      if (allowedOrigins.length === 0) return cb(null, true); // dev fallback
+      // Fail closed in production when REPLIT_DOMAINS is unset.
+      if (allowedOrigins.length === 0) {
+        if (process.env.NODE_ENV === "production") {
+          return cb(new Error("Origin not allowed by CORS"));
+        }
+        return cb(null, true);
+      }
       if (allowedOrigins.includes(origin)) return cb(null, true);
       return cb(new Error("Origin not allowed by CORS"));
     },
@@ -120,10 +126,29 @@ const passwordChangeAllowlist = new Set([
   "POST /api/auth/change-password",
   "GET /api/healthz",
 ]);
+
+/** Token-based setup/reset routes must stay reachable even when the browser
+ *  still holds an old session with `mustChangePassword` (common on first boot). */
+function isPasswordSetupRoute(method: string, path: string): boolean {
+  if (method === "GET" && /^\/api\/password-setup\/[^/]+$/.test(path)) return true;
+  if (method === "POST" && /^\/api\/password-setup\/[^/]+\/complete$/.test(path)) {
+    return true;
+  }
+  return false;
+}
+
+function isSamlPublicRoute(method: string, path: string): boolean {
+  if (method === "GET" && path.startsWith("/api/auth/saml/")) return true;
+  if (method === "POST" && path === "/api/auth/saml/acs") return true;
+  return false;
+}
+
 app.use((req, res, next) => {
   if (!req.currentUser?.mustChangePassword) return next();
   const key = `${req.method} ${req.path}`;
   if (passwordChangeAllowlist.has(key)) return next();
+  if (isPasswordSetupRoute(req.method, req.path)) return next();
+  if (isSamlPublicRoute(req.method, req.path)) return next();
   if (!req.path.startsWith("/api")) return next();
   res.status(403).json({
     error: "Password change required before continuing.",
@@ -132,5 +157,28 @@ app.use((req, res, next) => {
 });
 
 app.use("/api", router);
+
+// Central error handler — unhandled async rejections and middleware errors.
+app.use(
+  (err: unknown, req: Request, res: Response, _next: NextFunction): void => {
+    const log = (req as Request & { log?: { error: (o: unknown, msg: string) => void } }).log;
+    if (log) {
+      log.error({ err }, "Unhandled request error");
+    } else {
+      logger.error({ err }, "Unhandled request error");
+    }
+    if (res.headersSent) return;
+    const message = err instanceof Error ? err.message : "Internal server error";
+    const status =
+      message === "Origin not allowed by CORS"
+        ? 403
+        : message.includes("Not allowed")
+          ? 403
+          : 500;
+    res.status(status).json({
+      error: status === 500 ? "Internal server error" : message,
+    });
+  },
+);
 
 export default app;

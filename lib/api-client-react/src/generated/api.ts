@@ -97,6 +97,9 @@ import type {
   RetentionScheduleRunNowInput,
   RetentionScheduleRunNowResponse,
   RetentionScheduleUpdate,
+  SamlHealthStatus,
+  SamlSettingsUpdate,
+  SamlSpInfo,
   SaturationReport,
   SavedReportView,
   SavedReportViewInput,
@@ -104,6 +107,7 @@ import type {
   SeedGroupInput,
   SessionUser,
   SettingsUpdate,
+  StartSamlLoginParams,
   Suppression,
   SuppressionInput,
   SuppressionReasonCode,
@@ -209,6 +213,329 @@ export function useHealthCheck<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getHealthCheckQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary SP SAML metadata XML (public when SAML enabled)
+ */
+export const getGetSamlMetadataUrl = () => {
+  return `/api/auth/saml/metadata`;
+};
+
+export const getSamlMetadata = async (
+  options?: RequestInit,
+): Promise<string> => {
+  return customFetch<string>(getGetSamlMetadataUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetSamlMetadataQueryKey = () => {
+  return [`/api/auth/saml/metadata`] as const;
+};
+
+export const getGetSamlMetadataQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSamlMetadata>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getSamlMetadata>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetSamlMetadataQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSamlMetadata>>> = ({
+    signal,
+  }) => getSamlMetadata({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSamlMetadata>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetSamlMetadataQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSamlMetadata>>
+>;
+export type GetSamlMetadataQueryError = ErrorType<unknown>;
+
+/**
+ * @summary SP SAML metadata XML (public when SAML enabled)
+ */
+
+export function useGetSamlMetadata<
+  TData = Awaited<ReturnType<typeof getSamlMetadata>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getSamlMetadata>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetSamlMetadataQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Begin SAML login (redirect to IdP)
+ */
+export const getStartSamlLoginUrl = (params?: StartSamlLoginParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/auth/saml/login?${stringifiedParams}`
+    : `/api/auth/saml/login`;
+};
+
+export const startSamlLogin = async (
+  params?: StartSamlLoginParams,
+  options?: RequestInit,
+): Promise<unknown> => {
+  return customFetch<unknown>(getStartSamlLoginUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getStartSamlLoginQueryKey = (params?: StartSamlLoginParams) => {
+  return [`/api/auth/saml/login`, ...(params ? [params] : [])] as const;
+};
+
+export const getStartSamlLoginQueryOptions = <
+  TData = Awaited<ReturnType<typeof startSamlLogin>>,
+  TError = ErrorType<void>,
+>(
+  params?: StartSamlLoginParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof startSamlLogin>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getStartSamlLoginQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof startSamlLogin>>> = ({
+    signal,
+  }) => startSamlLogin(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof startSamlLogin>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type StartSamlLoginQueryResult = NonNullable<
+  Awaited<ReturnType<typeof startSamlLogin>>
+>;
+export type StartSamlLoginQueryError = ErrorType<void>;
+
+/**
+ * @summary Begin SAML login (redirect to IdP)
+ */
+
+export function useStartSamlLogin<
+  TData = Awaited<ReturnType<typeof startSamlLogin>>,
+  TError = ErrorType<void>,
+>(
+  params?: StartSamlLoginParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof startSamlLogin>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getStartSamlLoginQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary SAML assertion consumer (HTTP-POST)
+ */
+export const getSamlAcsUrl = () => {
+  return `/api/auth/saml/acs`;
+};
+
+export const samlAcs = async (options?: RequestInit): Promise<unknown> => {
+  return customFetch<unknown>(getSamlAcsUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getSamlAcsMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof samlAcs>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof samlAcs>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["samlAcs"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof samlAcs>>,
+    void
+  > = () => {
+    return samlAcs(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SamlAcsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof samlAcs>>
+>;
+
+export type SamlAcsMutationError = ErrorType<void>;
+
+/**
+ * @summary SAML assertion consumer (HTTP-POST)
+ */
+export const useSamlAcs = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof samlAcs>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof samlAcs>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getSamlAcsMutationOptions(options));
+};
+
+/**
+ * @summary SP URLs for Entra configuration (super_admin)
+ */
+export const getGetSamlSpInfoUrl = () => {
+  return `/api/auth/saml/sp-info`;
+};
+
+export const getSamlSpInfo = async (
+  options?: RequestInit,
+): Promise<SamlSpInfo> => {
+  return customFetch<SamlSpInfo>(getGetSamlSpInfoUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetSamlSpInfoQueryKey = () => {
+  return [`/api/auth/saml/sp-info`] as const;
+};
+
+export const getGetSamlSpInfoQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSamlSpInfo>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getSamlSpInfo>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetSamlSpInfoQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSamlSpInfo>>> = ({
+    signal,
+  }) => getSamlSpInfo({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSamlSpInfo>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetSamlSpInfoQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSamlSpInfo>>
+>;
+export type GetSamlSpInfoQueryError = ErrorType<unknown>;
+
+/**
+ * @summary SP URLs for Entra configuration (super_admin)
+ */
+
+export function useGetSamlSpInfo<
+  TData = Awaited<ReturnType<typeof getSamlSpInfo>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getSamlSpInfo>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetSamlSpInfoQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -7053,6 +7380,173 @@ export const useUpdateSettings = <
   TContext
 > => {
   return useMutation(getUpdateSettingsMutationOptions(options));
+};
+
+/**
+ * @summary Update SAML SSO configuration (super_admin only)
+ */
+export const getUpdateSamlSettingsUrl = () => {
+  return `/api/settings/saml`;
+};
+
+export const updateSamlSettings = async (
+  samlSettingsUpdate: SamlSettingsUpdate,
+  options?: RequestInit,
+): Promise<AppSettings> => {
+  return customFetch<AppSettings>(getUpdateSamlSettingsUrl(), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(samlSettingsUpdate),
+  });
+};
+
+export const getUpdateSamlSettingsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSamlSettings>>,
+    TError,
+    { data: BodyType<SamlSettingsUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateSamlSettings>>,
+  TError,
+  { data: BodyType<SamlSettingsUpdate> },
+  TContext
+> => {
+  const mutationKey = ["updateSamlSettings"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateSamlSettings>>,
+    { data: BodyType<SamlSettingsUpdate> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return updateSamlSettings(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateSamlSettingsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateSamlSettings>>
+>;
+export type UpdateSamlSettingsMutationBody = BodyType<SamlSettingsUpdate>;
+export type UpdateSamlSettingsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update SAML SSO configuration (super_admin only)
+ */
+export const useUpdateSamlSettings = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSamlSettings>>,
+    TError,
+    { data: BodyType<SamlSettingsUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateSamlSettings>>,
+  TError,
+  { data: BodyType<SamlSettingsUpdate> },
+  TContext
+> => {
+  return useMutation(getUpdateSamlSettingsMutationOptions(options));
+};
+
+/**
+ * @summary Force IdP metadata refresh (super_admin)
+ */
+export const getRefreshSamlMetadataUrl = () => {
+  return `/api/settings/saml/refresh-metadata`;
+};
+
+export const refreshSamlMetadata = async (
+  options?: RequestInit,
+): Promise<SamlHealthStatus> => {
+  return customFetch<SamlHealthStatus>(getRefreshSamlMetadataUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getRefreshSamlMetadataMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof refreshSamlMetadata>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof refreshSamlMetadata>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["refreshSamlMetadata"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof refreshSamlMetadata>>,
+    void
+  > = () => {
+    return refreshSamlMetadata(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RefreshSamlMetadataMutationResult = NonNullable<
+  Awaited<ReturnType<typeof refreshSamlMetadata>>
+>;
+
+export type RefreshSamlMetadataMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Force IdP metadata refresh (super_admin)
+ */
+export const useRefreshSamlMetadata = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof refreshSamlMetadata>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof refreshSamlMetadata>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getRefreshSamlMetadataMutationOptions(options));
 };
 
 export const getRunRetentionDeleteUrl = () => {
