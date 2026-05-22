@@ -9,11 +9,13 @@
       "package.json",
       "pnpm-lock.yaml",
       "pnpm-workspace.yaml",
-      "railway.json"
+      "railway.json",
+      "railpack.json",
+      "Procfile"
     ]
   },
   "deploy": {
-    "startCommand": "node --enable-source-maps artifacts/api-server/dist/index.mjs",
+    "startCommand": "pnpm run start",
     "healthcheckPath": "/api/healthz",
     "healthcheckTimeout": 120,
     "restartPolicyType": "ON_FAILURE"
