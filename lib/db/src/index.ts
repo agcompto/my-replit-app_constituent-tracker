@@ -10,7 +10,22 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+function poolOptions(): pg.PoolConfig {
+  const connectionString = process.env.DATABASE_URL!;
+  const useSsl =
+    process.env.DATABASE_SSL === "1" ||
+    process.env.PGSSLMODE === "require" ||
+    /sslmode=require/i.test(connectionString);
+  return {
+    connectionString,
+    max: Number(process.env.DATABASE_POOL_MAX ?? 10),
+    ssl: useSsl
+      ? { rejectUnauthorized: process.env.DATABASE_SSL_REJECT_UNAUTHORIZED === "1" }
+      : undefined,
+  };
+}
+
+export const pool = new Pool(poolOptions());
 export const db = drizzle(pool, { schema });
 
 /**

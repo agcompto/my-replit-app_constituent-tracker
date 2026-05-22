@@ -1,0 +1,23 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "RAILPACK",
+    "buildCommand": "pnpm install && pnpm run build:deploy",
+    "watchPatterns": [
+      "artifacts/**",
+      "lib/**",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "railway.json",
+      "railpack.json",
+      "Procfile"
+    ]
+  },
+  "deploy": {
+    "startCommand": "pnpm run start",
+    "healthcheckPath": "/api/healthz",
+    "healthcheckTimeout": 120,
+    "restartPolicyType": "ON_FAILURE"
+  }
+}

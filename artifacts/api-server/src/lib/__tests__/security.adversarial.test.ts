@@ -5,7 +5,7 @@ import {
   assertSafeSamlXml,
   assertSingleAssertion,
   extractAssertionExpiryFromXml,
-} from "../samlService";
+} from "../samlXmlPolicy";
 import { assertSafeOutboundHttpsUrl } from "../outboundUrl";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -106,5 +106,17 @@ describe("SAML ACS hardening (static)", () => {
     const src = readFileSync(join(import.meta.dirname, "../samlAccount.ts"), "utf8");
     expect(src).toContain("!u.active");
     expect(src).toContain("account_disabled");
+  });
+
+  it("uses dev public URL fallback for SAML SP URLs when unset", () => {
+    const src = readFileSync(join(import.meta.dirname, "../appUrl.ts"), "utf8");
+    expect(src).toContain("samlPublicBaseUrl");
+    expect(src).toContain('NODE_ENV === "development"');
+  });
+
+  it("serves production SPA from api-server", () => {
+    const src = readFileSync(join(import.meta.dirname, "../staticWeb.ts"), "utf8");
+    expect(src).toContain("mountProductionWeb");
+    expect(src).toContain("touchpoint-planner/dist/public");
   });
 });

@@ -56,7 +56,6 @@
     "cmdk": "^1.1.1",
     "date-fns": "^3.6.0",
     "embla-carousel-react": "^8.6.0",
-    "framer-motion": "catalog:",
     "input-otp": "^1.4.2",
     "lightningcss-darwin-x64": "1.31.1",
     "lucide-react": "catalog:",
@@ -65,7 +64,6 @@
     "react-day-picker": "^9.11.1",
     "react-dom": "catalog:",
     "react-hook-form": "^7.55.0",
-    "react-icons": "^5.4.0",
     "react-resizable-panels": "^2.1.7",
     "recharts": "^2.15.2",
     "sonner": "^2.0.7",
@@ -76,5 +74,10 @@
     "vite": "catalog:",
     "wouter": "^3.3.5",
     "zod": "catalog:"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-darwin-x64": "4.59.0",
+    "@tailwindcss/oxide-darwin-x64": "^4.3.0",
+    "lightningcss-darwin-x64": "1.31.1"
   }
 }

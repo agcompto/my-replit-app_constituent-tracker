@@ -4,13 +4,14 @@ import {
   useRefreshSamlMetadata,
   getGetSettingsQueryKey,
 } from "@workspace/api-client-react";
+import { apiErrorMessage } from "@/lib/apiError";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2, Copy, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -38,19 +39,37 @@ function CopyField({ label, value }: { label: string; value: string }) {
   );
 }
 
+function parseGroupLines(s: string): string[] {
+  return s
+    .split(/[\n,]+/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
 export function SamlSettingsPanel() {
-  const { data: settings, isLoading } = useGetSettings();
+  const { data: settings, isLoading, isError, error, refetch } = useGetSettings();
   const updateSaml = useUpdateSamlSettings();
   const refreshMeta = useRefreshSamlMetadata();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  const [metadataUrl, setMetadataUrl] = useState("");
   const [domains, setDomains] = useState("");
   const [superAdminGroups, setSuperAdminGroups] = useState("");
   const [adminGroups, setAdminGroups] = useState("");
   const [standardGroups, setStandardGroups] = useState("");
 
-  if (isLoading || !settings) {
+  useEffect(() => {
+    if (!settings) return;
+    setMetadataUrl(settings.samlIdpMetadataUrl ?? "");
+    setDomains((settings.samlJitEmailDomains ?? []).join(", "));
+    const map = settings.samlRoleGroupMap ?? { super_admin: [], admin: [], standard: [] };
+    setSuperAdminGroups((map.super_admin ?? []).join("\n"));
+    setAdminGroups((map.admin ?? []).join("\n"));
+    setStandardGroups((map.standard ?? []).join("\n"));
+  }, [settings]);
+
+  if (isLoading) {
     return (
       <div className="flex justify-center p-8">
         <Loader2 className="h-6 w-6 animate-spin" />
@@ -58,35 +77,38 @@ export function SamlSettingsPanel() {
     );
   }
 
-  const syncFormFromSettings = () => {
-    setDomains((settings.samlJitEmailDomains ?? []).join(", "));
-    const map = settings.samlRoleGroupMap ?? { super_admin: [], admin: [], standard: [] };
-    setSuperAdminGroups((map.super_admin ?? []).join("\n"));
-    setAdminGroups((map.admin ?? []).join("\n"));
-    setStandardGroups((map.standard ?? []).join("\n"));
-  };
+  if (isError || !settings) {
+    return (
+      <Card>
+        <CardContent className="pt-6 space-y-3">
+          <p className="text-sm text-destructive">
+            Failed to load SSO settings: {apiErrorMessage(error, "Could not load settings.")}
+          </p>
+          <Button variant="outline" size="sm" onClick={() => refetch()}>
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
 
-  if (domains === "" && settings.samlJitEmailDomains?.length) syncFormFromSettings();
+  const invalidateSettings = () =>
+    queryClient.invalidateQueries({ queryKey: getGetSettingsQueryKey() });
 
   const save = () => {
-    const parseLines = (s: string) =>
-      s
-        .split(/[\n,]+/)
-        .map((x) => x.trim())
-        .filter(Boolean);
     updateSaml.mutate(
       {
         data: {
           samlEnabled: settings.samlEnabled,
-          samlIdpMetadataUrl: settings.samlIdpMetadataUrl ?? null,
+          samlIdpMetadataUrl: metadataUrl.trim() || null,
           samlJitEmailDomains: domains
             .split(/[,]+/)
             .map((d) => d.trim().toLowerCase())
             .filter(Boolean),
           samlRoleGroupMap: {
-            super_admin: parseLines(superAdminGroups),
-            admin: parseLines(adminGroups),
-            standard: parseLines(standardGroups),
+            super_admin: parseGroupLines(superAdminGroups),
+            admin: parseGroupLines(adminGroups),
+            standard: parseGroupLines(standardGroups),
           },
           samlGroupSyncEnabled: settings.samlGroupSyncEnabled ?? false,
         },
@@ -94,14 +116,13 @@ export function SamlSettingsPanel() {
       {
         onSuccess: () => {
           toast({ title: "SAML settings saved" });
-          queryClient.invalidateQueries({ queryKey: getGetSettingsQueryKey() });
+          invalidateSettings();
         },
         onError: (err: unknown) => {
-          const msg =
-            err && typeof err === "object" && "data" in err
-              ? String((err as { data?: { error?: string } }).data?.error)
-              : "Save failed";
-          toast({ title: msg, variant: "destructive" });
+          toast({
+            title: apiErrorMessage(err, "Save failed"),
+            variant: "destructive",
+          });
         },
       },
     );
@@ -127,10 +148,7 @@ export function SamlSettingsPanel() {
             onCheckedChange={(checked) =>
               updateSaml.mutate(
                 { data: { samlEnabled: checked } },
-                {
-                  onSuccess: () =>
-                    queryClient.invalidateQueries({ queryKey: getGetSettingsQueryKey() }),
-                },
+                { onSuccess: invalidateSettings },
               )
             }
           />
@@ -147,13 +165,8 @@ export function SamlSettingsPanel() {
         <div className="space-y-2">
           <Label>IdP Federation Metadata URL (HTTPS)</Label>
           <Input
-            value={settings.samlIdpMetadataUrl ?? ""}
-            onChange={(e) =>
-              updateSaml.mutate(
-                { data: { samlIdpMetadataUrl: e.target.value || null } },
-                { onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetSettingsQueryKey() }) },
-              )
-            }
+            value={metadataUrl}
+            onChange={(e) => setMetadataUrl(e.target.value)}
             placeholder="https://login.microsoftonline.com/.../federationmetadata/2007-06/federationmetadata.xml"
           />
         </div>
@@ -161,7 +174,7 @@ export function SamlSettingsPanel() {
         <div className="space-y-2">
           <Label>JIT email domains (comma-separated)</Label>
           <Input
-            value={domains || (settings.samlJitEmailDomains ?? []).join(", ")}
+            value={domains}
             onChange={(e) => setDomains(e.target.value)}
             placeholder="ncsu.edu"
           />
@@ -174,7 +187,7 @@ export function SamlSettingsPanel() {
             onCheckedChange={(checked) =>
               updateSaml.mutate(
                 { data: { samlGroupSyncEnabled: checked } },
-                { onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetSettingsQueryKey() }) },
+                { onSuccess: invalidateSettings },
               )
             }
           />
@@ -185,7 +198,7 @@ export function SamlSettingsPanel() {
             <Label className="text-xs">super_admin group Object IDs</Label>
             <textarea
               className="w-full min-h-[80px] rounded-md border p-2 text-xs font-mono"
-              value={superAdminGroups || (settings.samlRoleGroupMap?.super_admin ?? []).join("\n")}
+              value={superAdminGroups}
               onChange={(e) => setSuperAdminGroups(e.target.value)}
             />
           </div>
@@ -193,7 +206,7 @@ export function SamlSettingsPanel() {
             <Label className="text-xs">admin group Object IDs</Label>
             <textarea
               className="w-full min-h-[80px] rounded-md border p-2 text-xs font-mono"
-              value={adminGroups || (settings.samlRoleGroupMap?.admin ?? []).join("\n")}
+              value={adminGroups}
               onChange={(e) => setAdminGroups(e.target.value)}
             />
           </div>
@@ -201,7 +214,7 @@ export function SamlSettingsPanel() {
             <Label className="text-xs">standard group Object IDs</Label>
             <textarea
               className="w-full min-h-[80px] rounded-md border p-2 text-xs font-mono"
-              value={standardGroups || (settings.samlRoleGroupMap?.standard ?? []).join("\n")}
+              value={standardGroups}
               onChange={(e) => setStandardGroups(e.target.value)}
             />
           </div>
@@ -214,7 +227,9 @@ export function SamlSettingsPanel() {
             <li>Fingerprint matches pin: {health?.fingerprintMatches ? "yes" : "no"}</li>
             <li>Last refresh: {health?.lastMetadataRefreshAt ?? "—"}</li>
             <li>Cert expires: {health?.certExpiresAt ?? "—"}</li>
-            {health?.failureReason && <li className="text-destructive">Issue: {health.failureReason}</li>}
+            {health?.failureReason && (
+              <li className="text-destructive">Issue: {health.failureReason}</li>
+            )}
           </ul>
           <Button
             variant="outline"
@@ -224,7 +239,7 @@ export function SamlSettingsPanel() {
               refreshMeta.mutate(undefined, {
                 onSuccess: () => {
                   toast({ title: "Metadata refreshed" });
-                  queryClient.invalidateQueries({ queryKey: getGetSettingsQueryKey() });
+                  invalidateSettings();
                 },
               })
             }

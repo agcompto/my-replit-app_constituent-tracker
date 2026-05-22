@@ -161,9 +161,15 @@ overrides:
   '@esbuild-kit/esm-loader': npm:tsx@^4.21.0
   esbuild: 0.27.3
 
+packageExtensionsChecksum: sha256-9060/VmHlAX/nAEYwNOnMiq6a1WTp/XNxtVQMJBwUF0=
+
 importers:
 
   .:
+    dependencies:
+      xmlbuilder:
+        specifier: ^15.1.1
+        version: 15.1.1
     devDependencies:
       prettier:
         specifier: ^3.8.1
@@ -231,7 +237,13 @@ importers:
       qrcode:
         specifier: ^1.5.4
         version: 1.5.4
+      xmlbuilder:
+        specifier: ^15.1.1
+        version: 15.1.1
     devDependencies:
+      '@rollup/rollup-darwin-x64':
+        specifier: 4.59.0
+        version: 4.59.0
       '@types/archiver':
         specifier: ^7.0.0
         version: 7.0.0
@@ -604,9 +616,6 @@ importers:
       embla-carousel-react:
         specifier: ^8.6.0
         version: 8.6.0(react@19.1.0)
-      framer-motion:
-        specifier: 'catalog:'
-        version: 12.35.1(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       input-otp:
         specifier: ^1.4.2
         version: 1.4.2(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
@@ -631,9 +640,6 @@ importers:
       react-hook-form:
         specifier: ^7.55.0
         version: 7.71.2(react@19.1.0)
-      react-icons:
-        specifier: ^5.4.0
-        version: 5.6.0(react@19.1.0)
       react-resizable-panels:
         specifier: ^2.1.7
         version: 2.1.9(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
@@ -664,6 +670,16 @@ importers:
       zod:
         specifier: 'catalog:'
         version: 3.25.76
+    optionalDependencies:
+      '@rollup/rollup-darwin-x64':
+        specifier: 4.59.0
+        version: 4.59.0
+      '@tailwindcss/oxide-darwin-x64':
+        specifier: ^4.3.0
+        version: 4.3.0
+      lightningcss-darwin-x64:
+        specifier: 1.31.1
+        version: 1.31.1
 
   lib/api-client-react:
     dependencies:
@@ -3311,11 +3327,6 @@ packages:
     peerDependencies:
       react: ^16.8.0 || ^17 || ^18 || ^19
 
-  react-icons@5.6.0:
-    resolution: {integrity: sha512-RH93p5ki6LfOiIt0UtDyNg/cee+HLVR6cHHtW3wALfo+eOHTp8RnU2kRkI6E+H19zMIs03DyxUG/GfZMOGvmiA==}
-    peerDependencies:
-      react: '*'
-
   react-is@16.13.1:
     resolution: {integrity: sha512-24e6ynE2H+OKt4kqsOvNd8kBpV65zoxbA4BVsEOB3ARVWQki/DHzaUoC5KuON/BiccDaCCTZBuOcfZs70kR8bQ==}
 
@@ -5135,7 +5146,8 @@ snapshots:
       source-map-js: 1.2.1
       tailwindcss: 4.2.1
 
-  '@tailwindcss/oxide-darwin-x64@4.3.0': {}
+  '@tailwindcss/oxide-darwin-x64@4.3.0':
+    optional: true
 
   '@tailwindcss/oxide-linux-x64-gnu@4.2.1':
     optional: true
@@ -6200,7 +6212,8 @@ snapshots:
 
   leven@4.1.0: {}
 
-  lightningcss-darwin-x64@1.31.1: {}
+  lightningcss-darwin-x64@1.31.1:
+    optional: true
 
   lightningcss-linux-x64-gnu@1.31.1:
     optional: true
@@ -6625,10 +6638,6 @@ snapshots:
       scheduler: 0.26.0
 
   react-hook-form@7.71.2(react@19.1.0):
-    dependencies:
-      react: 19.1.0
-
-  react-icons@5.6.0(react@19.1.0):
     dependencies:
       react: 19.1.0
 
