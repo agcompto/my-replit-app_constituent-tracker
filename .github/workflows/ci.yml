@@ -23,6 +23,8 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - name: Dependency hygiene check
+        run: node scripts/check-native-deps.mjs
       # Temporary MVP-branch allowance: the Replit-exported workspace lockfile
       # is stale relative to package.json catalog/workspace references. CI still
       # validates typecheck/build/audit, but the lockfile should be regenerated
