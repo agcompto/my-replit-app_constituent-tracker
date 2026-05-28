@@ -17,6 +17,15 @@ const platformMarkers = [
   'x64'
 ];
 
+// Alpine-based Docker builds need these native optional packages available at
+// the workspace root. They are intentionally centralized here instead of being
+// declared inside individual workspace packages.
+const allowedRootOptionalDependencies = new Set([
+  '@rollup/rollup-linux-x64-musl',
+  'lightningcss-linux-x64-musl'
+]);
+
+const repoRoot = process.cwd();
 const packageJsonFiles = [];
 
 function walk(dir) {
@@ -38,12 +47,13 @@ function walk(dir) {
   }
 }
 
-walk(process.cwd());
+walk(repoRoot);
 
 const violations = [];
 
 for (const file of packageJsonFiles) {
   const json = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const isRootPackageJson = path.resolve(file) === path.join(repoRoot, 'package.json');
 
   for (const sectionName of ['dependencies', 'devDependencies', 'optionalDependencies']) {
     const deps = json[sectionName] || {};
@@ -51,8 +61,12 @@ for (const file of packageJsonFiles) {
     for (const depName of Object.keys(deps)) {
       const matchesNativeFamily = bannedPatterns.some(pattern => depName.includes(pattern));
       const matchesPlatform = platformMarkers.some(marker => depName.includes(marker));
+      const isApprovedRootOptionalDependency =
+        isRootPackageJson &&
+        sectionName === 'optionalDependencies' &&
+        allowedRootOptionalDependencies.has(depName);
 
-      if (matchesNativeFamily && matchesPlatform) {
+      if (matchesNativeFamily && matchesPlatform && !isApprovedRootOptionalDependency) {
         violations.push(`${file}: ${sectionName} -> ${depName}`);
       }
     }
@@ -61,7 +75,7 @@ for (const file of packageJsonFiles) {
 
 if (violations.length > 0) {
   console.error('\nDirect platform-native package declarations are not allowed.');
-  console.error('These packages must be resolved transitively per-platform by pnpm.\n');
+  console.error('Keep approved native optional packages centralized in the root package.json only.\n');
 
   for (const violation of violations) {
     console.error(` - ${violation}`);
