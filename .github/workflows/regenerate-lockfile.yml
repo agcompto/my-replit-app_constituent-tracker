@@ -1,0 +1,56 @@
+name: Regenerate pnpm lockfile
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - deployment-hardening
+    paths:
+      - artifacts/touchpoint-planner/package.json
+      - pnpm-workspace.yaml
+      - package.json
+      - .github/workflows/regenerate-lockfile.yml
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate-lockfile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.actor != 'github-actions[bot]'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: deployment-hardening
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Regenerate lockfile
+        run: |
+          rm -rf node_modules
+          rm -f pnpm-lock.yaml
+          pnpm install
+
+      - name: Commit lockfile if changed
+        run: |
+          if git diff --quiet -- pnpm-lock.yaml; then
+            echo "pnpm-lock.yaml is already current"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pnpm-lock.yaml
+          git commit -m "Regenerate clean cross-platform pnpm lockfile"
+          git push origin deployment-hardening
