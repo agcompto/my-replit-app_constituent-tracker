@@ -17,7 +17,9 @@
     "db:push": "pnpm --filter @workspace/db run push",
     "db:push-force": "pnpm --filter @workspace/db run push-force",
     "test": "pnpm -r --if-present run test",
-    "deploy:check": "pnpm run typecheck && pnpm run build:deploy",
+    "verify:deploy": "pnpm run native-deps:check && pnpm run typecheck && pnpm run build:deploy",
+    "deploy:check": "pnpm run verify:deploy",
+    "native-deps:check": "node scripts/check-native-deps.mjs",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
   },
