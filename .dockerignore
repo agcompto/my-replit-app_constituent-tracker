@@ -4,6 +4,7 @@ node_modules
 .gitignore
 .env
 .env.*
+!.env.example
 coverage
 dist
 .vscode
