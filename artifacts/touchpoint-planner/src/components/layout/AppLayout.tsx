@@ -16,7 +16,8 @@ import {
   LogOut,
   X,
   AlertTriangle,
-  Menu
+  Menu,
+  MessageSquare
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -45,6 +46,12 @@ function isActivePath(location: string, href: string): boolean {
   return location === href || (href !== "/" && location.startsWith(href));
 }
 
+function environmentLabel(): string | null {
+  const value = import.meta.env.VITE_APP_ENV || import.meta.env.MODE;
+  if (!value || value === "production") return null;
+  return String(value).toUpperCase();
+}
+
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const { data: user } = useGetMe();
   const logout = useLogout();
@@ -53,6 +60,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const [showPiiBanner, setShowPiiBanner] = useState(true);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const envLabel = environmentLabel();
+  const feedbackUrl = import.meta.env.VITE_FEEDBACK_URL as string | undefined;
 
   const acknowledgePii = useAcknowledgePii();
 
@@ -76,7 +85,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen flex w-full bg-background flex-col md:flex-row">
-      {/* Keyboard and screen-reader users can bypass repeated navigation and jump directly to page content. */}
       <a
         href="#main-content"
         className="sr-only-focusable fixed left-3 top-3 z-[1000] rounded-md bg-background px-4 py-2 text-sm font-semibold text-foreground shadow-md ring-2 ring-ring"
@@ -112,6 +120,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       />
 
       <div className="flex-1 flex flex-col min-w-0">
+        {envLabel && (
+          <div className="bg-amber-100 text-amber-950 border-b border-amber-300 px-4 py-2 text-sm font-semibold" role="status">
+            {envLabel} environment — do not use production constituent data unless this is the approved production deployment.
+          </div>
+        )}
         {showPiiBanner && (
           <div className="bg-muted px-4 py-2 text-sm font-medium text-muted-foreground flex justify-between items-center gap-3 border-b" role="status">
             <span><strong>Reminder:</strong> Use Constituent ID only. Do not upload or enter unnecessary PII.</span>
@@ -146,6 +159,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
           
           <div className="flex items-center gap-2 sm:gap-4 shrink-0" aria-label="User actions">
+            {feedbackUrl ? (
+              <Button variant="outline" size="sm" asChild>
+                <a href={feedbackUrl} target="_blank" rel="noreferrer" aria-label="Report an issue or suggest an improvement">
+                  <MessageSquare className="h-4 w-4 sm:mr-2" aria-hidden="true" />
+                  <span className="hidden sm:inline">Feedback</span>
+                </a>
+              </Button>
+            ) : null}
             <div className="text-right hidden lg:block">
               <div className="text-sm font-medium">{user?.name}</div>
               <div className="text-xs text-muted-foreground capitalize">{user?.role.replace('_', ' ')}</div>
