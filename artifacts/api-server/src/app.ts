@@ -10,10 +10,15 @@ import { mountProductionWeb } from "./lib/staticWeb";
 
 const app: Express = express();
 
-// `trust proxy: 1` is correct for Replit's single-hop proxy. Do not set to
-// `true` — that would let clients spoof X-Forwarded-For and bypass per-IP
-// rate limiting / lockout.
-app.set("trust proxy", 1);
+// Allow configurable reverse-proxy trust for Railway, Render, Fly.io,
+// Replit, and other hosted environments.
+const trustProxy = process.env.TRUST_PROXY;
+if (trustProxy) {
+  app.set("trust proxy", trustProxy === "true" ? true : Number(trustProxy));
+} else if (process.env.NODE_ENV === "production") {
+  app.set("trust proxy", 1);
+}
+
 // Don't advertise the framework — small but standard practice.
 app.disable("x-powered-by");
 
@@ -46,15 +51,7 @@ app.use(
     logger,
     serializers: {
       req(req) {
-        // Strip query string AND redact bearer-style path tokens so
-        // password-setup links never appear verbatim in request logs.
-        // The full token is enough to take over an account, so a single
-        // log line capturing it is enough to compromise a user.
         const rawUrl = req.url?.split("?")[0] ?? "";
-        // Routes are mounted under /api, so live request URLs are
-        // /api/password-setup/:token[/complete] — the regex must match
-        // both the bare and /api-prefixed forms or the redaction is a
-        // no-op and tokens leak verbatim into access logs.
         const url = rawUrl.replace(
           /^(\/api)?\/password-setup\/[^/]+(\/complete)?$/,
           "$1/password-setup/[REDACTED]$2",
@@ -77,9 +74,7 @@ app.use(
   cors({
     credentials: true,
     origin: (origin, cb) => {
-      // Allow same-origin / non-browser requests (no Origin header)
       if (!origin) return cb(null, true);
-      // Fail closed in production when REPLIT_DOMAINS is unset.
       if (allowedOrigins.length === 0) {
         if (process.env.NODE_ENV === "production") {
           return cb(new Error("Origin not allowed by CORS"));
@@ -91,10 +86,6 @@ app.use(
     },
   }),
 );
-// Defense-in-depth: this app holds non-public constituent data and must never
-// appear in search engines or AI training corpora. Send a strong X-Robots-Tag
-// header on every API response in addition to the meta tag and robots.txt on
-// the static frontend.
 app.use((_req, res, next) => {
   res.setHeader(
     "X-Robots-Tag",
@@ -102,9 +93,6 @@ app.use((_req, res, next) => {
   );
   next();
 });
-// helmet baseline. CSP for the API itself is intentionally strict — the API
-// returns JSON, never inline scripts/styles. The static frontend ships its
-// own CSP via index.html if/when it needs one.
 app.use(
   helmet({
     contentSecurityPolicy: {
@@ -119,26 +107,18 @@ app.use(
     crossOriginResourcePolicy: { policy: "same-site" },
     referrerPolicy: { policy: "same-origin" },
     strictTransportSecurity: {
-      maxAge: 31536000, // 1 year
+      maxAge: 31536000,
       includeSubDomains: true,
       preload: false,
     },
-    // We already set X-Robots-Tag explicitly above; helmet doesn't.
   }),
 );
-// Tight global body limit. Routes that legitimately accept large payloads
-// (audience uploads) override this with a per-route express.json({limit}).
 app.use(express.json({ limit: "256kb" }));
 app.use(express.urlencoded({ extended: true, limit: "256kb" }));
 app.use(sessionMiddleware);
 app.use(attachUser);
-// Re-apply the per-role session TTL on every request. With rolling sessions,
-// express-session resets cookie.maxAge to the middleware default on every
-// response, which would otherwise silently re-extend super_admin sessions
-// from 4h back to 12h. Must run AFTER attachUser.
 app.use(applyRoleSessionTtl);
 
-// Block all API access (except a small allowlist) for users who must change their password.
 const passwordChangeAllowlist = new Set([
   "GET /api/auth/me",
   "POST /api/auth/logout",
@@ -146,8 +126,6 @@ const passwordChangeAllowlist = new Set([
   "GET /api/healthz",
 ]);
 
-/** Token-based setup/reset routes must stay reachable even when the browser
- *  still holds an old session with `mustChangePassword` (common on first boot). */
 function isPasswordSetupRoute(method: string, path: string): boolean {
   if (method === "GET" && /^\/api\/password-setup\/[^/]+$/.test(path)) return true;
   if (method === "POST" && /^\/api\/password-setup\/[^/]+\/complete$/.test(path)) {
@@ -179,7 +157,6 @@ app.use("/api", router);
 
 mountProductionWeb(app);
 
-// Central error handler — unhandled async rejections and middleware errors.
 app.use(
   (err: unknown, req: Request, res: Response, _next: NextFunction): void => {
     const log = (req as Request & { log?: { error: (o: unknown, msg: string) => void } }).log;
