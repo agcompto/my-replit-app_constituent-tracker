@@ -571,12 +571,6 @@ importers:
       '@replit/vite-plugin-runtime-error-modal':
         specifier: 'catalog:'
         version: 0.0.6
-      '@rollup/rollup-darwin-x64':
-        specifier: 4.59.0
-        version: 4.59.0
-      '@tailwindcss/oxide-darwin-x64':
-        specifier: ^4.3.0
-        version: 4.3.0
       '@tailwindcss/typography':
         specifier: ^0.5.15
         version: 0.5.19(tailwindcss@4.2.1)
@@ -619,9 +613,6 @@ importers:
       input-otp:
         specifier: ^1.4.2
         version: 1.4.2(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
-      lightningcss-darwin-x64:
-        specifier: 1.31.1
-        version: 1.31.1
       lucide-react:
         specifier: 'catalog:'
         version: 0.545.0(react@19.1.0)
