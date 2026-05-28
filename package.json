@@ -24,6 +24,9 @@
   "dependencies": {
     "xmlbuilder": "^15.1.1"
   },
+  "optionalDependencies": {
+    "@rollup/rollup-linux-x64-musl": "^4.60.4"
+  },
   "pnpm": {
     "packageExtensions": {
       "@node-saml/node-saml": {
