@@ -803,4 +803,87 @@ router.post(
   },
 );
 
+// ─────────────────────────── Admin password reset ───────────────────────────
+//
+// TEMPORARY endpoint — issue a fresh password-setup link for the admin account
+// when the normal bootstrap token has expired and manual DB insertion isn't
+// working. Protected by a shared secret supplied in the ADMIN_RESET_SECRET
+// environment variable so it cannot be called without server-side knowledge.
+//
+// Usage:
+//   curl -X POST https://<host>/auth/admin-reset-password \
+//        -H "x-admin-reset-secret: <ADMIN_RESET_SECRET>"
+//
+// Returns: { setupUrl: string, rawToken: string }
+//
+// Remove this endpoint (and the ADMIN_RESET_SECRET env var) once the admin
+// password has been successfully reset via the returned link.
+//
+router.post("/auth/admin-reset-password", async (req, res): Promise<void> => {
+  const secret = process.env.ADMIN_RESET_SECRET;
+  if (!secret || secret.trim() === "") {
+    // Feature is disabled when the env var is absent — return 404 so the
+    // endpoint doesn't advertise its existence to unauthenticated callers.
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+
+  const provided =
+    (req.headers["x-admin-reset-secret"] as string | undefined) ?? "";
+  if (provided !== secret) {
+    res.status(401).json({ error: "Invalid or missing admin reset secret" });
+    return;
+  }
+
+  const adminEmail = (
+    process.env.BOOTSTRAP_ADMIN_EMAIL ?? "admin@example.com"
+  )
+    .toLowerCase()
+    .trim();
+
+  const [adminUser] = await db
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.email, adminEmail))
+    .limit(1);
+
+  if (!adminUser) {
+    res.status(404).json({ error: `No user found for email: ${adminEmail}` });
+    return;
+  }
+
+  if (!adminUser.active) {
+    res.status(403).json({ error: "Admin account is inactive" });
+    return;
+  }
+
+  const { rawToken, expiresAt } = await issueSetupToken({
+    userId: adminUser.id,
+    kind: "reset",
+    createdByUserId: null,
+    ttlHours: 2,
+  });
+
+  const setupUrl = buildSetupPasswordUrl(rawToken);
+
+  const sessionUser = await loadUser(adminUser.id);
+  if (sessionUser) {
+    await audit({
+      actor: sessionUser,
+      action: "reset_password",
+      entityType: "user",
+      entityId: adminUser.id,
+      details: "Emergency admin password reset via /auth/admin-reset-password",
+    });
+  }
+
+  req.log.warn(
+    { adminEmail, expiresAt },
+    "ADMIN_RESET: Emergency password reset token issued via /auth/admin-reset-password",
+  );
+
+  res.json({ setupUrl, rawToken });
+});
+
 export default router;
+
