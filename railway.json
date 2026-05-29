@@ -15,6 +15,7 @@
     ]
   },
   "deploy": {
+    "preDeployCommand": "pnpm run db:push",
     "startCommand": "pnpm run start",
     "healthcheckPath": "/api/healthz",
     "healthcheckTimeout": 120,
