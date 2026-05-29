@@ -1,4 +1,4 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Response } from "express";
 import { and, eq } from "drizzle-orm";
 import {
   db,
@@ -26,6 +26,16 @@ import { computeHealthCheck, snapshotHealthCheck } from "../lib/healthCheck";
 import { buildCampaignManifestCsv } from "../lib/campaignExports";
 
 const router: IRouter = Router();
+
+function setSensitiveDownloadHeaders(res: Response, fileName: string): void {
+  const safeFileName = fileName.replace(/[\r\n"\\]/g, "_");
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${safeFileName}"`);
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+}
 
 router.get("/campaigns/:id/preview", requireAuth, async (req, res): Promise<void> => {
   const params = GetCampaignPreviewParams.safeParse(req.params);
@@ -80,7 +90,7 @@ router.post("/campaigns/:id/finalize", requireAuth, async (req, res): Promise<vo
   const access = await canMutateCampaign(params.data.id, req.currentUser!);
   if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
   if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
-    if (access === "voided") { res.status(403).json({ error: "Cannot modify a voided campaign" }); return; }
+  if (access === "voided") { res.status(403).json({ error: "Cannot modify a voided campaign" }); return; }
   await db
     .update(campaignsTable)
     .set({ status: "finalized" })
@@ -100,14 +110,10 @@ router.post("/campaigns/:id/export", requireAuth, async (req, res): Promise<void
     res.status(400).json({ error: params.error.message });
     return;
   }
-  // Authorize first so the rate-limit response can never act as an
-  // existence/permission oracle for campaigns the caller can't see.
   const access = await canMutateCampaign(params.data.id, req.currentUser!);
   if (access === "not_found") { res.status(404).json({ error: "Not found" }); return; }
   if (access === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
-    if (access === "voided") { res.status(403).json({ error: "Cannot modify a voided campaign" }); return; }
-  // Per-user export quota: 20/hour. Defends against an account-takeover
-  // dump-and-run on the audience CSVs.
+  if (access === "voided") { res.status(403).json({ error: "Cannot modify a voided campaign" }); return; }
   const quota = checkExportQuota(req.currentUser!.id);
   if (!quota.allowed) {
     res
@@ -119,8 +125,6 @@ router.post("/campaigns/:id/export", requireAuth, async (req, res): Promise<void
       });
     return;
   }
-  // Block export if the health check finds any errors; snapshot the result
-  // either way so the audit record can show what was true at export time.
   const health = await computeHealthCheck(params.data.id);
   if (health.status === "error") {
     await snapshotHealthCheck(params.data.id, health, req.currentUser!.id);
@@ -135,11 +139,6 @@ router.post("/campaigns/:id/export", requireAuth, async (req, res): Promise<void
     res.status(400).json({ error: "No touches to export" });
     return;
   }
-  // Per-export volume cap. The 20/hour quota above limits frequency, but a
-  // single export against a giant audience is still a near-total leak in
-  // one shot. Cap total rows across all touches in this batch and reject
-  // the entire export if it would exceed the limit. Operators can raise
-  // the cap via MAX_EXPORT_ROWS but should think hard before doing so.
   const MAX_EXPORT_ROWS = Math.max(
     1000,
     Number.parseInt(process.env.MAX_EXPORT_ROWS ?? "500000", 10) || 500_000,
@@ -156,9 +155,6 @@ router.post("/campaigns/:id/export", requireAuth, async (req, res): Promise<void
   }
   const exportedAt = new Date();
   await snapshotHealthCheck(params.data.id, health, req.currentUser!.id);
-  // Pre-fetch every touch for this campaign in one query so the per-touch
-  // write loop below doesn't issue N round-trips, and so the channelId /
-  // campaignTypeId resolution happens BEFORE we open any transaction.
   const touchRows = await db
     .select({
       id: touchesTable.id,
@@ -168,11 +164,6 @@ router.post("/campaigns/:id/export", requireAuth, async (req, res): Promise<void
     .from(touchesTable)
     .where(eq(touchesTable.campaignId, params.data.id));
   const touchById = new Map(touchRows.map((t) => [t.id, t]));
-  // Save touchpoints to history + record export jobs.
-  // Each touch's reset (delete previous touchpoints) + insert new touchpoints
-  // + insert export-job row runs in a single transaction. Without this, a
-  // crash between the delete and the inserts would silently destroy a
-  // touch's prior history with nothing to replace it.
   for (const p of perTouch) {
     const t = touchById.get(p.touchId);
     if (!t) {
@@ -180,7 +171,6 @@ router.post("/campaigns/:id/export", requireAuth, async (req, res): Promise<void
       return;
     }
     await db.transaction(async (tx) => {
-      // Clear any prior records for this touch (idempotent re-export)
       await tx.delete(touchpointsTable).where(eq(touchpointsTable.touchId, p.touchId));
       if (p.donorIds.length > 0 || p.seedDonorIds.length > 0) {
         const rows: (typeof touchpointsTable.$inferInsert)[] = [];
@@ -208,7 +198,6 @@ router.post("/campaigns/:id/export", requireAuth, async (req, res): Promise<void
             countsTowardThreshold: false,
           });
         }
-        // Bulk insert in chunks
         const chunkSize = 1000;
         for (let i = 0; i < rows.length; i += chunkSize) {
           await tx.insert(touchpointsTable).values(rows.slice(i, i + chunkSize));
@@ -235,7 +224,7 @@ router.post("/campaigns/:id/export", requireAuth, async (req, res): Promise<void
     action: "export_campaign",
     entityType: "campaign",
     entityId: params.data.id,
-    details: `${perTouch.length} touches exported`,
+    details: `${perTouch.length} touches exported; totalRows=${totalRows}`,
   });
   res.json({
     campaignId: params.data.id,
@@ -283,24 +272,21 @@ router.get(
       .where(and(eq(exportJobsTable.campaignId, id), eq(exportJobsTable.touchId, touchId)))
       .orderBy(exportJobsTable.exportedAt);
     const fileName = job?.fileName ?? `campaign_${id}_touch_${touchId}.csv`;
-    // Wrap donor IDs as Excel text-formula `="00012345"` so spreadsheet apps
-    // preserve the 8-character zero-padding instead of coercing to a number
-    // and stripping leading zeros. Safe to bypass the formula-injection guard
-    // because donorId is server-validated to match /^[0-9]{1,8}$/.
     const lines = ["donor_id"];
     for (const r of rows) lines.push(`="${r.donorId}"`);
-    // UTF-8 BOM so Excel auto-detects encoding
     const csv = "\uFEFF" + lines.join("\r\n") + "\r\n";
-    res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+    await audit({
+      actor: req.currentUser!,
+      action: "download_export_csv",
+      entityType: "campaign",
+      entityId: id,
+      details: `touchId=${touchId}; rowCount=${rows.length}`,
+    });
+    setSensitiveDownloadHeaders(res, fileName);
     res.send(csv);
   },
 );
 
-// Export manifest CSV: one row per file in the most recent export batch.
-// Uses buildCsv (formula-injection safe) for all string cells. Numeric
-// donor IDs are not part of the manifest, so the Excel text-formula trick
-// is not needed here.
 router.get(
   "/campaigns/:id/export-manifest.csv",
   requireAuth,
@@ -329,11 +315,13 @@ router.get(
       res.status(404).json({ error: "Not found" });
       return;
     }
-    res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="${built.filename}"`,
-    );
+    await audit({
+      actor: req.currentUser!,
+      action: "download_export_manifest",
+      entityType: "campaign",
+      entityId: params.data.id,
+    });
+    setSensitiveDownloadHeaders(res, built.filename);
     res.send(built.csv);
   },
 );

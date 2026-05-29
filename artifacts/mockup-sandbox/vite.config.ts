@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig, PluginOption } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
@@ -30,21 +30,21 @@ if (!basePath) {
 export default defineConfig({
   base: basePath,
   plugins: [
-    mockupPreviewPlugin(),
-    react(),
-    tailwindcss(),
-    runtimeErrorOverlay(),
+    mockupPreviewPlugin() as PluginOption,
+    react() as PluginOption,
+    tailwindcss() as PluginOption,
+    runtimeErrorOverlay() as PluginOption,
     ...(process.env.NODE_ENV !== "production" &&
     process.env.REPL_ID !== undefined
       ? [
-          await import("@replit/vite-plugin-cartographer").then((m) =>
+          (await import("@replit/vite-plugin-cartographer").then((m) =>
             m.cartographer({
               root: path.resolve(import.meta.dirname, ".."),
             }),
-          ),
+          )) as PluginOption,
         ]
       : []),
-  ],
+  ] as PluginOption[],
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "src"),

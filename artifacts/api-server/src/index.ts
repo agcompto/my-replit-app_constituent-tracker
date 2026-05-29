@@ -3,6 +3,9 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { seedDefaults } from "./lib/seed";
 import { startRetentionScheduler, stopRetentionScheduler } from "./lib/retention";
+import { validateEnv } from "./lib/env";
+
+validateEnv();
 
 const rawPort = process.env["PORT"];
 

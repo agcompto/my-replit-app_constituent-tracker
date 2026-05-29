@@ -1,7 +1,7 @@
 import { useGetMe, useAcknowledgePii, useLogout } from "@workspace/api-client-react";
 import { Link, useLocation } from "wouter";
 import { KeyRound } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { 
   LayoutDashboard, 
   Megaphone, 
@@ -15,7 +15,9 @@ import {
   Users,
   LogOut,
   X,
-  AlertTriangle
+  AlertTriangle,
+  Menu,
+  MessageSquare
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -24,6 +26,32 @@ import { useQueryClient } from "@tanstack/react-query";
 import { getGetMeQueryKey } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
 
+const navItems = [
+  { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/campaigns", label: "Campaigns", icon: Megaphone },
+  { href: "/campaigns/new", label: "New Campaign", icon: PlusCircle },
+  { href: "/donors", label: "Constituent Lookup", icon: Search },
+  { href: "/calendar", label: "Calendar", icon: CalendarDays },
+  { href: "/reports", label: "Reports", icon: BarChart3 },
+  { href: "/exports", label: "Exports & Uploads", icon: Download },
+];
+
+const adminItems = [
+  { href: "/audit", label: "Audit Log", icon: History },
+  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/users", label: "Users", icon: Users },
+];
+
+function isActivePath(location: string, href: string): boolean {
+  return location === href || (href !== "/" && location.startsWith(href));
+}
+
+function environmentLabel(): string | null {
+  const value = import.meta.env.VITE_APP_ENV || import.meta.env.MODE;
+  if (!value || value === "production") return null;
+  return String(value).toUpperCase();
+}
+
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const { data: user } = useGetMe();
   const logout = useLogout();
@@ -31,6 +59,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [showPiiBanner, setShowPiiBanner] = useState(true);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const envLabel = environmentLabel();
+  const feedbackUrl = import.meta.env.VITE_FEEDBACK_URL as string | undefined;
 
   const acknowledgePii = useAcknowledgePii();
 
@@ -54,12 +85,18 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen flex w-full bg-background flex-col md:flex-row">
-      {/* PII Modal */}
+      <a
+        href="#main-content"
+        className="sr-only-focusable fixed left-3 top-3 z-[1000] rounded-md bg-background px-4 py-2 text-sm font-semibold text-foreground shadow-md ring-2 ring-ring"
+      >
+        Skip to main content
+      </a>
+
       <Dialog open={!!user && !user.piiAcknowledged}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-destructive" />
+              <AlertTriangle className="h-5 w-5 text-destructive" aria-hidden="true" />
               Data Privacy Policy
             </DialogTitle>
             <DialogDescription className="pt-3 pb-4 text-base">
@@ -76,31 +113,61 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </DialogContent>
       </Dialog>
 
+      <MobileNavDialog
+        open={mobileNavOpen}
+        onOpenChange={setMobileNavOpen}
+        userRole={user?.role}
+      />
+
       <div className="flex-1 flex flex-col min-w-0">
+        {envLabel && (
+          <div className="bg-amber-100 text-amber-950 border-b border-amber-300 px-4 py-2 text-sm font-semibold" role="status">
+            {envLabel} environment — do not use production constituent data unless this is the approved production deployment.
+          </div>
+        )}
         {showPiiBanner && (
-          <div className="bg-muted px-4 py-2 text-sm font-medium text-muted-foreground flex justify-between items-center border-b">
+          <div className="bg-muted px-4 py-2 text-sm font-medium text-muted-foreground flex justify-between items-center gap-3 border-b" role="status">
             <span><strong>Reminder:</strong> Use Constituent ID only. Do not upload or enter unnecessary PII.</span>
-            <Button variant="ghost" size="sm" className="h-6 w-6 p-0 hover:bg-black/5" onClick={() => setShowPiiBanner(false)}>
-              <X className="h-4 w-4" />
+            <Button variant="ghost" size="sm" className="h-6 w-6 p-0 hover:bg-black/5 shrink-0" onClick={() => setShowPiiBanner(false)} aria-label="Dismiss PII reminder">
+              <X className="h-4 w-4" aria-hidden="true" />
             </Button>
           </div>
         )}
         
-        <header className="h-16 border-b bg-card flex items-center justify-between px-6 shrink-0">
-          <div className="flex items-center gap-3">
+        <header className="h-16 border-b bg-card flex items-center justify-between gap-3 px-4 sm:px-6 shrink-0" role="banner">
+          <div className="flex items-center gap-3 min-w-0">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden shrink-0"
+              onClick={() => setMobileNavOpen(true)}
+              aria-label="Open navigation menu"
+              aria-expanded={mobileNavOpen}
+              aria-controls="mobile-navigation-dialog"
+            >
+              <Menu className="h-5 w-5" aria-hidden="true" />
+            </Button>
             <img
               src={`${import.meta.env.BASE_URL}ncstate-brick.png`}
               alt="NC State University"
               className="h-8 w-auto shrink-0"
             />
-            <div className="hidden sm:block border-l pl-3">
-              <h1 className="font-semibold leading-tight text-foreground">Constituent Touchpoint Planner</h1>
+            <div className="hidden sm:block border-l pl-3 min-w-0">
+              <h1 className="font-semibold leading-tight text-foreground truncate">Constituent Touchpoint Planner</h1>
               <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">University Advancement</p>
             </div>
           </div>
           
-          <div className="flex items-center gap-4">
-            <div className="text-right hidden sm:block">
+          <div className="flex items-center gap-2 sm:gap-4 shrink-0" aria-label="User actions">
+            {feedbackUrl ? (
+              <Button variant="outline" size="sm" asChild>
+                <a href={feedbackUrl} target="_blank" rel="noreferrer" aria-label="Report an issue or suggest an improvement">
+                  <MessageSquare className="h-4 w-4 sm:mr-2" aria-hidden="true" />
+                  <span className="hidden sm:inline">Feedback</span>
+                </a>
+              </Button>
+            ) : null}
+            <div className="text-right hidden lg:block">
               <div className="text-sm font-medium">{user?.name}</div>
               <div className="text-xs text-muted-foreground capitalize">{user?.role.replace('_', ' ')}</div>
             </div>
@@ -109,20 +176,21 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               size="sm"
               onClick={() => setLocation("/change-password")}
               data-testid="button-change-password"
+              aria-label="Change password"
             >
-              <KeyRound className="h-4 w-4 mr-2" />
-              Change Password
+              <KeyRound className="h-4 w-4 sm:mr-2" aria-hidden="true" />
+              <span className="hidden sm:inline">Change Password</span>
             </Button>
-            <Button variant="outline" size="sm" onClick={handleLogout}>
-              <LogOut className="h-4 w-4 mr-2" />
-              Logout
+            <Button variant="outline" size="sm" onClick={handleLogout} aria-label="Log out">
+              <LogOut className="h-4 w-4 sm:mr-2" aria-hidden="true" />
+              <span className="hidden sm:inline">Logout</span>
             </Button>
           </div>
         </header>
 
         <div className="flex flex-1 overflow-hidden">
           <Sidebar userRole={user?.role} />
-          <main id="main-content" className="flex-1 overflow-y-auto p-6 lg:p-8 outline-none" tabIndex={-1}>
+          <main id="main-content" className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 outline-none" tabIndex={-1} aria-label="Main content">
             {children}
           </main>
         </div>
@@ -131,66 +199,88 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
+function MobileNavDialog({
+  open,
+  onOpenChange,
+  userRole,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  userRole?: string;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[420px]" id="mobile-navigation-dialog">
+        <DialogHeader>
+          <DialogTitle>Navigation</DialogTitle>
+          <DialogDescription>Go to a planning, reporting, or administration area.</DialogDescription>
+        </DialogHeader>
+        <NavList userRole={userRole} onNavigate={() => onOpenChange(false)} label="Mobile navigation" />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function Sidebar({ userRole }: { userRole?: string }) {
+  return (
+    <aside className="w-64 border-r bg-sidebar shrink-0 overflow-y-auto hidden md:block" aria-label="Primary navigation">
+      <nav className="p-4 space-y-1" aria-label="Primary navigation">
+        <NavList userRole={userRole} />
+      </nav>
+    </aside>
+  );
+}
+
+function NavList({ userRole, onNavigate, label }: { userRole?: string; onNavigate?: () => void; label?: string }) {
   const [location] = useLocation();
   const isAdmin = userRole === 'admin' || userRole === 'super_admin';
 
-  const navItems = [
-    { href: "/", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/campaigns", label: "Campaigns", icon: Megaphone },
-    { href: "/campaigns/new", label: "New Campaign", icon: PlusCircle },
-    { href: "/donors", label: "Constituent Lookup", icon: Search },
-    { href: "/calendar", label: "Calendar", icon: CalendarDays },
-    { href: "/reports", label: "Reports", icon: BarChart3 },
-    { href: "/exports", label: "Exports & Uploads", icon: Download },
-  ];
-
-  // Audit log lives under Administration: it exposes actor names, roles, and
-  // the full timeline of admin actions (invites, resets, deletes, settings
-  // changes), which is privileged operational data — server enforces
-  // admin/super-admin on `GET /audit-log` and the nav reflects that.
-  const adminItems = [
-    { href: "/audit", label: "Audit Log", icon: History },
-    { href: "/settings", label: "Settings", icon: Settings },
-    { href: "/users", label: "Users", icon: Users },
-  ];
-
   return (
-    <aside className="w-64 border-r bg-sidebar shrink-0 overflow-y-auto hidden md:block">
-      <nav className="p-4 space-y-1">
-        {navItems.map((item) => {
-          const active = location === item.href || (item.href !== "/" && location.startsWith(item.href));
-          return (
-            <Link key={item.href} href={item.href} className={cn(
+    <div className="space-y-1" aria-label={label}>
+      {navItems.map((item) => {
+        const active = isActivePath(location, item.href);
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            onClick={onNavigate}
+            aria-current={active ? "page" : undefined}
+            className={cn(
               "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
               active ? "bg-primary/10 text-primary" : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-            )}>
-              <item.icon className={cn("h-4 w-4", active ? "text-primary" : "text-muted-foreground")} />
-              {item.label}
-            </Link>
-          );
-        })}
+            )}
+          >
+            <item.icon className={cn("h-4 w-4", active ? "text-primary" : "text-muted-foreground")} aria-hidden="true" />
+            {item.label}
+          </Link>
+        );
+      })}
 
-        {isAdmin && (
-          <>
-            <div className="pt-6 pb-2 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              Administration
-            </div>
-            {adminItems.map((item) => {
-              const active = location === item.href || location.startsWith(item.href);
-              return (
-                <Link key={item.href} href={item.href} className={cn(
+      {isAdmin && (
+        <>
+          <div className="pt-6 pb-2 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider" aria-hidden="true">
+            Administration
+          </div>
+          {adminItems.map((item) => {
+            const active = isActivePath(location, item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={onNavigate}
+                aria-current={active ? "page" : undefined}
+                className={cn(
                   "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
                   active ? "bg-primary/10 text-primary" : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                )}>
-                  <item.icon className={cn("h-4 w-4", active ? "text-primary" : "text-muted-foreground")} />
-                  {item.label}
-                </Link>
-              );
-            })}
-          </>
-        )}
-      </nav>
-    </aside>
+                )}
+              >
+                <item.icon className={cn("h-4 w-4", active ? "text-primary" : "text-muted-foreground")} aria-hidden="true" />
+                {item.label}
+              </Link>
+            );
+          })}
+        </>
+      )}
+    </div>
   );
 }
