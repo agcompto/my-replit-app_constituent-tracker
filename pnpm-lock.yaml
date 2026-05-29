@@ -300,8 +300,8 @@ importers:
   artifacts/mockup-sandbox:
     devDependencies:
       '@hookform/resolvers':
-        specifier: ^3.10.0
-        version: 3.10.0(react-hook-form@7.76.1(react@19.1.0))
+        specifier: ^5.4.0
+        version: 5.4.0(react-hook-form@7.76.1(react@19.1.0))
       '@radix-ui/react-accordion':
         specifier: ^1.2.12
         version: 1.2.12(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
@@ -483,7 +483,7 @@ importers:
   artifacts/touchpoint-planner:
     devDependencies:
       '@hookform/resolvers':
-        specifier: ^5.2.2
+        specifier: ^5.4.0
         version: 5.4.0(react-hook-form@7.76.1(react@19.1.0))
       '@radix-ui/react-accordion':
         specifier: ^1.2.4
@@ -859,11 +859,6 @@ packages:
 
   '@gerrit0/mini-shiki@3.23.0':
     resolution: {integrity: sha512-bEMORlG0cqdjVyCEuU0cDQbORWX+kYCeo0kV1lbxF5bt4r7SID2l9bqsxJEM0zndaxpOUT7riCyIVEuqq/Ynxg==}
-
-  '@hookform/resolvers@3.10.0':
-    resolution: {integrity: sha512-79Dv+3mDF7i+2ajj7SkypSKHhl1cbln1OGavqrsF7p6mbUv11xpqpacPsGDCTRvCSjEEIez2ef1NveSVL3b0Ag==}
-    peerDependencies:
-      react-hook-form: ^7.0.0
 
   '@hookform/resolvers@5.4.0':
     resolution: {integrity: sha512-EIsqr/t/qbinPIhGjMdtvutIN1Kk4uwbROE9/UQ93CAVGR7GkA7Y92+fX80OzXi/OB67jVFYwKGO1WzkxmkFZw==}
@@ -4274,10 +4269,6 @@ snapshots:
       '@shikijs/themes': 3.23.0
       '@shikijs/types': 3.23.0
       '@shikijs/vscode-textmate': 10.0.2
-
-  '@hookform/resolvers@3.10.0(react-hook-form@7.76.1(react@19.1.0))':
-    dependencies:
-      react-hook-form: 7.76.1(react@19.1.0)
 
   '@hookform/resolvers@5.4.0(react-hook-form@7.76.1(react@19.1.0))':
     dependencies:
