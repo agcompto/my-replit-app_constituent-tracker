@@ -98,7 +98,8 @@ app.use(
     contentSecurityPolicy: {
       useDefaults: true,
       directives: {
-        "default-src": ["'none'"],
+        "default-src": ["'self'"],
+        "connect-src": ["'self'"],
         "frame-ancestors": ["'none'"],
         "base-uri": ["'none'"],
         "form-action": ["'none'"],
