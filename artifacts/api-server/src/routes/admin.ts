@@ -1,12 +1,6 @@
 import { Router, type IRouter } from "express";
-import { z } from "zod";
 
 const router: IRouter = Router();
-
-const ResetPasswordBody = z.object({
-  email: z.string().email(),
-  password: z.string().min(1),
-});
 
 /**
  * POST /admin/reset-password
@@ -19,13 +13,15 @@ const ResetPasswordBody = z.object({
  * Body: { email: string, password: string }
  */
 router.post("/admin/reset-password", async (req, res): Promise<void> => {
-  const parsed = ResetPasswordBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+  const { email, password } = req.body;
+  if (typeof email !== "string" || !email) {
+    res.status(400).json({ error: "email is required and must be a string" });
     return;
   }
-
-  const { email, password } = parsed.data;
+  if (typeof password !== "string" || !password) {
+    res.status(400).json({ error: "password is required and must be a string" });
+    return;
+  }
 
   let upstream: Response;
   try {
