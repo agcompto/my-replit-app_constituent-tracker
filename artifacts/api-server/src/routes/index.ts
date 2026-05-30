@@ -23,6 +23,7 @@ import aiRouter from "./ai";
 import savedReportViewsRouter from "./savedReportViews";
 import passwordSetupRouter from "./passwordSetup";
 import meRouter from "./me";
+import adminRouter from "./admin";
 
 const router: IRouter = Router();
 
@@ -50,5 +51,6 @@ router.use(aiRouter);
 router.use(savedReportViewsRouter);
 router.use(passwordSetupRouter);
 router.use(meRouter);
+router.use(adminRouter);
 
 export default router;
