@@ -11,7 +11,6 @@ COPY artifacts ./artifacts
 COPY lib ./lib
 COPY scripts ./scripts
 COPY tsconfig*.json ./
-COPY .env.example ./
 
 # Temporary MVP-branch allowance: the Replit-exported workspace lockfile
 # is stale relative to package.json catalog/workspace references. The image
