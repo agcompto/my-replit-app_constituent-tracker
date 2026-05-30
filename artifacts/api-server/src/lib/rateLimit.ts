@@ -204,6 +204,13 @@ export function recordExportQuota(userId: number, n: number): void {
   for (let i = 0; i < n; i++) b.timestamps.push(now);
 }
 
+// Admin reset-password: 5 requests / 15 minutes / IP.
+// Prevents brute-force enumeration and repeated hammering of the admin
+// password reset endpoint from a single source.
+export function checkAdminResetPasswordRate(ip: string): RateLimitResult {
+  return checkSlidingRate(`admin-reset|ip|${ip}`, 5, 15 * 60_000);
+}
+
 // Forgot-password (self-service): 5 requests / 15 minutes / IP.
 // The endpoint is intentionally enumeration-safe (always returns the same 200
 // regardless of whether the email exists), so the only thing this throttle

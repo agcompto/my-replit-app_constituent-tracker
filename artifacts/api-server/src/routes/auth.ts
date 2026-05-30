@@ -89,11 +89,6 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     .from(usersTable)
     .where(eq(usersTable.email, normalizedEmail));
 
-  console.log(`[auth/login] DB lookup for email="${normalizedEmail}": user ${u ? `found (id=${u.id})` : "NOT found"}`);
-  if (u) {
-    console.log(`[auth/login] email="${normalizedEmail}" active=${u.active} passwordLoginDisabled=${u.passwordLoginDisabled}`);
-  }
-
   const sendAuthFailure = (r: { allowed: boolean; retryAfterSec: number }) => {
     if (!r.allowed) {
       res
@@ -108,7 +103,6 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   };
 
   if (!u || !u.active) {
-    console.log(`[auth/login] REJECT email="${normalizedEmail}": reason=${!u ? "user not found" : "account inactive"}`);
     // Run a dummy bcrypt.compare so the response time on this path is
     // indistinguishable from the path where the user exists and the
     // supplied password is wrong. Without this, an attacker can probe
@@ -121,7 +115,6 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   // Persisted account lockout (independent of IP rotation).
   const lock = await getLockoutState(u.id);
   if (lock.locked) {
-    console.log(`[auth/login] REJECT email="${normalizedEmail}": reason=account locked, retryAfterSec=${lock.retryAfterSec}`);
     res
       .status(429)
       .setHeader("Retry-After", String(lock.retryAfterSec))
@@ -132,7 +125,6 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   }
 
   if (u.passwordLoginDisabled && !isBootstrapSuperAdmin(u)) {
-    console.log(`[auth/login] REJECT email="${normalizedEmail}": reason=passwordLoginDisabled`);
     await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
     const actor = await loadUser(u.id);
     if (actor) {
@@ -148,11 +140,9 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   }
 
   const ok = await bcrypt.compare(password, u.passwordHash);
-  console.log(`[auth/login] bcrypt.compare for email="${normalizedEmail}": passwordMatch=${ok}`);
   if (!ok) {
     const accountLock = await recordLoginFailureForUser(u.id);
     if (accountLock.locked) {
-      console.log(`[auth/login] REJECT email="${normalizedEmail}": reason=account locked after failed attempt, retryAfterSec=${accountLock.retryAfterSec}`);
       res
         .status(429)
         .setHeader("Retry-After", String(accountLock.retryAfterSec))
@@ -161,7 +151,6 @@ router.post("/auth/login", async (req, res): Promise<void> => {
         });
       return;
     }
-    console.log(`[auth/login] REJECT email="${normalizedEmail}": reason=wrong password`);
     sendAuthFailure(recordLoginFailure(rateKey));
     return;
   }
