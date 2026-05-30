@@ -2,22 +2,22 @@ import { useGetMe, useAcknowledgePii, useLogout } from "@workspace/api-client-re
 import { Link, useLocation } from "wouter";
 import { KeyRound } from "lucide-react";
 import { useState } from "react";
-import { 
-  LayoutDashboard, 
-  Megaphone, 
-  PlusCircle, 
-  Search, 
+import {
+  LayoutDashboard,
+  Megaphone,
+  PlusCircle,
+  Search,
   CalendarDays,
-  BarChart3, 
-  Download, 
-  History, 
-  Settings, 
+  BarChart3,
+  Download,
+  History,
+  Settings,
   Users,
   LogOut,
   X,
   AlertTriangle,
   Menu,
-  MessageSquare
+  MessageSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -25,6 +25,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { getGetMeQueryKey } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
+import { canManageSettings, canManageUsers, canViewAuditLog } from "@/lib/permissions";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -37,9 +38,9 @@ const navItems = [
 ];
 
 const adminItems = [
-  { href: "/audit", label: "Audit Log", icon: History },
-  { href: "/settings", label: "Settings", icon: Settings },
-  { href: "/users", label: "Users", icon: Users },
+  { href: "/audit", label: "Audit Log", icon: History, canView: canViewAuditLog },
+  { href: "/settings", label: "Settings", icon: Settings, canView: canManageSettings },
+  { href: "/users", label: "Users", icon: Users, canView: canManageUsers },
 ];
 
 function isActivePath(location: string, href: string): boolean {
@@ -70,7 +71,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() });
         toast({ title: "PII Policy Acknowledged" });
-      }
+      },
     });
   };
 
@@ -79,7 +80,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       onSuccess: () => {
         queryClient.clear();
         setLocation("/login");
-      }
+      },
     });
   };
 
@@ -100,8 +101,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               Data Privacy Policy
             </DialogTitle>
             <DialogDescription className="pt-3 pb-4 text-base">
-              This system is strictly for planning touches using Constituent IDs only. 
-              <br/><br/>
+              This system is strictly for planning touches using Constituent IDs only.
+              <br />
+              <br />
               <strong>Do NOT enter names, phone numbers, email addresses, mailing addresses, giving amounts, or any other personally identifiable information (PII).</strong>
             </DialogDescription>
           </DialogHeader>
@@ -133,7 +135,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             </Button>
           </div>
         )}
-        
+
         <header className="h-16 border-b bg-card flex items-center justify-between gap-3 px-4 sm:px-6 shrink-0" role="banner">
           <div className="flex items-center gap-3 min-w-0">
             <Button
@@ -157,7 +159,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">University Advancement</p>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-2 sm:gap-4 shrink-0" aria-label="User actions">
             {feedbackUrl ? (
               <Button variant="outline" size="sm" asChild>
@@ -169,7 +171,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             ) : null}
             <div className="text-right hidden lg:block">
               <div className="text-sm font-medium">{user?.name}</div>
-              <div className="text-xs text-muted-foreground capitalize">{user?.role.replace('_', ' ')}</div>
+              <div className="text-xs text-muted-foreground capitalize">{user?.role.replace("_", " ")}</div>
             </div>
             <Button
               variant="outline"
@@ -233,7 +235,7 @@ function Sidebar({ userRole }: { userRole?: string }) {
 
 function NavList({ userRole, onNavigate, label }: { userRole?: string; onNavigate?: () => void; label?: string }) {
   const [location] = useLocation();
-  const isAdmin = userRole === 'admin' || userRole === 'super_admin';
+  const visibleAdminItems = adminItems.filter((item) => item.canView(userRole));
 
   return (
     <div className="space-y-1" aria-label={label}>
@@ -247,7 +249,7 @@ function NavList({ userRole, onNavigate, label }: { userRole?: string; onNavigat
             aria-current={active ? "page" : undefined}
             className={cn(
               "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-              active ? "bg-primary/10 text-primary" : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              active ? "bg-primary/10 text-primary" : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
             )}
           >
             <item.icon className={cn("h-4 w-4", active ? "text-primary" : "text-muted-foreground")} aria-hidden="true" />
@@ -256,12 +258,12 @@ function NavList({ userRole, onNavigate, label }: { userRole?: string; onNavigat
         );
       })}
 
-      {isAdmin && (
+      {visibleAdminItems.length > 0 && (
         <>
           <div className="pt-6 pb-2 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider" aria-hidden="true">
             Administration
           </div>
-          {adminItems.map((item) => {
+          {visibleAdminItems.map((item) => {
             const active = isActivePath(location, item.href);
             return (
               <Link
@@ -271,7 +273,7 @@ function NavList({ userRole, onNavigate, label }: { userRole?: string; onNavigat
                 aria-current={active ? "page" : undefined}
                 className={cn(
                   "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-                  active ? "bg-primary/10 text-primary" : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                  active ? "bg-primary/10 text-primary" : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                 )}
               >
                 <item.icon className={cn("h-4 w-4", active ? "text-primary" : "text-muted-foreground")} aria-hidden="true" />
