@@ -2,9 +2,10 @@ import { useState } from "react";
 import { BookmarkPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useCreateSavedConstituentSearch } from "../hooks/useSavedConstituentSearches";
+import type { LookupSearchState } from "../shared-types";
 
 interface SaveSearchButtonProps {
-  searchState: Record<string, unknown>;
+  searchState: LookupSearchState;
 }
 
 export function SaveSearchButton({ searchState }: SaveSearchButtonProps) {
