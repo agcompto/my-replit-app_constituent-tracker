@@ -18,10 +18,11 @@ import { ConstituentSummary } from "./donors/components/ConstituentSummary";
 import { ConstituentTimeline } from "./donors/components/ConstituentTimeline";
 import { DateRangePicker } from "./donors/components/DateRangePicker";
 import { MultiSelectPill } from "./donors/components/MultiSelectPill";
+import { SavedSearchesDropdown } from "./donors/components/SavedSearchesDropdown";
 import { SaveSearchButton } from "./donors/components/SaveSearchButton";
 import { CONSTITUENT_LOOKUP_PRESETS } from "./donors/date-utils";
 import { useConstituentFilters } from "./donors/hooks/useConstituentFilters";
-import type { ConstituentSortState, PresetKey, SortCol, TouchpointRow } from "./donors/shared-types";
+import type { ConstituentSortState, LookupSearchState, PresetKey, SortCol, TouchpointRow } from "./donors/shared-types";
 
 const PAGE_SIZE = 25;
 
@@ -147,7 +148,7 @@ export default function Donors() {
   const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   const paginated = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const aiSummaryQueryString = useMemo(() => buildAiSummaryQueryString(filterParams), [filterParams]);
-  const savedSearchState = useMemo(() => ({ ...parsed }), [parsed]);
+  const savedSearchState = useMemo<LookupSearchState>(() => ({ ...parsed }), [parsed]);
 
   useEffect(() => {
     setPage(1);
@@ -163,6 +164,12 @@ export default function Donors() {
   function handlePreset(nextPreset: PresetKey) {
     setShowCustom(false);
     setPreset(nextPreset);
+  }
+
+  function handleLoadSavedSearch(searchState: LookupSearchState) {
+    pushState(searchState);
+    setInputValue(searchState.constituentId);
+    setShowCustom(searchState.preset === ("custom" as string));
   }
 
   function handleSort(col: SortCol) {
@@ -229,6 +236,10 @@ export default function Donors() {
       </Card>
 
       <div className="flex flex-wrap items-center gap-2">
+        <SavedSearchesDropdown onLoad={handleLoadSavedSearch} />
+
+        <div className="h-5 border-l border-border" />
+
         {CONSTITUENT_LOOKUP_PRESETS.map((option) => (
           <Button
             key={option.key}
