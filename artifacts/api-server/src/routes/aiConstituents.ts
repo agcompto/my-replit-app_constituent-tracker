@@ -228,8 +228,8 @@ router.post("/donors/:donorId/ai/summary", requireAuth, async (req, res): Promis
         actor: req.currentUser,
         action: "ai_constituent_summary",
         entityType: "donor",
-        entityId: constituentId,
-        details: `model=${MODEL} in=${usage.input} out=${usage.output} ok=${usage.ok}`,
+        entityId: null,
+        details: `constituent=${constituentId} model=${MODEL} in=${usage.input} out=${usage.output} ok=${usage.ok}`,
       });
     }
   }
