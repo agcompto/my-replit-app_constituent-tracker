@@ -34,7 +34,7 @@ export function createSavedConstituentSearch(
 ): Promise<SavedConstituentSearch> {
   return customFetch<SavedConstituentSearch>("/saved-constituent-searches", {
     method: "POST",
-    body: input,
+    body: JSON.stringify(input),
     responseType: "json",
   });
 }
@@ -45,7 +45,7 @@ export function updateSavedConstituentSearch(
 ): Promise<SavedConstituentSearch> {
   return customFetch<SavedConstituentSearch>(`/saved-constituent-searches/${id}`, {
     method: "PATCH",
-    body: input,
+    body: JSON.stringify(input),
     responseType: "json",
   });
 }
