@@ -3,6 +3,8 @@ import bcrypt from "bcryptjs";
 import { sql } from "drizzle-orm";
 import { db, usersTable } from "@workspace/db";
 import { logger } from "../lib/logger";
+import { requireRole, audit } from "../lib/auth";
+import { requireRecentAuth } from "../lib/recentAuth";
 import { checkAdminResetPasswordRate } from "../lib/rateLimit";
 
 const router: IRouter = Router();
@@ -54,7 +56,7 @@ function validatePasswordStrength(password: string): string | null {
  *  - Password strength enforced (8+ chars, upper, lower, digit, special)
  *  - No sensitive data (passwords, hashes, full user records) in logs
  */
-router.post("/admin/reset-password", async (req, res): Promise<void> => {
+router.post("/admin/reset-password", requireRole("super_admin"), requireRecentAuth, async (req, res): Promise<void> => {
   // ── Rate limiting ────────────────────────────────────────────────────────
   const ip = req.ip ?? "unknown";
   const limit = checkAdminResetPasswordRate(ip);
@@ -100,7 +102,7 @@ router.post("/admin/reset-password", async (req, res): Promise<void> => {
       passwordHash,
       failedLoginAttempts: 0,
       lockedUntil: null,
-      mustChangePassword: false,
+      mustChangePassword: true,
       updatedAt: sql`NOW()`,
     })
     .where(sql`lower(${usersTable.email}) = lower(${normalizedEmail})`)
@@ -110,6 +112,13 @@ router.post("/admin/reset-password", async (req, res): Promise<void> => {
     res.status(404).json({ error: "No user found with that email address" });
     return;
   }
+
+  await audit({
+    actor: req.currentUser!,
+    action: "admin_reset_password",
+    entityType: "user",
+    entityId: updated.id,
+  });
 
   logger.info({ userId: updated.id }, "Password reset initiated for user ID");
 
