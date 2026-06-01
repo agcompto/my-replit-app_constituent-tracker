@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { PassThrough } from "node:stream";
-import archiver from "archiver";
+import * as archiver from "archiver";
 import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { db, campaignsTable, campaignTypeLinksTable, campaignTypesTable, channelsTable, owningUnitsTable, touchesTable, touchpointsTable, exportJobsTable, usersTable, thresholdsTable, suppressionsTable, suppressionReasonCodesTable, seedGroupsTable } from "@workspace/db";
 import {
