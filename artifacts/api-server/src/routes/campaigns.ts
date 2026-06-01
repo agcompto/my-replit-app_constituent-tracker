@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { PassThrough } from "node:stream";
+import * as archiver from "archiver";
 import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { db, campaignsTable, campaignTypeLinksTable, campaignTypesTable, channelsTable, owningUnitsTable, touchesTable, touchpointsTable, exportJobsTable, usersTable, thresholdsTable, suppressionsTable, suppressionReasonCodesTable, seedGroupsTable } from "@workspace/db";
 import {
@@ -22,7 +23,6 @@ import { requireRecentAuth } from "../lib/recentAuth";
 import { loadCampaignFull, loadCampaignSummary, setCampaignTypes } from "../lib/campaigns";
 import { executeClone } from "../lib/cloneCampaign";
 import { peekExportQuotaSlots, recordExportQuota } from "../lib/rateLimit";
-import { archiver } from "../lib/zipArchive";
 import {
   buildCampaignTouchpointCsvs,
   safeFilenamePart,

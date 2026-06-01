@@ -3,12 +3,41 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build as esbuild } from "esbuild";
 import esbuildPluginPino from "esbuild-plugin-pino";
-import { rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 
 // Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
 globalThis.require = createRequire(import.meta.url);
 
 const artifactDir = path.dirname(fileURLToPath(import.meta.url));
+
+const campaignsRoutePath = path.resolve(artifactDir, "src/routes/campaigns.ts");
+const archiverNamespaceImport = 'import * as archiver from "archiver";';
+
+/**
+ * archiver@8 is ESM-only and no longer exposes the old callable CommonJS
+ * namespace shape. Keep the source route close to its historical call sites
+ * to minimize merge conflicts, but rewrite the import at bundle time so
+ * `archiver("zip", ...)` resolves to our small compatibility wrapper instead
+ * of the package namespace object.
+ */
+const archiverCompatPlugin = {
+  name: "archiver-compat",
+  setup(build) {
+    build.onLoad({ filter: /src\/routes\/campaigns\.ts$/ }, async (args) => {
+      const source = await readFile(args.path, "utf8");
+      if (path.resolve(args.path) !== campaignsRoutePath || !source.includes(archiverNamespaceImport)) {
+        return { contents: source, loader: "ts" };
+      }
+      return {
+        contents: source.replace(
+          archiverNamespaceImport,
+          'import { archiver } from "../lib/zipArchive";',
+        ),
+        loader: "ts",
+      };
+    });
+  },
+};
 
 async function buildAll() {
   const distDir = path.resolve(artifactDir, "dist");
@@ -108,6 +137,7 @@ async function buildAll() {
     ],
     sourcemap: "linked",
     plugins: [
+      archiverCompatPlugin,
       // pino relies on workers to handle logging, instead of externalizing it we use a plugin to handle it
       esbuildPluginPino({ transports: ["pino-pretty"] })
     ],
