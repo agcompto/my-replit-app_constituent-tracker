@@ -16,3 +16,13 @@ export function createZipArchive(options?: archiverModule.ZipOptions): archiverM
   const { ZipArchive } = archiverModule as unknown as { ZipArchive: ZipArchiveFactory };
   return new ZipArchive(options);
 }
+
+/** Compatibility wrapper that preserves the old call-site shape without calling
+ * the package namespace object. Only ZIP archives are supported by current API
+ * routes; add explicit cases here if another format is needed later. */
+export function archiver(format: "zip", options?: archiverModule.ZipOptions): archiverModule.Archiver {
+  if (format !== "zip") {
+    throw new Error(`Unsupported archive format: ${format}`);
+  }
+  return createZipArchive(options);
+}

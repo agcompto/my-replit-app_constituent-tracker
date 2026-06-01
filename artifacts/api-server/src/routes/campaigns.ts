@@ -22,7 +22,7 @@ import { requireRecentAuth } from "../lib/recentAuth";
 import { loadCampaignFull, loadCampaignSummary, setCampaignTypes } from "../lib/campaigns";
 import { executeClone } from "../lib/cloneCampaign";
 import { peekExportQuotaSlots, recordExportQuota } from "../lib/rateLimit";
-import { createZipArchive } from "../lib/zipArchive";
+import { archiver } from "../lib/zipArchive";
 import {
   buildCampaignTouchpointCsvs,
   safeFilenamePart,
@@ -486,7 +486,7 @@ router.post(
     }
     recordExportQuota(userId, included.length);
 
-    const archive = createZipArchive({ zlib: { level: 6 } });
+    const archive = archiver("zip", { zlib: { level: 6 } });
     res.setHeader("Content-Type", "application/zip");
     res.setHeader(
       "Content-Disposition",
@@ -608,7 +608,7 @@ router.post(
     }
     recordExportQuota(userId, builds.length);
 
-    const archive = createZipArchive({ zlib: { level: 6 } });
+    const archive = archiver("zip", { zlib: { level: 6 } });
     res.setHeader("Content-Type", "application/zip");
     res.setHeader(
       "Content-Disposition",

@@ -17,9 +17,9 @@ describe("createZipArchive", () => {
       await writeFile(
         entry,
         `
-          import { createZipArchive } from ${JSON.stringify(path.resolve("src/lib/zipArchive.ts"))};
+          import { archiver, createZipArchive } from ${JSON.stringify(path.resolve("src/lib/zipArchive.ts"))};
 
-          const archive = createZipArchive({ zlib: { level: 6 } });
+          const archive = archiver("zip", { zlib: { level: 6 } });
           if (typeof archive.append !== "function" || typeof archive.finalize !== "function") {
             throw new Error("ZIP archive instance is missing archiver methods");
           }
