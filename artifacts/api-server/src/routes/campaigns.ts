@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { PassThrough } from "node:stream";
-import * as archiver from "archiver";
+import { createZipArchive } from "../lib/zipArchive";
 import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { db, campaignsTable, campaignTypeLinksTable, campaignTypesTable, channelsTable, owningUnitsTable, touchesTable, touchpointsTable, exportJobsTable, usersTable, thresholdsTable, suppressionsTable, suppressionReasonCodesTable, seedGroupsTable } from "@workspace/db";
 import {
@@ -486,7 +486,7 @@ router.post(
     }
     recordExportQuota(userId, included.length);
 
-    const archive = archiver("zip", { zlib: { level: 6 } });
+    const archive = createZipArchive({ zlib: { level: 6 } });
     res.setHeader("Content-Type", "application/zip");
     res.setHeader(
       "Content-Disposition",
@@ -608,7 +608,7 @@ router.post(
     }
     recordExportQuota(userId, builds.length);
 
-    const archive = archiver("zip", { zlib: { level: 6 } });
+    const archive = createZipArchive({ zlib: { level: 6 } });
     res.setHeader("Content-Type", "application/zip");
     res.setHeader(
       "Content-Disposition",
