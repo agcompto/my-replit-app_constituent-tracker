@@ -14,25 +14,29 @@ const campaignsRoutePath = path.resolve(artifactDir, "src/routes/campaigns.ts");
 const archiverNamespaceImport = 'import * as archiver from "archiver";';
 
 /**
- * archiver@8 is ESM-only and no longer exposes the old callable CommonJS
- * namespace shape. Keep the source route close to its historical call sites
- * to minimize merge conflicts, but rewrite the import at bundle time so
- * `archiver("zip", ...)` resolves to our small compatibility wrapper instead
- * of the package namespace object.
+ * Keep the conflict-prone campaign route source on its historical archiver
+ * import/call shape, but rewrite the bundled API runtime to use our archiver@8 ZIP
+ * adapter. archiver@8's ESM namespace object is not callable, so calling the
+ * source-level namespace import directly would crash after bundling.
  */
-const archiverCompatPlugin = {
-  name: "archiver-compat",
+const campaignArchiverCompatPlugin = {
+  name: "campaign-archiver-compat",
   setup(build) {
     build.onLoad({ filter: /src\/routes\/campaigns\.ts$/ }, async (args) => {
       const source = await readFile(args.path, "utf8");
-      if (path.resolve(args.path) !== campaignsRoutePath || !source.includes(archiverNamespaceImport)) {
+      if (path.resolve(args.path) !== campaignsRoutePath) {
         return { contents: source, loader: "ts" };
       }
-      return {
-        contents: source.replace(
+
+      const rewritten = source
+        .replace(
           archiverNamespaceImport,
-          'import { archiver } from "../lib/zipArchive";',
-        ),
+          'import { createZipArchive } from "../lib/archiver8ZipArchive";',
+        )
+        .replaceAll('archiver("zip", ', "createZipArchive(");
+
+      return {
+        contents: rewritten,
         loader: "ts",
       };
     });
@@ -137,9 +141,9 @@ async function buildAll() {
     ],
     sourcemap: "linked",
     plugins: [
-      archiverCompatPlugin,
+      campaignArchiverCompatPlugin,
       // pino relies on workers to handle logging, instead of externalizing it we use a plugin to handle it
-      esbuildPluginPino({ transports: ["pino-pretty"] })
+      esbuildPluginPino({ transports: ["pino-pretty"] }),
     ],
     // Make sure packages that are cjs only (e.g. express) but are bundled continue to work in our esm output file
     banner: {
