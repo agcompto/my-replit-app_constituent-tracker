@@ -14,7 +14,7 @@ const campaignsRoutePath = path.resolve(artifactDir, "src/routes/campaigns.ts");
 const archiverNamespaceImport = 'import * as archiver from "archiver";';
 const archiverZipCallPrefix = 'archiver("zip", ';
 const zipArchiveImport =
-  'import { createZipArchive } from "../lib/archiver8ZipArchive";';
+  'import { createZipArchive } from "../lib/pr43Archiver8ZipArchive";';
 const rewrittenZipCallPrefix = "createZipArchive(";
 
 function countOccurrences(source, value) {
