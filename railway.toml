@@ -1,7 +1,6 @@
 [build]
-builder = "nixpacks"
-buildCommand = "npm install -g pnpm && pnpm install && pnpm build"
+builder = "RAILPACK"
 
 [deploy]
 startCommand = "npx serve dist -s -l $PORT"
-restartPolicyType = "on-failure"
+restartPolicyType = "ON_FAILURE"
