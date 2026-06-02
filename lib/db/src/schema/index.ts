@@ -499,6 +499,139 @@ export const auditLogTable = pgTable(
   }),
 );
 
+// ─────── Calendar publishing and scheduling
+export const calendarsTable = pgTable(
+  "calendars",
+  {
+    id: serial("id").primaryKey(),
+    name: text("name").notNull(),
+    description: text("description"),
+    ownerUserId: integer("owner_user_id")
+      .notNull()
+      .references(() => usersTable.id),
+    timezone: text("timezone").notNull().default("America/New_York"),
+    visibility: text("visibility").notNull().default("private"), // private | public
+    color: text("color"),
+    publicSlug: text("public_slug"),
+    publicEnabled: boolean("public_enabled").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+  },
+  (t) => ({
+    ownerIdx: index("calendars_owner_idx").on(t.ownerUserId),
+    visibilityIdx: index("calendars_visibility_idx").on(t.visibility, t.publicEnabled),
+    publicSlugUnique: uniqueIndex("calendars_public_slug_unique")
+      .on(t.publicSlug)
+      .where(sql`${t.publicSlug} is not null`),
+  }),
+);
+
+export const calendarEventsTable = pgTable(
+  "calendar_events",
+  {
+    id: serial("id").primaryKey(),
+    calendarId: integer("calendar_id")
+      .notNull()
+      .references(() => calendarsTable.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    description: text("description"),
+    startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+    allDay: boolean("all_day").notNull().default(false),
+    timezone: text("timezone").notNull().default("America/New_York"),
+    locationLabel: text("location_label"),
+    campaignId: integer("campaign_id").references(() => campaignsTable.id, { onDelete: "set null" }),
+    owningUnit: text("owning_unit"),
+    visibility: text("visibility").notNull().default("inherit"), // inherit | private | public
+    status: text("status").notNull().default("scheduled"), // draft | scheduled | canceled | completed
+    createdByUserId: integer("created_by_user_id")
+      .notNull()
+      .references(() => usersTable.id),
+    updatedByUserId: integer("updated_by_user_id").references(() => usersTable.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => ({
+    calendarDateIdx: index("calendar_events_calendar_date_idx").on(t.calendarId, t.startsAt),
+    campaignIdx: index("calendar_events_campaign_idx").on(t.campaignId),
+    activeDateIdx: index("calendar_events_active_date_idx")
+      .on(t.startsAt, t.endsAt)
+      .where(sql`${t.deletedAt} is null`),
+  }),
+);
+
+export const calendarVisibilityRulesTable = pgTable(
+  "calendar_visibility_rules",
+  {
+    id: serial("id").primaryKey(),
+    calendarId: integer("calendar_id")
+      .notNull()
+      .references(() => calendarsTable.id, { onDelete: "cascade" }),
+    ruleType: text("rule_type").notNull(), // user | role | owning_unit
+    ruleValue: text("rule_value").notNull(),
+    canView: boolean("can_view").notNull().default(true),
+    canManage: boolean("can_manage").notNull().default(false),
+    createdByUserId: integer("created_by_user_id").references(() => usersTable.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    calendarIdx: index("calendar_visibility_rules_calendar_idx").on(t.calendarId),
+    ruleLookupIdx: index("calendar_visibility_rules_lookup_idx").on(t.ruleType, t.ruleValue),
+  }),
+);
+
+export const calendarSharesTable = pgTable(
+  "calendar_shares",
+  {
+    id: serial("id").primaryKey(),
+    calendarId: integer("calendar_id")
+      .notNull()
+      .references(() => calendarsTable.id, { onDelete: "cascade" }),
+    shareType: text("share_type").notNull(), // public_page | embed | ics_download | google_subscription
+    enabled: boolean("enabled").notNull().default(false),
+    createdByUserId: integer("created_by_user_id").references(() => usersTable.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => ({
+    calendarShareTypeIdx: index("calendar_shares_calendar_type_idx").on(t.calendarId, t.shareType),
+  }),
+);
+
+export const calendarFeedTokensTable = pgTable(
+  "calendar_feed_tokens",
+  {
+    id: serial("id").primaryKey(),
+    calendarId: integer("calendar_id")
+      .notNull()
+      .references(() => calendarsTable.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull().unique(),
+    label: text("label"),
+    active: boolean("active").notNull().default(true),
+    createdByUserId: integer("created_by_user_id").references(() => usersTable.id),
+    revokedByUserId: integer("revoked_by_user_id").references(() => usersTable.id),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => ({
+    calendarActiveIdx: index("calendar_feed_tokens_calendar_active_idx").on(t.calendarId, t.active),
+  }),
+);
+
 // ─────── App settings (single row id=1)
 export const appSettingsTable = pgTable("app_settings", {
   id: serial("id").primaryKey(),
