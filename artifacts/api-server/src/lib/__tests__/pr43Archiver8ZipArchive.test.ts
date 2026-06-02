@@ -75,4 +75,18 @@ describe("createPr43Archiver8ZipArchive", () => {
       campaignRoute.match(/archiver\("zip", \{ zlib: \{ level: 6 \} \}\)/g),
     ).toHaveLength(2);
   });
+
+  it("builds the compatibility API bundle without leaving legacy archiver ZIP calls", async () => {
+    const result = await execFileAsync(
+      process.execPath,
+      ["build.pr43-archiver-compat.mjs"],
+      { timeout: 30_000 },
+    );
+
+    expect(result.stderr).not.toContain("call-import-namespace");
+
+    const bundledApi = await readFile(path.resolve("dist/index.mjs"), "utf8");
+    expect(bundledApi).not.toContain('archiver("zip"');
+    expect(bundledApi).toContain("createZipArchive({ zlib: { level: 6 } })");
+  });
 });
