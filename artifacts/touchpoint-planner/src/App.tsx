@@ -1,28 +1,46 @@
+import { lazy, Suspense } from "react";
 import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { useKeyboardShortcuts, ShortcutHelpDialog } from "@/hooks/useKeyboardShortcuts";
-import NotFound from "@/pages/not-found";
+import {
+  useKeyboardShortcuts,
+  ShortcutHelpDialog,
+} from "@/hooks/useKeyboardShortcuts";
 import { AuthGuard } from "@/components/layout/AuthGuard";
 import { AppLayout } from "@/components/layout/AppLayout";
-import Login from "@/pages/login";
-import ForgotPassword from "@/pages/forgot-password";
-import ChangePassword from "@/pages/change-password";
-import SetupPassword from "@/pages/setup-password";
-import Dashboard from "@/pages/dashboard";
-import Campaigns from "@/pages/campaigns";
-import CampaignDetail from "@/pages/campaigns/detail";
-import CampaignSummary from "@/pages/campaigns/summary";
-import CampaignWizard from "@/pages/campaigns/wizard/index";
-import Donors from "@/pages/donors";
-import Audit from "@/pages/audit";
-import Users from "@/pages/users";
-import Reports from "@/pages/reports";
-import Exports from "@/pages/exports";
-import Settings from "@/pages/settings";
-import CalendarPage from "@/pages/calendar";
+
+const NotFound = lazy(() => import("@/pages/not-found"));
+const Login = lazy(() => import("@/pages/login"));
+const ForgotPassword = lazy(() => import("@/pages/forgot-password"));
+const ChangePassword = lazy(() => import("@/pages/change-password"));
+const SetupPassword = lazy(() => import("@/pages/setup-password"));
+const Dashboard = lazy(() => import("@/pages/dashboard"));
+const Campaigns = lazy(() => import("@/pages/campaigns"));
+const CampaignDetail = lazy(() => import("@/pages/campaigns/detail"));
+const CampaignSummary = lazy(() => import("@/pages/campaigns/summary"));
+const CampaignWizard = lazy(() => import("@/pages/campaigns/wizard/index"));
+const Donors = lazy(() => import("@/pages/donors"));
+const Audit = lazy(() => import("@/pages/audit"));
+const Users = lazy(() => import("@/pages/users"));
+const Reports = lazy(() => import("@/pages/reports"));
+const Exports = lazy(() => import("@/pages/exports"));
+const Settings = lazy(() => import("@/pages/settings"));
+const CalendarPage = lazy(() => import("@/pages/calendar"));
+const PublicCalendarPage = lazy(() => import("@/pages/public-calendar"));
+
+function RouteLoadingFallback() {
+  return (
+    <div
+      className="flex min-h-[240px] items-center justify-center text-sm text-muted-foreground"
+      role="status"
+      aria-live="polite"
+    >
+      Loading page…
+    </div>
+  );
+}
 
 function AuthenticatedRoutes() {
   return (
@@ -64,19 +82,25 @@ function Router() {
   const { helpOpen, setHelpOpen } = useKeyboardShortcuts();
   return (
     <>
-      <Switch>
-        <Route path="/login" component={Login} />
-        <Route path="/forgot-password" component={ForgotPassword} />
-        <Route path="/setup-password/:token" component={SetupPassword} />
-        <Route path="/change-password">
-          <AuthGuard>
-            <ChangePassword />
-          </AuthGuard>
-        </Route>
-        <Route path="*">
-          <AuthenticatedRoutes />
-        </Route>
-      </Switch>
+      <Suspense fallback={<RouteLoadingFallback />}>
+        <Switch>
+          <Route path="/login" component={Login} />
+          <Route path="/forgot-password" component={ForgotPassword} />
+          <Route path="/setup-password/:token" component={SetupPassword} />
+          <Route
+            path="/public/calendars/:slug"
+            component={PublicCalendarPage}
+          />
+          <Route path="/change-password">
+            <AuthGuard>
+              <ChangePassword />
+            </AuthGuard>
+          </Route>
+          <Route path="*">
+            <AuthenticatedRoutes />
+          </Route>
+        </Switch>
+      </Suspense>
       <ShortcutHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
     </>
   );

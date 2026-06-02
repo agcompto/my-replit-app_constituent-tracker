@@ -44,6 +44,7 @@ import {
   AlertTriangle, HelpCircle, CalendarSearch,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CalendarPublishingPanel } from "@/components/calendar-publishing-panel";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -1876,6 +1877,8 @@ export default function CalendarPage() {
             )}
           </div>
         </div>
+
+        <CalendarPublishingPanel />
 
         {/* ── Active filter chips ────────────────────────────────────── */}
         {hasActiveFilters && (
