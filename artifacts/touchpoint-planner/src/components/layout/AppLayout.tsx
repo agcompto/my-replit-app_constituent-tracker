@@ -7,7 +7,6 @@ import {
   Megaphone,
   PlusCircle,
   Search,
-  CalendarDays,
   BarChart3,
   Download,
   History,
@@ -32,7 +31,6 @@ const navItems = [
   { href: "/campaigns", label: "Campaigns", icon: Megaphone },
   { href: "/campaigns/new", label: "New Campaign", icon: PlusCircle },
   { href: "/donors", label: "Constituent Lookup", icon: Search },
-  { href: "/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/reports", label: "Reports", icon: BarChart3 },
   { href: "/exports", label: "Exports & Uploads", icon: Download },
 ];
