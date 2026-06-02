@@ -26,6 +26,7 @@ import savedConstituentSearchesRouter from "./savedConstituentSearches";
 import passwordSetupRouter from "./passwordSetup";
 import meRouter from "./me";
 import adminRouter from "./admin";
+import calendarsRouter from "./calendars";
 
 const router: IRouter = Router();
 
@@ -56,5 +57,6 @@ router.use(savedConstituentSearchesRouter);
 router.use(passwordSetupRouter);
 router.use(meRouter);
 router.use(adminRouter);
+router.use(calendarsRouter);
 
 export default router;
