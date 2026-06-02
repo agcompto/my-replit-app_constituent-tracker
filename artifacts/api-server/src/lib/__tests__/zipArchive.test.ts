@@ -61,21 +61,18 @@ describe("createZipArchive", () => {
     }
   });
 
-  it("keeps campaign ZIP exports on the explicit ZIP adapter", async () => {
+  it("keeps campaign route source on the low-conflict legacy archiver call shape", async () => {
     const campaignRoute = await readFile(
       path.resolve("src/routes/campaigns.ts"),
       "utf8",
     );
 
-    expect(campaignRoute).toContain(
+    expect(campaignRoute).toContain('import * as archiver from "archiver";');
+    expect(campaignRoute).not.toContain(
       'import { createZipArchive } from "../lib/zipArchive";',
     );
-    expect(campaignRoute).not.toContain(
-      'import * as archiver from "archiver";',
-    );
-    expect(campaignRoute).not.toContain('archiver("zip"');
     expect(
-      campaignRoute.match(/createZipArchive\(\{ zlib: \{ level: 6 \} \}\)/g),
+      campaignRoute.match(/archiver\("zip", \{ zlib: \{ level: 6 \} \}\)/g),
     ).toHaveLength(2);
   });
 });
