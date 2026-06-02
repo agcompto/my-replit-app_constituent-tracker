@@ -31,7 +31,7 @@ const campaignArchiverCompatPlugin = {
       const rewritten = source
         .replace(
           archiverNamespaceImport,
-          'import { createZipArchive } from "../lib/zipArchive";',
+          'import { createZipArchive } from "../lib/archiver8ZipArchive";',
         )
         .replaceAll('archiver("zip", ', "createZipArchive(");
 

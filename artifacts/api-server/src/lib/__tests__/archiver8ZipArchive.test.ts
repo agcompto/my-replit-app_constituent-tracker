@@ -9,7 +9,7 @@ import { strFromU8, unzipSync } from "fflate";
 
 const execFileAsync = promisify(execFile);
 
-describe("createZipArchive", () => {
+describe("createArchiver8ZipArchive", () => {
   it("creates a readable ZIP archive through the bundled ESM runtime path used by the API build", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "zip-archive-smoke-"));
     try {
@@ -18,7 +18,7 @@ describe("createZipArchive", () => {
       await writeFile(
         entry,
         `
-          import { createZipArchive } from ${JSON.stringify(path.resolve("src/lib/zipArchive.ts"))};
+          import { createZipArchive } from ${JSON.stringify(path.resolve("src/lib/archiver8ZipArchive.ts"))};
 
           const archive = createZipArchive({ zlib: { level: 6 } });
           if (typeof archive.append !== "function" || typeof archive.finalize !== "function") {
@@ -69,7 +69,7 @@ describe("createZipArchive", () => {
 
     expect(campaignRoute).toContain('import * as archiver from "archiver";');
     expect(campaignRoute).not.toContain(
-      'import { createZipArchive } from "../lib/zipArchive";',
+      'import { createZipArchive } from "../lib/archiver8ZipArchive";',
     );
     expect(
       campaignRoute.match(/archiver\("zip", \{ zlib: \{ level: 6 \} \}\)/g),
